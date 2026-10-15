@@ -8,9 +8,10 @@
 //              lo que sigue invertido (valor actual).
 // ─────────────────────────────────────────────────────────────────────────────
 
-import type { Cuenta, EntityRef, Movimiento, Producto, ProductType, Workspace } from '../types'
+import type { Cuenta, EntityRef, Movimiento, Producto, ProductType, Titular, Workspace } from '../types'
 import { EPS, type Position } from './finance'
 import { PRODUCT_META, PRODUCT_TYPES } from './meta'
+import { titularColor } from './titulares'
 
 export type FlowNodeKind =
   | 'cuenta'
@@ -68,16 +69,30 @@ export function inPeriod(m: Movimiento, period: Period): boolean {
   return (!period.from || m.fecha >= period.from) && (!period.to || m.fecha <= period.to)
 }
 
-export function buildFlowGraph(ws: Workspace, positions: Map<string, Position>, period: Period): FlowGraph {
+/**
+ * Con varios titulares, cada caja lleva el nombre de su dueño («Cuenta nómina · Ana») y lo que
+ * sigue invertido, la rentabilidad y las pérdidas van por separado para cada titular (nunca se suman).
+ */
+export function buildFlowGraph(ws: Workspace & { titulares?: Titular[] }, positions: Map<string, Position>, period: Period): FlowGraph {
   const isAll = !period.from && !period.to
   const cuentas = new Map<string, Cuenta>(ws.cuentas.map((c) => [c.id, c]))
   const productos = new Map<string, Producto>(ws.productos.map((p) => [p.id, p]))
+  const titulares = ws.titulares ?? []
+  const multi = titulares.length > 1
+  const titularName = new Map(titulares.map((t) => [t.id, t.nombre]))
   const nodes = new Map<string, FlowNode>()
   const links = new Map<string, FlowLink>()
   const transfers: Movimiento[] = []
 
-  const productName = (id: string) => productos.get(id)?.nombre ?? 'Producto eliminado'
+  /** « · Ana» si hay varios titulares. */
+  const suffix = (titularId: string | undefined) => (multi && titularId && titularName.has(titularId) ? ` · ${titularName.get(titularId)}` : '')
+  const productName = (id: string) => {
+    const p = productos.get(id)
+    return p ? `${p.nombre}${suffix(p.titularId)}` : 'Producto eliminado'
+  }
   const productColor = (id: string) => PRODUCT_META[productos.get(id)?.tipo ?? 'otro'].color
+  /** Nodo «resumen» (sigue invertido, rentabilidad…), uno por titular si hay varios. */
+  const perTitular = (base: string, titularId: string | undefined) => (multi && titularId ? `${base}:${titularId}` : base)
 
   const ensure = (node: Omit<FlowNode, 'value'>) => {
     if (!nodes.has(node.id)) nodes.set(node.id, { ...node, value: 0 })
@@ -88,7 +103,7 @@ export function buildFlowGraph(ws: Workspace, positions: Map<string, Position>, 
       id: `${column === 0 ? 'L' : 'R'}:c:${id}`,
       column,
       kind: 'cuenta',
-      label: cuentas.get(id)?.nombre ?? 'Cuenta eliminada',
+      label: cuentas.has(id) ? `${cuentas.get(id)!.nombre}${suffix(cuentas.get(id)!.titularId)}` : 'Cuenta eliminada',
       color: cuentas.get(id)?.color ?? '#94A3B8',
       ref: { kind: 'cuenta', id },
     })
@@ -156,15 +171,17 @@ export function buildFlowGraph(ws: Workspace, positions: Map<string, Position>, 
       const hasNode = nodes.has(`M:${p.id}`)
       if (!hasNode && pos.saldo <= EPS) continue
       const pid = productNode(p.id)
+      const t = p.titularId
       if (pos.ganancia > EPS) {
-        const g = ensure({ id: 'L:ganancia', column: 0, kind: 'ganancia', label: 'Rentabilidad generada', color: FLOW_COLORS.ganancia })
+        const g = ensure({ id: perTitular('L:ganancia', t), column: 0, kind: 'ganancia', label: `Rentabilidad generada${suffix(t)}`, color: FLOW_COLORS.ganancia })
         addLink(g, pid, pos.ganancia, 'ganancia')
       } else if (pos.ganancia < -EPS) {
-        const l = ensure({ id: 'R:perdida', column: 2, kind: 'perdida', label: 'Pérdidas', color: FLOW_COLORS.perdida })
+        const l = ensure({ id: perTitular('R:perdida', t), column: 2, kind: 'perdida', label: `Pérdidas${suffix(t)}`, color: FLOW_COLORS.perdida })
         addLink(pid, l, -pos.ganancia, 'perdida')
       }
       if (pos.saldo > EPS) {
-        const s = ensure({ id: 'R:saldo', column: 2, kind: 'saldo', label: 'Sigue invertido', color: FLOW_COLORS.saldo })
+        const color = multi && t ? titularColor(titulares, t) : FLOW_COLORS.saldo
+        const s = ensure({ id: perTitular('R:saldo', t), column: 2, kind: 'saldo', label: `Sigue invertido${suffix(t)}`, color })
         addLink(pid, s, pos.saldo, 'saldo')
       }
     }
@@ -178,11 +195,19 @@ export function buildFlowGraph(ws: Workspace, positions: Map<string, Position>, 
         if (l.source === node.id) outSum += l.value
       }
       const diff = inSum - outSum
+      const t = node.ref ? productos.get(node.ref.id)?.titularId : undefined
       if (diff > EPS) {
-        const s = ensure({ id: 'R:pendiente', column: 2, kind: 'pendiente', label: 'Sigue invertido', color: FLOW_COLORS.pendiente })
+        const color = multi && t ? titularColor(titulares, t) : FLOW_COLORS.pendiente
+        const s = ensure({ id: perTitular('R:pendiente', t), column: 2, kind: 'pendiente', label: `Sigue invertido${suffix(t)}`, color })
         addLink(node.id, s, diff, 'pendiente')
       } else if (diff < -EPS) {
-        const s = ensure({ id: 'L:previo', column: 0, kind: 'previo', label: 'Dinero invertido antes del periodo', color: FLOW_COLORS.previo })
+        const s = ensure({
+          id: perTitular('L:previo', t),
+          column: 0,
+          kind: 'previo',
+          label: `Dinero invertido antes del periodo${suffix(t)}`,
+          color: FLOW_COLORS.previo,
+        })
         addLink(s, node.id, -diff, 'previo')
       }
     }

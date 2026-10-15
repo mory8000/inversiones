@@ -72,12 +72,13 @@ function NodeDetail({ graph, node, onClose }: { graph: FlowGraph; node: FlowNode
 }
 
 export function Flow() {
-  const { ws, positions, lookup, today } = useFinance()
+  const { ws, ds, positions, lookup, today } = useFinance()
+  const multi = ds.titulares.length > 1
   const [periodKey, setPeriodKey] = useState('all')
   const [selected, setSelected] = useState<string | null>(null)
   const periods = useMemo(() => periodOptions(ws.movimientos, today), [ws.movimientos, today])
   const period = periods.find((p) => p.key === periodKey) ?? periods[0]
-  const graph = useMemo(() => buildFlowGraph(ws, positions, period), [ws, positions, period])
+  const graph = useMemo(() => buildFlowGraph(ds, positions, period), [ds, positions, period])
   const selectedNode = graph.nodes.find((n) => n.id === selected) ?? null
   const productNodes = graph.nodes.filter((n) => n.column === 1)
   const nodeLabel = (id: string) => graph.nodes.find((n) => n.id === id)?.label ?? '—'
@@ -88,7 +89,7 @@ export function Flow() {
       <DemoBanner />
       <PageHeader
         title="Flujo del dinero"
-        subtitle="De dónde viene, dónde está y a dónde va cada euro"
+        subtitle={multi ? 'De dónde viene, dónde está y a dónde va cada euro, de todos los titulares' : 'De dónde viene, dónde está y a dónde va cada euro'}
         actions={
           ws.movimientos.length > 0 && (
             <div className="w-56">
@@ -125,9 +126,9 @@ export function Flow() {
           {/* Cómo leerlo */}
           <div className="grid grid-cols-3 gap-2 sm:gap-3">
             {[
-              { n: '1', title: 'De dónde viene', text: 'Tus cuentas, traspasos recibidos y la rentabilidad' },
-              { n: '2', title: 'Dónde está', text: 'Tus productos: depósitos, fondos, carteras…' },
-              { n: '3', title: 'A dónde va', text: 'Reembolsos, traspasos y lo que sigue invertido' },
+              { n: '1', title: 'De dónde viene', text: multi ? 'Las cuentas de cada titular, traspasos recibidos y la rentabilidad' : 'Tus cuentas, traspasos recibidos y la rentabilidad' },
+              { n: '2', title: 'Dónde está', text: multi ? 'Los productos de cada titular: depósitos, fondos, carteras…' : 'Tus productos: depósitos, fondos, carteras…' },
+              { n: '3', title: 'A dónde va', text: multi ? 'Reembolsos, traspasos y lo que sigue invertido de cada uno' : 'Reembolsos, traspasos y lo que sigue invertido' },
             ].map((s) => (
               <div key={s.n} className="rounded-2xl border border-slate-200/80 bg-white p-3 sm:p-4">
                 <div className="flex items-center gap-2">
@@ -148,6 +149,12 @@ export function Flow() {
                 </span>
               }
             />
+            {multi && (
+              <p className="px-4 pt-2 text-[13px] text-slate-500 sm:px-5">
+                Cada caja lleva el nombre de su titular. Si el dinero sale de la cuenta de uno y entra en un producto de otro, cuenta como inversión de
+                quien lo recibe. Lo que sigue invertido va por separado para cada titular.
+              </p>
+            )}
             <div className="px-2 pt-3 pb-4 sm:px-4">
               {graph.nodes.length ? (
                 <Sankey graph={graph} selected={selected} onSelect={setSelected} />
@@ -224,7 +231,10 @@ export function Flow() {
 
           {graph.transfers.length > 0 && (
             <Card>
-              <CardHeader title="Transferencias entre tus cuentas" subtitle="Dinero que se ha movido entre cuentas sin pasar por ningún producto" />
+              <CardHeader
+                title={multi ? 'Transferencias entre cuentas' : 'Transferencias entre tus cuentas'}
+                subtitle="Dinero que se ha movido entre cuentas sin pasar por ningún producto"
+              />
               <div className="mt-3 border-t border-slate-100">
                 <MovementList movements={graph.transfers} lookup={lookup} grouped={false} />
               </div>

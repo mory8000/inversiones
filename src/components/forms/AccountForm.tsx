@@ -10,10 +10,21 @@ import { useFinance } from '../../store/useFinance'
 import { confirmDialog, toast, useUI } from '../../store/ui'
 import { navigate, paths } from '../../lib/router'
 import { EntitySuggestions, ENTITY_LIST_ID } from './EntitySuggestions'
+import { TitularPicker } from '../Titulares'
 
-export function AccountForm({ modalId, accountId, onCreated }: { modalId: string; accountId?: string; onCreated?: (id: string) => void }) {
+export function AccountForm({
+  modalId,
+  accountId,
+  presetTitularId,
+  onCreated,
+}: {
+  modalId: string
+  accountId?: string
+  presetTitularId?: string
+  onCreated?: (id: string) => void
+}) {
   const close = useUI((s) => s.close)
-  const { ws, accounts } = useFinance()
+  const { ws, ds, accounts } = useFinance()
   const addCuenta = useData((s) => s.addCuenta)
   const updateCuenta = useData((s) => s.updateCuenta)
   const removeCuenta = useData((s) => s.removeCuenta)
@@ -24,13 +35,14 @@ export function AccountForm({ modalId, accountId, onCreated }: { modalId: string
   const [iban, setIban] = useState(existing?.iban ?? '')
   const [color, setColor] = useState(existing?.color ?? ACCOUNT_COLORS[ws.cuentas.length % ACCOUNT_COLORS.length])
   const [notas, setNotas] = useState(existing?.notas ?? '')
+  const [titularId, setTitularId] = useState(existing?.titularId ?? presetTitularId ?? ds.titulares[0].id)
   const [submitted, setSubmitted] = useState(false)
   const error = !nombre.trim() ? 'Ponle un nombre a la cuenta' : null
 
   const save = () => {
     setSubmitted(true)
     if (error) return
-    const data = { nombre: nombre.trim(), entidad: entidad.trim(), iban: iban.trim().toUpperCase(), color, notas: notas.trim() }
+    const data = { titularId, nombre: nombre.trim(), entidad: entidad.trim(), iban: iban.trim().toUpperCase(), color, notas: notas.trim() }
     if (existing) {
       updateCuenta(existing.id, data)
       toast('Cuenta actualizada')
@@ -95,6 +107,7 @@ export function AccountForm({ modalId, accountId, onCreated }: { modalId: string
             <div className="truncate text-sm text-slate-500">{entidad.trim() || 'Entidad'}</div>
           </div>
         </div>
+        <TitularPicker value={titularId} onChange={setTitularId} label="¿De quién es la cuenta?" />
         <Field label="Nombre" htmlFor="acc-nombre" error={submitted ? error : null}>
           <TextInput
             id="acc-nombre"

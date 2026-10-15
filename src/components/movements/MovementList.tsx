@@ -9,12 +9,15 @@ export function MovementList({
   movements,
   lookup,
   perspective,
+  titularId,
   grouped = true,
   limit,
 }: {
   movements: Movimiento[]
   lookup: Lookup
   perspective?: EntityRef
+  /** Ver los movimientos desde un titular (lo que recibe de otro titular en un producto es inversión suya). */
+  titularId?: string
   grouped?: boolean
   limit?: number
 }) {
@@ -26,7 +29,7 @@ export function MovementList({
         <ul className="divide-y divide-slate-100">
           {items.map((m) => (
             <li key={m.id}>
-              <MovementRow m={m} lookup={lookup} perspective={perspective} />
+              <MovementRow m={m} lookup={lookup} perspective={perspective} titularId={titularId} />
             </li>
           ))}
         </ul>
@@ -34,13 +37,14 @@ export function MovementList({
     )
   }
 
-  const groups = groupByMonth(movements)
+  const groups = groupByMonth(movements, lookup, titularId)
   return (
     <div>
       <MovementTableHeader />
       {groups.map((g) => {
         const invested = g.totals.inversion
         const refunded = g.totals.reembolso
+        const between = g.totals.entreTitulares
         return (
           <section key={g.key} aria-label={fmtMonthKey(g.key)}>
             <div className="sticky top-[calc(3.5rem+env(safe-area-inset-top))] z-[1] flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-y border-slate-100 bg-slate-50/95 px-4 py-2 backdrop-blur md:px-5 lg:top-0">
@@ -56,7 +60,12 @@ export function MovementList({
                     Reembolsado <Amount value={refunded} className="font-semibold text-slate-700" />
                   </span>
                 )}
-                {invested === 0 && refunded === 0 && (
+                {between > 0 && (
+                  <span>
+                    Entre titulares <Amount value={between} className="font-semibold text-slate-700" />
+                  </span>
+                )}
+                {invested === 0 && refunded === 0 && between === 0 && (
                   <span>
                     {g.items.length} movimiento{g.items.length === 1 ? '' : 's'}
                   </span>
@@ -66,7 +75,7 @@ export function MovementList({
             <ul className="divide-y divide-slate-100">
               {g.items.map((m) => (
                 <li key={m.id}>
-                  <MovementRow m={m} lookup={lookup} perspective={perspective} />
+                  <MovementRow m={m} lookup={lookup} perspective={perspective} titularId={titularId} />
                 </li>
               ))}
             </ul>

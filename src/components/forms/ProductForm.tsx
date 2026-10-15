@@ -14,6 +14,7 @@ import { addMonths, isValidISODate } from '../../lib/dates'
 import { navigate, paths } from '../../lib/router'
 import { cn } from '../../lib/cn'
 import { EntitySuggestions, ENTITY_LIST_ID } from './EntitySuggestions'
+import { TitularPicker } from '../Titulares'
 
 const PLAZOS = [1, 3, 6, 12, 24]
 
@@ -21,15 +22,17 @@ export function ProductForm({
   modalId,
   productId,
   presetTipo,
+  presetTitularId,
   onCreated,
 }: {
   modalId: string
   productId?: string
   presetTipo?: ProductType
+  presetTitularId?: string
   onCreated?: (id: string) => void
 }) {
   const close = useUI((s) => s.close)
-  const { ws, positions, today } = useFinance()
+  const { ws, ds, positions, today } = useFinance()
   const addProducto = useData((s) => s.addProducto)
   const updateProducto = useData((s) => s.updateProducto)
   const removeProducto = useData((s) => s.removeProducto)
@@ -37,6 +40,7 @@ export function ProductForm({
   const existing = productId ? ws.productos.find((p) => p.id === productId) : undefined
 
   const [tipo, setTipo] = useState<ProductType>(existing?.tipo ?? presetTipo ?? 'fondo')
+  const [titularId, setTitularId] = useState(existing?.titularId ?? presetTitularId ?? ds.titulares[0].id)
   const [nombre, setNombre] = useState(existing?.nombre ?? '')
   const [entidad, setEntidad] = useState(existing?.entidad ?? '')
   const [isin, setIsin] = useState(existing?.isin ?? '')
@@ -47,7 +51,10 @@ export function ProductForm({
 
   // Primera aportación (solo al crear desde la lista de productos).
   const offerFirst = !existing && !onCreated
-  const [cuenta, setCuenta] = useState(ws.cuentas.length === 1 ? ws.cuentas[0].id : '')
+  const [cuenta, setCuenta] = useState(() => {
+    const own = ws.cuentas.filter((c) => c.titularId === (presetTitularId ?? ds.titulares[0].id))
+    return own.length === 1 ? own[0].id : ws.cuentas.length === 1 ? ws.cuentas[0].id : ''
+  })
   const [importe, setImporte] = useState('')
   const [fecha, setFecha] = useState(today)
   const [submitted, setSubmitted] = useState(false)
@@ -81,6 +88,7 @@ export function ProductForm({
     setSubmitted(true)
     if (hasErrors) return
     const data = {
+      titularId,
       tipo,
       nombre: nombre.trim(),
       entidad: entidad.trim(),
@@ -149,6 +157,12 @@ export function ProductForm({
         }}
       >
         <EntitySuggestions />
+        <TitularPicker
+          value={titularId}
+          onChange={setTitularId}
+          label="¿De quién es el producto?"
+          hint="Lo que se invierta en él cuenta para este titular, aunque el dinero salga de la cuenta de otro."
+        />
         <fieldset>
           <legend className="mb-2 text-sm font-medium text-slate-700">Tipo de producto</legend>
           <div className="grid grid-cols-3 gap-2">
@@ -253,20 +267,41 @@ export function ProductForm({
                 value={cuenta}
                 invalid={!!err('cuenta')}
                 onChange={(e) => {
-                  if (e.target.value === '__new__') openAccount({ onCreated: (id) => setCuenta(id) })
+                  if (e.target.value === '__new__') openAccount({ presetTitularId: titularId, onCreated: (id) => setCuenta(id) })
                   else setCuenta(e.target.value)
                 }}
               >
                 <option value="">Elige una cuenta…</option>
-                {ws.cuentas.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.nombre}
-                    {c.entidad ? ` · ${c.entidad}` : ''}
-                  </option>
-                ))}
+                {ds.titulares.map((t) => {
+                  const list = ws.cuentas.filter((c) => c.titularId === t.id)
+                  if (!list.length) return null
+                  const options = list.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.nombre}
+                      {c.entidad ? ` · ${c.entidad}` : ''}
+                    </option>
+                  ))
+                  return ds.titulares.length > 1 ? (
+                    <optgroup key={t.id} label={`Cuentas de ${t.nombre}`}>
+                      {options}
+                    </optgroup>
+                  ) : (
+                    options
+                  )
+                })}
                 <option value="__new__">＋ Crear una cuenta nueva…</option>
               </SelectInput>
             </Field>
+            {(() => {
+              const c = ws.cuentas.find((x) => x.id === cuenta)
+              const from = c && ds.titulares.find((t) => t.id === c.titularId)
+              const to = ds.titulares.find((t) => t.id === titularId)
+              return c && from && to && c.titularId !== titularId ? (
+                <p className="mt-2 rounded-xl bg-fuchsia-50 px-3 py-2 text-[13px] text-fuchsia-900">
+                  Sale de una cuenta de {from.nombre}: cuenta como inversión de {to.nombre}, no de {from.nombre}.
+                </p>
+              ) : null
+            })()}
           </div>
         )}
 

@@ -6,7 +6,7 @@ import { useData } from '../../store/data'
 import { openMovement } from '../../store/ui'
 import { cn } from '../../lib/cn'
 import { IconButton } from '../ui/Button'
-import { SidebarTitulares, TitularTabs } from './TitularSwitcher'
+import { SidebarTitulares } from '../Titulares'
 
 type NavKey = 'inicio' | 'inversiones' | 'movimientos' | 'flujo' | 'cuentas' | 'ajustes'
 
@@ -124,9 +124,10 @@ function MobileTopBar() {
   return (
     <header className="pt-safe sticky top-0 z-30 border-b border-slate-200/70 bg-canvas/85 backdrop-blur-md lg:hidden">
       <div className="flex h-14 items-center justify-between gap-2 px-3">
-        <div className="min-w-0 flex-1">
-          <TitularTabs />
-        </div>
+        <a href={`#${paths.inicio}`} className="flex min-w-0 items-center gap-2 px-1" aria-label="Mis Inversiones: ir al inicio">
+          <Logo className="size-8 shrink-0" />
+          <span className="truncate text-[15px] font-bold text-slate-900">Mis Inversiones</span>
+        </a>
         <div className="flex shrink-0 items-center">
           <HideToggle />
           <IconButton icon={Settings} label="Ajustes" onClick={() => navigate(paths.ajustes)} />

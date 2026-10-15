@@ -43,11 +43,20 @@ export function Modals() {
       {modals.map((m) => {
         switch (m.type) {
           case 'movement':
-            return <MovementForm key={m.id} modalId={m.id} movementId={m.movementId} preset={m.preset} />
+            return <MovementForm key={m.id} modalId={m.id} movementId={m.movementId} programadaId={m.programadaId} preset={m.preset} />
           case 'product':
-            return <ProductForm key={m.id} modalId={m.id} productId={m.productId} presetTipo={m.presetTipo} onCreated={m.onCreated} />
+            return (
+              <ProductForm
+                key={m.id}
+                modalId={m.id}
+                productId={m.productId}
+                presetTipo={m.presetTipo}
+                presetTitularId={m.presetTitularId}
+                onCreated={m.onCreated}
+              />
+            )
           case 'account':
-            return <AccountForm key={m.id} modalId={m.id} accountId={m.accountId} onCreated={m.onCreated} />
+            return <AccountForm key={m.id} modalId={m.id} accountId={m.accountId} presetTitularId={m.presetTitularId} onCreated={m.onCreated} />
           case 'valuation':
             return <ValuationForm key={m.id} modalId={m.id} productId={m.productId} />
           case 'titular':

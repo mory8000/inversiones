@@ -1,4 +1,4 @@
-import type { EntityKind, MovementType, ProductType } from '../types'
+import type { EntityKind, MovementKind, MovementType, ProductType } from '../types'
 
 export const PRODUCT_TYPES: ProductType[] = ['deposito', 'fondo', 'cartera', 'plan', 'acciones', 'otro']
 
@@ -121,6 +121,21 @@ export const MOVEMENT_META: Record<MovementType, MovementMeta> = {
     to: 'cuenta',
     sign: '',
   },
+}
+
+/** Movimiento de un titular a otro. */
+export const CROSS_META: Pick<MovementMeta, 'label' | 'description' | 'color' | 'soft' | 'text'> = {
+  label: 'Entre titulares',
+  description: 'De un titular a otro',
+  color: '#C026D3',
+  soft: '#FAE8FF',
+  text: '#86198F',
+}
+
+export const MOVEMENT_KINDS: MovementKind[] = ['inversion', 'reembolso', 'traspaso', 'transferencia', 'entreTitulares']
+
+export function kindMeta(k: MovementKind): Pick<MovementMeta, 'label' | 'description' | 'color' | 'soft' | 'text'> {
+  return k === 'entreTitulares' ? CROSS_META : MOVEMENT_META[k]
 }
 
 export const ACCOUNT_COLORS = [

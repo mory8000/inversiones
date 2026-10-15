@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { useRoute } from './lib/router'
-import { useActiveTitular } from './store/data'
+import { useData } from './store/data'
 import { AppShell } from './components/layout/AppShell'
 import { Modals, Toasts } from './components/Modals'
 import { Dashboard } from './pages/Dashboard'
@@ -13,7 +13,16 @@ import { Settings } from './pages/Settings'
 
 export default function App() {
   const route = useRoute()
-  const titular = useActiveTitular()
+  const verEjemplo = useData((s) => s.verEjemplo)
+
+  // Si la app se queda abierta (o vuelve del fondo) otro día, se apuntan las transferencias mensuales que toquen.
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') useData.getState().aplicarProgramadas()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [])
 
   useEffect(() => {
     const section: Record<typeof route.name, string> = {
@@ -53,8 +62,8 @@ export default function App() {
       break
   }
 
-  // Al cambiar de titular, se vuelve a montar la página con sus datos.
-  const key = `${titular.id}:${route.name}:${'id' in route ? route.id : ''}:${route.name === 'movimientos' ? route.params.toString() : ''}`
+  // Al pasar de tus datos al ejemplo (o al revés), se vuelve a montar la página.
+  const key = `${verEjemplo ? 'ejemplo' : 'datos'}:${route.name}:${'id' in route ? route.id : ''}:${route.name === 'movimientos' ? route.params.toString() : ''}`
 
   return (
     <>

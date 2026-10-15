@@ -14,6 +14,7 @@ import { AccountAvatar, ProductAvatar } from '../components/ui/icons'
 import { MovementList } from '../components/movements/MovementList'
 import { BreakdownList, counterpartItems } from '../components/Breakdown'
 import { BackLink } from './ProductDetail'
+import { TitularTag } from '../components/Titulares'
 
 export function AccountDetail({ id }: { id: string }) {
   const { ws, accounts, lookup, positions } = useFinance()
@@ -35,6 +36,13 @@ export function AccountDetail({ id }: { id: string }) {
 
   const s = accounts.get(c.id)!
   const ref = { kind: 'cuenta' as const, id: c.id }
+  const titular = lookup.titulares.get(c.titularId)
+  const multi = lookup.titulares.size > 1
+  /** « · Luis» si el producto es de otro titular. */
+  const otherOwner = (productoId: string) => {
+    const t = lookup.titulares.get(lookup.productos.get(productoId)?.titularId ?? '')
+    return t && t.id !== c.titularId ? t : undefined
+  }
   const transfersIn = counterparts(movs, ref, 'in').filter((x) => x.ref.kind === 'cuenta')
   const transfersOut = counterparts(movs, ref, 'out').filter((x) => x.ref.kind === 'cuenta')
   const transferItems = [
@@ -52,7 +60,16 @@ export function AccountDetail({ id }: { id: string }) {
           <div className="flex items-start gap-3.5">
             <AccountAvatar color={c.color} size="lg" />
             <div className="min-w-0 flex-1">
-              <span className="text-xs font-semibold tracking-wide text-slate-500 uppercase">Cuenta</span>
+              <span className="flex flex-wrap items-center gap-x-1.5 text-xs font-semibold tracking-wide text-slate-500 uppercase">
+                Cuenta
+                {multi && titular && (
+                  <>
+                    <span aria-hidden>·</span>
+                    <span className="normal-case">de</span>
+                    <TitularTag titular={titular} className="text-xs normal-case" />
+                  </>
+                )}
+              </span>
               <h1 className="mt-0.5 text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">{c.nombre}</h1>
               <p className="truncate text-sm text-slate-500">{[c.entidad, c.iban && maskIban(c.iban)].filter(Boolean).join(' · ') || 'Sin entidad'}</p>
             </div>
@@ -81,6 +98,22 @@ export function AccountDetail({ id }: { id: string }) {
               </dd>
             </div>
           </dl>
+
+          {(s.enviadoOtros > 0 || s.recibidoOtros > 0) && (
+            <div className="mt-3 space-y-1 rounded-2xl bg-fuchsia-50 px-4 py-3 text-sm text-fuchsia-900">
+              {s.enviadoOtros > 0 && (
+                <p>
+                  Enviado a otros titulares: <Amount value={s.enviadoOtros} className="font-bold" />
+                  <span className="text-fuchsia-700"> · no cuenta como inversión de {titular?.nombre ?? 'este titular'}</span>
+                </p>
+              )}
+              {s.recibidoOtros > 0 && (
+                <p>
+                  Recibido de otros titulares: <Amount value={s.recibidoOtros} className="font-bold" />
+                </p>
+              )}
+            </div>
+          )}
 
           <div className="mt-4 grid grid-cols-1 gap-2 sm:flex sm:flex-wrap">
             <Button variant="soft" icon={ArrowUpRight} onClick={() => openMovement({ tipo: 'inversion', origen: ref })}>
@@ -117,7 +150,10 @@ export function AccountDetail({ id }: { id: string }) {
                         {p && <ProductAvatar tipo={p.tipo} size="sm" />}
                         <div className="min-w-0 flex-1">
                           <div className="flex items-baseline justify-between gap-2">
-                            <span className="truncate text-sm font-semibold text-slate-800">{p?.nombre ?? 'Producto eliminado'}</span>
+                            <span className="truncate text-sm font-semibold text-slate-800">
+                              {p?.nombre ?? 'Producto eliminado'}
+                              {otherOwner(row.productoId) && <span className="font-medium text-fuchsia-700"> · de {otherOwner(row.productoId)!.nombre}</span>}
+                            </span>
                             <Amount value={row.enviado - row.recibido} className="text-sm font-bold text-slate-900" />
                           </div>
                           <div className="mt-0.5 flex flex-wrap gap-x-3 text-xs text-slate-500">
@@ -161,6 +197,7 @@ export function AccountDetail({ id }: { id: string }) {
                                 <div className="text-xs text-slate-400">
                                   {p ? PRODUCT_META[p.tipo].label : ''}
                                   {p && positions.get(p.id)?.estado === 'cerrado' ? ' · cerrado' : ''}
+                                  {otherOwner(row.productoId) && <span className="text-fuchsia-700"> · de {otherOwner(row.productoId)!.nombre}</span>}
                                 </div>
                               </div>
                             </div>

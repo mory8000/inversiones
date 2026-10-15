@@ -1,25 +1,23 @@
 import { FlaskConical } from 'lucide-react'
-import { useActiveTitular, useData } from '../store/data'
+import { useData } from '../store/data'
 import { confirmDialog, toast } from '../store/ui'
 
-/** Aviso cuando se están viendo los datos de ejemplo. */
+/** Aviso cuando se están viendo los datos de ejemplo (van aparte de los tuyos). */
 export function DemoBanner() {
-  const titular = useActiveTitular()
-  const titulares = useData((s) => s.titulares)
-  const switchTitular = useData((s) => s.switchTitular)
-  const removeTitular = useData((s) => s.removeTitular)
-  if (!titular.demo) return null
-  const own = titulares.find((t) => !t.demo)
+  const verEjemplo = useData((s) => s.verEjemplo)
+  const setVerEjemplo = useData((s) => s.setVerEjemplo)
+  const removeDemo = useData((s) => s.removeDemo)
+  if (!verEjemplo) return null
 
-  const removeDemo = async () => {
+  const remove = async () => {
     const ok = await confirmDialog({
       title: '¿Borrar los datos de ejemplo?',
-      message: 'Se eliminará el titular de ejemplo con todos sus movimientos. Tus datos no se tocan.',
+      message: 'Se eliminarán los titulares de ejemplo con todos sus movimientos. Tus datos no se tocan.',
       confirmLabel: 'Borrar ejemplo',
       danger: true,
     })
     if (ok) {
-      removeTitular(titular.id)
+      removeDemo()
       toast('Datos de ejemplo eliminados')
     }
   }
@@ -33,18 +31,16 @@ export function DemoBanner() {
         </span>
       </div>
       <div className="flex shrink-0 gap-2">
-        {own && (
-          <button
-            type="button"
-            onClick={() => switchTitular(own.id)}
-            className="h-8 rounded-lg bg-amber-900 px-3 text-[13px] font-semibold text-white hover:bg-amber-950"
-          >
-            Ir a mis datos
-          </button>
-        )}
         <button
           type="button"
-          onClick={removeDemo}
+          onClick={() => setVerEjemplo(false)}
+          className="h-8 rounded-lg bg-amber-900 px-3 text-[13px] font-semibold text-white hover:bg-amber-950"
+        >
+          Ir a mis datos
+        </button>
+        <button
+          type="button"
+          onClick={remove}
           className="h-8 rounded-lg border border-amber-300 bg-white px-3 text-[13px] font-semibold text-amber-900 hover:bg-amber-100"
         >
           Borrar ejemplo

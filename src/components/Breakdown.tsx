@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import type { EntityRef } from '../types'
 import type { Counterpart, Lookup } from '../lib/movements'
-import { entityName } from '../lib/movements'
+import { entityName, ownerOf } from '../lib/movements'
 import { PRODUCT_META } from '../lib/meta'
 import { navigate, paths } from '../lib/router'
 import { fmtPct } from '../lib/format'
@@ -61,9 +61,10 @@ export function counterpartItems(list: Counterpart[], lookup: Lookup, verb: (ref
     const cuenta = c.ref.kind === 'cuenta' ? lookup.cuentas.get(c.ref.id) : undefined
     const producto = c.ref.kind === 'producto' ? lookup.productos.get(c.ref.id) : undefined
     const color = cuenta?.color ?? (producto ? PRODUCT_META[producto.tipo].color : '#94A3B8')
+    const owner = lookup.titulares.size > 1 ? ownerOf(lookup, c.ref) : undefined
     return {
       key: `${c.ref.kind}:${c.ref.id}`,
-      label: entityName(lookup, c.ref),
+      label: `${entityName(lookup, c.ref)}${owner ? ` · ${owner.nombre}` : ''}`,
       sublabel: `${verb(c.ref)} · ${c.count} movimiento${c.count === 1 ? '' : 's'}`,
       value: c.value,
       color,

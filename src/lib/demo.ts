@@ -1,28 +1,43 @@
 // Datos de ejemplo (ficticios) para ver cómo funciona la app.
 // Las fechas se calculan respecto a hoy para que siempre parezcan recientes.
 
-import type { Cuenta, EntityRef, Movimiento, Producto, Valoracion, Workspace } from '../types'
+import type { Cuenta, Dataset, EntityRef, Movimiento, Producto, Titular, Valoracion, Workspace } from '../types'
 import { addMonths, daysBetween, daysInMonth, splitISO } from './dates'
 import { round2 } from './format'
 import { inferMovementType } from './meta'
+import { aplicarProgramadas } from './programadas'
 
 let seq = 0
 const demoId = (prefix: string) => `demo-${prefix}-${++seq}`
 
-export function buildDemoWorkspace(today: string): Workspace {
-  seq = 0
+/** Fecha de hace `monthsAgo` meses, en el día `day` (sin pasarse de hoy). */
+const atFor = (today: string) => (monthsAgo: number, day: number): string => {
+  const base = addMonths(today, -monthsAgo)
+  const [y, m] = splitISO(base)
+  const d = Math.min(day, daysInMonth(y, m))
+  const iso = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+  return iso > today ? today : iso
+}
 
-  /** Fecha de hace `monthsAgo` meses, en el día `day` (sin pasarse de hoy). */
-  const at = (monthsAgo: number, day: number): string => {
-    const base = addMonths(today, -monthsAgo)
-    const [y, m] = splitISO(base)
-    const d = Math.min(day, daysInMonth(y, m))
-    const iso = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
-    return iso > today ? today : iso
-  }
+/** Valoraciones en % en distintas fechas: [hace cuántos meses, % de rentabilidad]. */
+function valoraciones(today: string, points: [number, number][]): Valoracion[] {
+  const at = atFor(today)
+  return points
+    .map(([monthsAgo, pct]): Valoracion => {
+      const fecha = monthsAgo === 0 ? today : at(monthsAgo, 28)
+      return { id: demoId('v'), fecha, modo: 'porcentaje', valor: 0, porcentaje: pct, createdAt: `${fecha}T20:00:00.000Z` }
+    })
+    .filter((v) => v.fecha <= today)
+}
+
+/** Cuentas, productos y movimientos de ejemplo de un titular. */
+export function buildDemoWorkspace(today: string, titularId = 'demo-t-1'): Workspace {
+  seq = 0
+  const at = atFor(today)
 
   const cuenta = (nombre: string, entidad: string, iban: string, color: string): Cuenta => ({
     id: demoId('c'),
+    titularId,
     nombre,
     entidad,
     iban,
@@ -37,6 +52,7 @@ export function buildDemoWorkspace(today: string): Workspace {
 
   const producto = (p: Partial<Producto> & Pick<Producto, 'tipo' | 'nombre'>): Producto => ({
     id: demoId('p'),
+    titularId,
     entidad: 'MyInvestor',
     isin: '',
     notas: '',
@@ -105,19 +121,7 @@ export function buildDemoWorkspace(today: string): Workspace {
 
   // Valoraciones (rentabilidad en % en distintas fechas).
   const val = (p: Producto, points: [number, number][]) => {
-    p.valoraciones = points
-      .map(([monthsAgo, pct]): Valoracion => {
-        const fecha = monthsAgo === 0 ? today : at(monthsAgo, 28)
-        return {
-          id: demoId('v'),
-          fecha,
-          modo: 'porcentaje',
-          valor: 0,
-          porcentaje: pct,
-          createdAt: `${fecha}T20:00:00.000Z`,
-        }
-      })
-      .filter((v) => v.fecha <= today)
+    p.valoraciones = valoraciones(today, points)
   }
   val(vanguard, [[21, 3.1], [18, 6.4], [15, 4.2], [12, 9.8], [9, 12.5], [6, 10.1], [3, 15.2], [0, 17.8]])
   val(fidelity, [[20, 2.0], [16, 5.5], [12, 8.9], [8, 11.0], [4, 13.6], [0, 14.2]])
@@ -130,4 +134,75 @@ export function buildDemoWorkspace(today: string): Workspace {
     productos: [vanguard, fidelity, emergentes, metal, dep12, dep6, plan],
     movimientos,
   }
+}
+
+/**
+ * Ejemplo completo con dos titulares: Marta (la principal) y Pablo. Marta envía cada mes
+ * 150 € de su cuenta nómina al fondo de Pablo, y una vez 2.000 € a un depósito de Pablo:
+ * ese dinero cuenta como inversión de Pablo, no de Marta.
+ */
+export function buildDemoDataset(today: string): Dataset {
+  const at = atFor(today)
+  const stamp = `${at(25, 1)}T09:00:00.000Z`
+  const marta: Titular = { id: 'demo-t-1', codigo: '0001', nombre: 'Marta', createdAt: stamp }
+  const pablo: Titular = { id: 'demo-t-2', codigo: '0002', nombre: 'Pablo', createdAt: stamp }
+  const ws = buildDemoWorkspace(today, marta.id)
+  const nomina = ws.cuentas[0]
+  const remunerada = ws.cuentas[1]
+
+  const productoDePablo = (p: Partial<Producto> & Pick<Producto, 'tipo' | 'nombre'>): Producto => ({
+    id: demoId('p'),
+    titularId: pablo.id,
+    entidad: 'MyInvestor',
+    isin: '',
+    notas: '',
+    tae: null,
+    vencimiento: null,
+    valoraciones: [],
+    createdAt: stamp,
+    ...p,
+  })
+  const fondoPablo = productoDePablo({
+    tipo: 'fondo',
+    nombre: 'Fondo indexado de Pablo',
+    isin: 'IE00B03HCZ61',
+    notas: 'Recibe una transferencia mensual de Marta',
+    valoraciones: valoraciones(today, [[11, 1.4], [8, 3.9], [5, 6.2], [2, 7.5], [0, 9.3]]),
+  })
+  const depInicio = at(9, 15)
+  const depositoPablo = productoDePablo({ tipo: 'deposito', nombre: 'Depósito de Pablo', tae: 2.75, vencimiento: addMonths(depInicio, 12) })
+
+  const regalo: Movimiento = {
+    id: demoId('m'),
+    tipo: 'inversion',
+    fecha: depInicio,
+    origen: { kind: 'cuenta', id: remunerada.id },
+    destino: { kind: 'producto', id: depositoPablo.id },
+    importe: 2000,
+    concepto: 'Regalo de cumpleaños para Pablo',
+    createdAt: `${depInicio}T11:00:00.000Z`,
+    updatedAt: `${depInicio}T11:00:00.000Z`,
+  }
+
+  const ds: Dataset = {
+    titulares: [marta, pablo],
+    cuentas: ws.cuentas,
+    productos: [...ws.productos, fondoPablo, depositoPablo],
+    movimientos: [...ws.movimientos, regalo],
+    programadas: [
+      {
+        id: 'demo-prog-1',
+        origen: { kind: 'cuenta', id: nomina.id },
+        destino: { kind: 'producto', id: fondoPablo.id },
+        importe: 150,
+        inicio: at(14, 5),
+        fin: null,
+        concepto: 'Transferencia mensual a Pablo',
+        excluidos: [],
+        createdAt: stamp,
+        updatedAt: stamp,
+      },
+    ],
+  }
+  return aplicarProgramadas(ds, today)
 }

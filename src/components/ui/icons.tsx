@@ -5,6 +5,7 @@ import {
   ChartCandlestick,
   ChartLine,
   Gem,
+  HandCoins,
   Landmark,
   Layers,
   PiggyBank,
@@ -12,8 +13,8 @@ import {
   Umbrella,
   type LucideIcon,
 } from 'lucide-react'
-import type { Cuenta, MovementType, Producto, ProductType } from '../../types'
-import { MOVEMENT_META, PRODUCT_META } from '../../lib/meta'
+import type { Cuenta, MovementKind, Producto, ProductType } from '../../types'
+import { PRODUCT_META, kindMeta } from '../../lib/meta'
 import { cn } from '../../lib/cn'
 
 export const PRODUCT_ICONS: Record<ProductType, LucideIcon> = {
@@ -25,11 +26,12 @@ export const PRODUCT_ICONS: Record<ProductType, LucideIcon> = {
   otro: Gem,
 }
 
-export const MOVEMENT_ICONS: Record<MovementType, LucideIcon> = {
+export const MOVEMENT_ICONS: Record<MovementKind, LucideIcon> = {
   inversion: ArrowUpRight,
   reembolso: ArrowDownLeft,
   traspaso: Repeat,
   transferencia: ArrowRightLeft,
+  entreTitulares: HandCoins,
 }
 
 export const AccountIcon = Landmark
@@ -84,9 +86,9 @@ export function EntityAvatar({
   return <AccountAvatar color={cuenta?.color ?? '#94A3B8'} size={size} className={className} />
 }
 
-export function MovementAvatar({ tipo, size = 'md', className }: { tipo: MovementType; size?: Size; className?: string }) {
+export function MovementAvatar({ tipo, size = 'md', className }: { tipo: MovementKind; size?: Size; className?: string }) {
   const Icon = MOVEMENT_ICONS[tipo]
-  const meta = MOVEMENT_META[tipo]
+  const meta = kindMeta(tipo)
   return (
     <span
       className={cn('inline-flex shrink-0 items-center justify-center', SIZES[size].box, className)}

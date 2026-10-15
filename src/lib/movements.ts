@@ -1,4 +1,4 @@
-import type { Cuenta, EntityRef, Movimiento, MovementType, Producto, ProductType, Workspace } from '../types'
+import type { Cuenta, EntityRef, Movimiento, MovementKind, Producto, ProductType, Titular, Workspace } from '../types'
 import { addDays, addMonths, monthKey, yearOf } from './dates'
 import { fmtDateNumeric } from './format'
 import { MOVEMENT_META, PRODUCT_META } from './meta'
@@ -6,13 +6,50 @@ import { MOVEMENT_META, PRODUCT_META } from './meta'
 export interface Lookup {
   cuentas: Map<string, Cuenta>
   productos: Map<string, Producto>
+  titulares: Map<string, Titular>
 }
 
-export function buildLookup(ws: Workspace): Lookup {
+export function buildLookup(ws: Workspace & { titulares?: Titular[] }): Lookup {
   return {
     cuentas: new Map(ws.cuentas.map((c) => [c.id, c])),
     productos: new Map(ws.productos.map((p) => [p.id, p])),
+    titulares: new Map((ws.titulares ?? []).map((t) => [t.id, t])),
   }
+}
+
+/** Titular al que pertenece una cuenta o un producto. */
+export function ownerId(lookup: Lookup, ref: EntityRef): string | undefined {
+  return ref.kind === 'cuenta' ? lookup.cuentas.get(ref.id)?.titularId : lookup.productos.get(ref.id)?.titularId
+}
+
+export function ownerOf(lookup: Lookup, ref: EntityRef): Titular | undefined {
+  const id = ownerId(lookup, ref)
+  return id ? lookup.titulares.get(id) : undefined
+}
+
+/** ¿El movimiento va de un titular a otro? */
+export function isCross(lookup: Lookup, m: Movimiento): boolean {
+  const o = ownerId(lookup, m.origen)
+  const d = ownerId(lookup, m.destino)
+  return !!o && !!d && o !== d
+}
+
+/** ¿El movimiento toca a este titular (sale de o llega a algo suyo)? */
+export function touchesTitular(lookup: Lookup, m: Movimiento, titularId: string): boolean {
+  return ownerId(lookup, m.origen) === titularId || ownerId(lookup, m.destino) === titularId
+}
+
+export type { MovementKind }
+
+/**
+ * Cómo se ve un movimiento desde un titular (o desde todos, sin `titularId`):
+ * un movimiento de un titular a otro es «entre titulares», salvo para quien lo recibe
+ * en un producto, para quien es una inversión suya (una aportación).
+ */
+export function movementKind(lookup: Lookup, m: Movimiento, titularId?: string): MovementKind {
+  if (!isCross(lookup, m)) return m.tipo
+  if (titularId && ownerId(lookup, m.destino) === titularId && m.destino.kind === 'producto') return m.tipo
+  return 'entreTitulares'
 }
 
 export function entityName(lookup: Lookup, ref: EntityRef): string {
@@ -49,7 +86,9 @@ export function sortMovementsDesc(movs: Movimiento[]): Movimiento[] {
 // ── Filtros ─────────────────────────────────────────────────────────────────
 
 export interface MovementFilters {
-  tipo: MovementType | 'todos'
+  /** Titular ('' = todos). */
+  titular: string
+  tipo: MovementKind | 'todos'
   /** Cuenta o producto concreto ("cuenta:id" / "producto:id"). */
   entidad: string
   productType: ProductType | 'todos'
@@ -59,6 +98,7 @@ export interface MovementFilters {
 }
 
 export const EMPTY_FILTERS: MovementFilters = {
+  titular: '',
   tipo: 'todos',
   entidad: '',
   productType: 'todos',
@@ -78,7 +118,8 @@ export function filterMovements(movs: Movimiento[], lookup: Lookup, f: MovementF
   const ref = f.entidad ? parseRefKey(f.entidad) : null
   const q = normalize(f.q.trim())
   return movs.filter((m) => {
-    if (f.tipo !== 'todos' && m.tipo !== f.tipo) return false
+    if (f.titular && !touchesTitular(lookup, m, f.titular)) return false
+    if (f.tipo !== 'todos' && movementKind(lookup, m, f.titular || undefined) !== f.tipo) return false
     if (ref && !sameRef(m.origen, ref) && !sameRef(m.destino, ref)) return false
     if (f.productType !== 'todos') {
       const types = [m.origen, m.destino]
@@ -110,12 +151,14 @@ export interface MovementTotals {
   reembolso: number
   traspaso: number
   transferencia: number
+  entreTitulares: number
   count: number
 }
 
-export function totalsOf(movs: Movimiento[]): MovementTotals {
-  const t: MovementTotals = { inversion: 0, reembolso: 0, traspaso: 0, transferencia: 0, count: movs.length }
-  for (const m of movs) t[m.tipo] += m.importe
+/** Totales por tipo. Con `lookup`, los movimientos entre titulares van aparte (vistos desde `titularId`). */
+export function totalsOf(movs: Movimiento[], lookup?: Lookup, titularId?: string): MovementTotals {
+  const t: MovementTotals = { inversion: 0, reembolso: 0, traspaso: 0, transferencia: 0, entreTitulares: 0, count: movs.length }
+  for (const m of movs) t[lookup ? movementKind(lookup, m, titularId) : m.tipo] += m.importe
   return t
 }
 
@@ -125,7 +168,7 @@ export interface MonthGroup {
   totals: MovementTotals
 }
 
-export function groupByMonth(movs: Movimiento[]): MonthGroup[] {
+export function groupByMonth(movs: Movimiento[], lookup?: Lookup, titularId?: string): MonthGroup[] {
   const groups = new Map<string, Movimiento[]>()
   for (const m of sortMovementsDesc(movs)) {
     const k = monthKey(m.fecha)
@@ -133,7 +176,7 @@ export function groupByMonth(movs: Movimiento[]): MonthGroup[] {
     if (g) g.push(m)
     else groups.set(k, [m])
   }
-  return [...groups.entries()].map(([key, items]) => ({ key, items, totals: totalsOf(items) }))
+  return [...groups.entries()].map(([key, items]) => ({ key, items, totals: totalsOf(items, lookup, titularId) }))
 }
 
 // ── Periodos ────────────────────────────────────────────────────────────────
@@ -174,12 +217,14 @@ function csvNumber(n: number): string {
 }
 
 export function movementsToCSV(movs: Movimiento[], lookup: Lookup): string {
-  const header = ['Fecha', 'Tipo', 'De', 'Tipo de origen', 'A', 'Tipo de destino', 'Importe (€)', 'Concepto']
+  const header = ['Fecha', 'Tipo', 'Titular (de)', 'De', 'Tipo de origen', 'Titular (a)', 'A', 'Tipo de destino', 'Importe (€)', 'Concepto']
   const rows = sortMovementsDesc(movs).map((m) => [
     fmtDateNumeric(m.fecha),
-    MOVEMENT_META[m.tipo].label,
+    isCross(lookup, m) ? 'Entre titulares' : MOVEMENT_META[m.tipo].label,
+    ownerOf(lookup, m.origen)?.nombre ?? '',
     entityName(lookup, m.origen),
     entityTypeLabel(lookup, m.origen),
+    ownerOf(lookup, m.destino)?.nombre ?? '',
     entityName(lookup, m.destino),
     entityTypeLabel(lookup, m.destino),
     csvNumber(m.importe),

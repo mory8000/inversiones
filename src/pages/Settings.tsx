@@ -1,6 +1,9 @@
 import { useRef, type ReactNode } from 'react'
 import {
+  ArrowRight,
+  CalendarSync,
   Check,
+  Crown,
   Download,
   Eye,
   FileSpreadsheet,
@@ -13,20 +16,21 @@ import {
   Upload,
   UserRound,
 } from 'lucide-react'
-import { exportBackup, sanitizeData, useActiveTitular, useData } from '../store/data'
-import { useFinance } from '../store/useFinance'
-import { confirmDialog, openTitular, toast } from '../store/ui'
-import { movementsToCSV } from '../lib/movements'
+import { exportBackup, sanitizeData, useData } from '../store/data'
+import { useFinance, type TitularFinance } from '../store/useFinance'
+import { confirmDialog, openProgramada, openTitular, toast } from '../store/ui'
+import { entityName, movementsToCSV } from '../lib/movements'
+import { diaDe, movimientosDe, proximaFecha } from '../lib/programadas'
+import { fmtDate, fmtEUR } from '../lib/format'
 import { downloadFile } from '../lib/download'
 import { isStandalone, useInstallPrompt } from '../lib/install'
 import { cn } from '../lib/cn'
 import { PageHeader } from '../components/layout/AppShell'
 import { Card, CardHeader } from '../components/ui/Card'
 import { Button, IconButton } from '../components/ui/Button'
-import { Amount } from '../components/ui/Amount'
-import { TitularAvatar, useSwitchTitular, useTitularPatrimonio } from '../components/layout/TitularSwitcher'
-import { orderTitulares } from '../lib/titulares'
-import type { Titular } from '../types'
+import { Amount, useHidden } from '../components/ui/Amount'
+import { Switch } from '../components/ui/Switch'
+import { PrincipalBadge, TitularAvatar } from '../components/Titulares'
 
 function Row({ icon, title, text, action, danger }: { icon: ReactNode; title: string; text?: ReactNode; action: ReactNode; danger?: boolean }) {
   return (
@@ -50,41 +54,39 @@ function Row({ icon, title, text, action, danger }: { icon: ReactNode; title: st
   )
 }
 
-function Switch({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
+/** Un titular en Ajustes: su código, su patrimonio y botones para editarlo o hacerlo principal. */
+function TitularRow({ tf }: { tf: TitularFinance }) {
+  const makePrincipal = useData((s) => s.makePrincipal)
+  const { titular, index } = tf
   return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-label={label}
-      onClick={() => onChange(!checked)}
-      className={cn('relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors', checked ? 'bg-brand-600' : 'bg-slate-300')}
-    >
-      <span className={cn('inline-block size-5 rounded-full bg-white shadow transition-transform', checked ? 'translate-x-6' : 'translate-x-1')} />
-    </button>
-  )
-}
-
-/** Un titular en Ajustes: su código, su patrimonio y botones para ver sus datos o editarlo. */
-function TitularRow({ titular, active }: { titular: Titular; active: boolean }) {
-  const pick = useSwitchTitular()
-  const patrimonio = useTitularPatrimonio(titular.id)
-  return (
-    <li className={cn('flex items-center gap-3 px-4 py-3.5 sm:px-5', active && 'bg-brand-50/70')}>
+    <li className="flex items-center gap-3 px-4 py-3.5 sm:px-5">
       <TitularAvatar titular={titular} size="lg" />
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 items-center gap-2">
           <span className="truncate font-semibold text-slate-900">{titular.nombre}</span>
-          {active && <span className="shrink-0 rounded-md bg-brand-100 px-1.5 py-0.5 text-[11px] font-semibold text-brand-700">Viendo ahora</span>}
+          {index === 0 && <PrincipalBadge />}
         </div>
         <div className="text-sm">
-          {patrimonio === null ? <span className="text-slate-500">Sin movimientos</span> : <Amount value={patrimonio} className="font-medium text-slate-700" />}
+          {tf.ws.movimientos.length === 0 ? (
+            <span className="text-slate-500">Sin movimientos</span>
+          ) : (
+            <Amount value={tf.totals.patrimonio} className="font-medium text-slate-700" />
+          )}
         </div>
         {titular.codigo && <div className="truncate text-xs text-slate-500">Código {titular.codigo}</div>}
       </div>
-      {!active && (
-        <Button variant="soft" size="sm" onClick={() => pick(titular)}>
-          Ver
+      {index > 0 && (
+        <Button
+          variant="soft"
+          size="sm"
+          icon={Crown}
+          onClick={() => {
+            makePrincipal(titular.id)
+            toast(`${titular.nombre} es ahora el titular principal`)
+          }}
+          className="shrink-0"
+        >
+          <span className="max-sm:sr-only">Hacer principal</span>
         </Button>
       )}
       <IconButton icon={Pencil} label={`Editar ${titular.nombre}`} onClick={() => openTitular(titular.id)} />
@@ -93,15 +95,19 @@ function TitularRow({ titular, active }: { titular: Titular; active: boolean }) 
 }
 
 export function Settings() {
-  const { ws, lookup, today } = useFinance()
-  const titular = useActiveTitular()
-  const titulares = useData((s) => s.titulares)
+  const fin = useFinance()
+  const { ws, ds, lookup, today, owner } = fin
+  const hidden = useHidden()
   const hideAmounts = useData((s) => s.hideAmounts)
   const setHideAmounts = useData((s) => s.setHideAmounts)
   const loadDemo = useData((s) => s.loadDemo)
-  const clearWorkspace = useData((s) => s.clearWorkspace)
+  const hasDemo = useData((s) => !!s.ejemplo)
+  const verEjemplo = useData((s) => s.verEjemplo)
+  const setVerEjemplo = useData((s) => s.setVerEjemplo)
+  const clearData = useData((s) => s.clearData)
   const resetAll = useData((s) => s.resetAll)
   const importData = useData((s) => s.importData)
+  const [t1, t2] = ds.titulares
   const install = useInstallPrompt()
   const fileRef = useRef<HTMLInputElement>(null)
 
@@ -111,8 +117,7 @@ export function Settings() {
   }
 
   const exportCSV = () => {
-    const name = titular.nombre.replace(/[^\p{L}\p{N}]+/gu, '-').toLowerCase()
-    downloadFile(`movimientos-${name}-${today}.csv`, movementsToCSV(ws.movimientos, lookup), 'text/csv;charset=utf-8')
+    downloadFile(`movimientos-${today}.csv`, movementsToCSV(ws.movimientos, lookup), 'text/csv;charset=utf-8')
     toast('Movimientos exportados')
   }
 
@@ -120,10 +125,11 @@ export function Settings() {
     try {
       const data = sanitizeData(JSON.parse(await file.text()))
       if (!data) throw new Error('invalid')
-      const n = Object.values(data.workspaces).reduce((s, w) => s + w.movimientos.length, 0)
+      const n = data.datos.movimientos.length
+      const nt = data.datos.titulares.length
       const ok = await confirmDialog({
         title: '¿Restaurar esta copia?',
-        message: `Contiene ${data.titulares.length} titular${data.titulares.length === 1 ? '' : 'es'} y ${n} movimiento${n === 1 ? '' : 's'}. Se sustituirán todos los datos actuales.`,
+        message: `Contiene ${nt} titular${nt === 1 ? '' : 'es'} (${data.datos.titulares.map((t) => t.nombre).join(', ')}) y ${n} movimiento${n === 1 ? '' : 's'}. Se sustituirán todos tus datos actuales.`,
         confirmLabel: 'Restaurar',
         danger: true,
       })
@@ -138,13 +144,14 @@ export function Settings() {
 
   const clear = async () => {
     const ok = await confirmDialog({
-      title: `¿Borrar los datos de «${titular.nombre}»?`,
-      message: 'Se eliminarán sus cuentas, productos y movimientos. Te recomendamos descargar antes una copia de seguridad.',
+      title: '¿Borrar cuentas, productos y movimientos?',
+      message:
+        'Se eliminarán las cuentas, productos, movimientos y transferencias mensuales de todos los titulares. Los titulares (y sus nombres) se quedan. Te recomendamos descargar antes una copia de seguridad.',
       confirmLabel: 'Borrar datos',
       danger: true,
     })
     if (ok) {
-      clearWorkspace()
+      clearData()
       toast('Datos borrados')
     }
   }
@@ -170,15 +177,89 @@ export function Settings() {
 
       <div className="space-y-4 lg:space-y-5">
         <Card>
-          <CardHeader title="Titulares" subtitle="Cada titular tiene sus propias cuentas, productos y movimientos, por separado" />
+          <CardHeader
+            title="Titulares"
+            subtitle="Se ven todos a la vez, cada uno con sus cuentas y productos. El primero es el principal."
+          />
           <ul className="mt-3 divide-y divide-slate-100 border-t border-slate-100">
-            {orderTitulares(titulares).map((t) => (
-              <TitularRow key={t.id} titular={t} active={t.id === titular.id} />
+            {fin.titulares.map((tf) => (
+              <TitularRow key={tf.titular.id} tf={tf} />
             ))}
           </ul>
           <div className="border-t border-slate-100 px-4 py-3 sm:px-5">
             <Button variant="ghost" size="sm" icon={Plus} onClick={() => openTitular()}>
               Añadir otro titular
+            </Button>
+          </div>
+        </Card>
+
+        <Card>
+          <CardHeader
+            title="Transferencias mensuales"
+            subtitle="Movimientos que se repiten cada mes: la app los apunta solos"
+            icon={
+              <span className="inline-flex size-9 items-center justify-center rounded-xl bg-fuchsia-50 text-fuchsia-600">
+                <CalendarSync className="size-[18px]" />
+              </span>
+            }
+          />
+          {ds.programadas.length === 0 ? (
+            <p className="mt-3 border-t border-slate-100 px-4 py-4 text-sm text-slate-500 sm:px-5">
+              Aún no hay ninguna.{t2 ? ` Por ejemplo, la transferencia de cada mes de ${t1.nombre} a ${t2.nombre}: cuenta como inversión de ${t2.nombre}.` : ''}
+            </p>
+          ) : (
+            <ul className="mt-3 divide-y divide-slate-100 border-t border-slate-100">
+              {ds.programadas.map((p) => {
+                const from = lookup.titulares.get(owner(p.origen) ?? '')
+                const to = lookup.titulares.get(owner(p.destino) ?? '')
+                const n = movimientosDe(ds, p.id).length
+                const next = proximaFecha(p, today)
+                return (
+                  <li key={p.id}>
+                    <button
+                      type="button"
+                      onClick={() => openProgramada({ programadaId: p.id })}
+                      className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors hover:bg-slate-50 sm:px-5"
+                    >
+                      <span className="flex shrink-0 items-center">
+                        {from && <TitularAvatar titular={from} size="sm" />}
+                        {to && from && to.id !== from.id && (
+                          <>
+                            <ArrowRight className="mx-0.5 size-3.5 text-slate-400" />
+                            <TitularAvatar titular={to} size="sm" />
+                          </>
+                        )}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-semibold text-slate-900">
+                          {hidden ? '•••••• €' : fmtEUR(p.importe)} el día {diaDe(p)} de cada mes
+                        </span>
+                        <span className="block truncate text-[13px] text-slate-500">
+                          {entityName(lookup, p.origen)} → {entityName(lookup, p.destino)}
+                        </span>
+                        <span className="block truncate text-xs text-slate-400">
+                          {n} apuntada{n === 1 ? '' : 's'} · {next ? `próxima: ${fmtDate(next)}` : 'terminada'}
+                        </span>
+                      </span>
+                      <Pencil className="size-4 shrink-0 text-slate-400" />
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+          <div className="border-t border-slate-100 px-4 py-3 sm:px-5">
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={Plus}
+              onClick={() =>
+                openProgramada({
+                  preset: t2 && ds.programadas.length === 0 ? { origenTitularId: t1.id, destinoTitularId: t2.id, concepto: `Transferencia mensual a ${t2.nombre}` } : undefined,
+                })
+              }
+            >
+              Nueva transferencia mensual
             </Button>
           </div>
         </Card>
@@ -237,18 +318,25 @@ export function Settings() {
             <Row
               icon={<FlaskConical className="size-[18px]" />}
               title="Datos de ejemplo"
-              text="Crea un titular de ejemplo con movimientos ficticios para probar la app. No toca tus datos."
+              text="Dos titulares ficticios (Marta y Pablo, con una transferencia mensual entre ellos) para probar la app. Van aparte: no tocan tus datos."
               action={
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => {
-                    loadDemo()
-                    toast('Datos de ejemplo cargados')
-                  }}
-                >
-                  {titulares.some((t) => t.demo) ? 'Regenerar ejemplo' : 'Cargar ejemplo'}
-                </Button>
+                <>
+                  {hasDemo && (
+                    <Button variant="secondary" size="sm" onClick={() => setVerEjemplo(!verEjemplo)}>
+                      {verEjemplo ? 'Volver a mis datos' : 'Ver ejemplo'}
+                    </Button>
+                  )}
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => {
+                      loadDemo()
+                      toast('Datos de ejemplo cargados')
+                    }}
+                  >
+                    {hasDemo ? 'Regenerar' : 'Cargar ejemplo'}
+                  </Button>
+                </>
               }
             />
           </div>
@@ -287,14 +375,15 @@ export function Settings() {
           </div>
         </Card>
 
+        {!verEjemplo && (
         <Card className="border-rose-200/80">
           <CardHeader title="Zona peligrosa" />
           <div className="mt-2 divide-y divide-slate-100 border-t border-slate-100">
             <Row
               danger
               icon={<UserRound className="size-[18px]" />}
-              title={`Borrar los datos de «${titular.nombre}»`}
-              text="Elimina sus cuentas, productos y movimientos."
+              title="Borrar cuentas, productos y movimientos"
+              text="De todos los titulares. Los titulares y sus nombres se quedan."
               action={
                 <Button variant="secondary" size="sm" icon={Trash2} onClick={clear} className="text-rose-600">
                   Borrar
@@ -314,6 +403,7 @@ export function Settings() {
             />
           </div>
         </Card>
+        )}
 
         <p className="pb-4 text-center text-xs text-slate-400">
           Mis Inversiones · Tus datos no salen de este dispositivo: no se envían a ningún servidor.

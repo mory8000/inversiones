@@ -3,7 +3,7 @@ import { ArrowDownLeft, ArrowLeft, ArrowUpRight, Pencil, RefreshCw, Repeat, Sear
 import { useFinance } from '../store/useFinance'
 import { openMovement, openProduct, openValuation } from '../store/ui'
 import { buildProductTimeline, involvesProduct, type Position } from '../lib/finance'
-import { counterparts } from '../lib/movements'
+import { counterparts, ownerId } from '../lib/movements'
 import { PRODUCT_META } from '../lib/meta'
 import { fmtDate, fmtPct } from '../lib/format'
 import { goBack, navigate, paths } from '../lib/router'
@@ -17,6 +17,7 @@ import { MovementList } from '../components/movements/MovementList'
 import { BreakdownList, counterpartItems } from '../components/Breakdown'
 import { DepositProgress, StatusBadge } from '../components/ProductCard'
 import type { Producto } from '../types'
+import { TitularTag } from '../components/Titulares'
 
 export function BackLink({ label, fallback }: { label: string; fallback: string }) {
   return (
@@ -81,6 +82,10 @@ export function ProductDetail({ id }: { id: string }) {
   const pos = positions.get(p.id)!
   const meta = PRODUCT_META[p.tipo]
   const ref = { kind: 'producto' as const, id: p.id }
+  const titular = lookup.titulares.get(p.titularId)
+  const multi = lookup.titulares.size > 1
+  const fromOthers = movs.filter((m) => m.destino.id === p.id && ownerId(lookup, m.origen) && ownerId(lookup, m.origen) !== p.titularId)
+  const fromOthersTotal = fromOthers.reduce((sum, m) => sum + m.importe, 0)
   const sources = counterpartItems(counterparts(movs, ref, 'in'), lookup, (r) => (r.kind === 'cuenta' ? 'Aportado desde la cuenta' : 'Traspaso recibido'))
   const destinations = counterpartItems(counterparts(movs, ref, 'out'), lookup, (r) => (r.kind === 'cuenta' ? 'Reembolsado a la cuenta' : 'Traspaso enviado'))
   const isDeposit = p.tipo === 'deposito'
@@ -101,6 +106,11 @@ export function ProductDetail({ id }: { id: string }) {
                 <span className="text-xs font-semibold tracking-wide uppercase" style={{ color: meta.text }}>
                   {meta.label}
                 </span>
+                {multi && titular && (
+                  <span className="flex items-center gap-1 text-xs text-slate-500">
+                    de <TitularTag titular={titular} className="text-xs" />
+                  </span>
+                )}
                 <StatusBadge pos={pos} />
               </div>
               <h1 className="mt-0.5 text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">{p.nombre}</h1>
@@ -124,6 +134,12 @@ export function ProductDetail({ id }: { id: string }) {
             {!closed && <GainBadge ganancia={pos.ganancia} rentabilidad={pos.rentabilidad} />}
           </div>
           {isDeposit && pos.deposito && !closed && pos.estado !== 'sin-movimientos' && <DepositProgress info={pos.deposito} />}
+          {fromOthersTotal > 0 && (
+            <p className="mt-4 rounded-2xl bg-fuchsia-50 px-4 py-3 text-sm text-fuchsia-900">
+              De lo aportado, <Amount value={fromOthersTotal} className="font-bold" /> ha llegado desde cuentas de otros titulares. Cuenta como
+              inversión de {titular?.nombre ?? 'este titular'}.
+            </p>
+          )}
 
           <div className="mt-5 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
             <Button variant="soft" icon={ArrowUpRight} onClick={() => openMovement({ tipo: 'inversion', destino: ref })}>

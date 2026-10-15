@@ -22,11 +22,14 @@ Sustituye al antiguo `Inversiones.xlsx` y mantiene sus mismos conceptos: titular
 
 ## Qué puedes hacer
 
-- **Inicio**: patrimonio total, rentabilidad en € y %, gráfico de evolución (patrimonio frente a capital invertido),
-  distribución por tipo de producto, el diagrama del flujo del dinero, el resumen por tipo (como el Excel),
-  los últimos movimientos y tus cuentas.
-- **Movimientos**: todos los movimientos con su origen (**De**) y destino (**A**), agrupados por meses.
-  Filtros por tipo, cuenta o producto, tipo de producto y periodo; buscador; y exportación a Excel (CSV).
+- **Inicio**: **todos los titulares a la vez**, sin tener que elegir: la tarjeta de cada uno (el primero es el
+  principal) con su patrimonio, rentabilidad en € y %, capital invertido, lo aportado y lo reembolsado, y lo que ha
+  enviado o recibido de otro titular. Debajo, la transferencia mensual, la evolución (una línea por titular), dónde
+  está el dinero de cada uno, el diagrama del flujo del dinero, el resumen por tipo de cada titular (como el Excel),
+  los últimos movimientos y las cuentas.
+- **Movimientos**: todos los movimientos de todos los titulares, con su origen (**De**) y destino (**A**) y de quién
+  es cada uno, agrupados por meses. Filtros por titular, tipo, cuenta o producto, tipo de producto y periodo;
+  buscador; y exportación a Excel (CSV).
 - **Flujo del dinero**: diagrama de bandas en tres columnas — *de dónde viene* (tus cuentas, traspasos y la
   rentabilidad), *dónde está* (tus productos) y *a dónde va* (reembolsos, traspasos y lo que sigue invertido).
   Toca una caja para ver su recorrido. Se puede ver todo el histórico o un periodo concreto.
@@ -36,11 +39,15 @@ Sustituye al antiguo `Inversiones.xlsx` y mantiene sus mismos conceptos: titular
 - **Detalle de cada producto**: el cálculo del saldo paso a paso, de dónde le ha llegado el dinero y a dónde ha
   ido, su evolución y sus movimientos. En los depósitos: TAE, vencimiento, días restantes e intereses.
 - **Detalle de cada cuenta**: cuánto ha salido hacia inversiones, cuánto ha vuelto y a qué productos.
-- **Dos titulares, cada uno por su lado**: la app empieza con «Titular 1» y «Titular 2» (ponles nombre desde la
-  propia app). Cada uno tiene sus propias cuentas, productos, movimientos y patrimonio: nunca se mezclan ni se
-  suman. Para cambiar de uno a otro, toca su nombre arriba (móvil) o en el menú de la izquierda (ordenador).
-  Cada titular tiene su color, y en cada pantalla se ve de quién son los datos. Se pueden añadir más desde
-  *Ajustes → Titulares* (código y nombre, como en la cabecera del Excel).
+- **Varios titulares, vistos a la vez**: la app empieza con «Titular 1» (el principal) y «Titular 2»; ponles
+  nombre desde la propia app. Cada cuenta y cada producto es de un titular, cada titular tiene su color y sus
+  cifras van siempre por separado (nunca se suman). Desde *Ajustes → Titulares* se puede añadir otro titular o
+  elegir cuál es el principal (código y nombre, como en la cabecera del Excel).
+- **Transferencia mensual**: por ejemplo, del titular 1 al titular 2. Se programa una vez (importe, día, desde
+  qué cuenta y a qué producto o cuenta) y la app la apunta sola cada mes. Un mes concreto se puede cambiar o
+  borrar sin tocar los demás.
+- **Lo invertido cuenta para quien lo recibe**: si el dinero sale de la cuenta del titular 1 y entra en un
+  producto del titular 2, cuenta como inversión del titular 2, no del titular 1.
 - **Ocultar importes** con un toque (icono del ojo).
 - **Copia de seguridad** (descargar / restaurar) y **datos de ejemplo** para probarla sin miedo.
 - **Se instala como una app** en el móvil o el ordenador y funciona **sin conexión**.
@@ -55,6 +62,9 @@ Solo tienes que elegir de dónde sale el dinero y a dónde va; el tipo se deduce
 | **Reembolso**     | Producto    | Cuenta      | Vence un depósito y vuelve a la cuenta       |
 | **Traspaso**      | Producto    | Producto    | Pasas dinero de un fondo a otro              |
 | **Transferencia** | Cuenta      | Cuenta      | Mueves dinero entre tus cuentas              |
+
+Si el origen y el destino son de **titulares distintos**, el movimiento se ve como **«Entre titulares»**. Para
+quien lo recibe en un producto es una inversión suya (una aportación); para quien lo envía, no.
 
 ## Cómo se calcula
 

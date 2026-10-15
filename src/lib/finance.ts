@@ -66,12 +66,17 @@ export interface Position {
 
 export interface AccountStats {
   cuentaId: string
-  /** Enviado desde la cuenta a productos (inversiones). */
+  /** Enviado desde la cuenta a productos (inversiones) del mismo titular. */
   enviado: number
-  /** Recibido en la cuenta desde productos (reembolsos). */
+  /** Recibido en la cuenta desde productos (reembolsos) del mismo titular. */
   recibido: number
+  /** Transferencias a / desde otras cuentas del mismo titular. */
   transferenciasEnviadas: number
   transferenciasRecibidas: number
+  /** Enviado a cuentas o productos de otros titulares (no cuenta como inversión de este titular). */
+  enviadoOtros: number
+  /** Recibido de cuentas o productos de otros titulares. */
+  recibidoOtros: number
   /** Enviado − recibido: lo que sigue "fuera" de la cuenta, invertido. */
   netoInvertido: number
   numMovimientos: number
@@ -288,9 +293,25 @@ export function computePositions(ws: Workspace, today: string): Map<string, Posi
 
 // ── Cuentas ─────────────────────────────────────────────────────────────────
 
+/** Dueño de una cuenta o producto (si los datos lo indican). */
+function ownerLookup(ws: Workspace) {
+  const owners = new Map<string, string | undefined>()
+  for (const c of ws.cuentas) owners.set(`cuenta:${c.id}`, c.titularId)
+  for (const p of ws.productos) owners.set(`producto:${p.id}`, p.titularId)
+  return (ref: Movimiento['origen']) => owners.get(`${ref.kind}:${ref.id}`)
+}
+
+/** ¿El movimiento va de un titular a otro? */
+export function isBetweenTitulares(m: Movimiento, owner: (ref: Movimiento['origen']) => string | undefined): boolean {
+  const o = owner(m.origen)
+  const d = owner(m.destino)
+  return !!o && !!d && o !== d
+}
+
 export function computeAccountStats(ws: Workspace): Map<string, AccountStats> {
   const map = new Map<string, AccountStats>()
   const perProduct = new Map<string, Map<string, { enviado: number; recibido: number }>>()
+  const owner = ownerLookup(ws)
   for (const c of ws.cuentas) {
     map.set(c.id, {
       cuentaId: c.id,
@@ -298,6 +319,8 @@ export function computeAccountStats(ws: Workspace): Map<string, AccountStats> {
       recibido: 0,
       transferenciasEnviadas: 0,
       transferenciasRecibidas: 0,
+      enviadoOtros: 0,
+      recibidoOtros: 0,
       netoInvertido: 0,
       numMovimientos: 0,
       primeraFecha: null,
@@ -317,15 +340,19 @@ export function computeAccountStats(ws: Workspace): Map<string, AccountStats> {
   }
 
   for (const m of ws.movimientos) {
+    const cross = isBetweenTitulares(m, owner)
     if (m.origen.kind === 'cuenta') {
       const s = touch(m.origen.id, m.fecha)
       if (s) {
         if (m.destino.kind === 'producto') {
-          s.enviado += m.importe
+          if (cross) s.enviadoOtros += m.importe
+          else s.enviado += m.importe
           const pp = perProduct.get(m.origen.id)!
           const e = pp.get(m.destino.id) ?? { enviado: 0, recibido: 0 }
           e.enviado += m.importe
           pp.set(m.destino.id, e)
+        } else if (cross) {
+          s.enviadoOtros += m.importe
         } else {
           s.transferenciasEnviadas += m.importe
         }
@@ -335,11 +362,14 @@ export function computeAccountStats(ws: Workspace): Map<string, AccountStats> {
       const s = m.origen.kind === 'cuenta' && m.origen.id === m.destino.id ? map.get(m.destino.id) : touch(m.destino.id, m.fecha)
       if (s) {
         if (m.origen.kind === 'producto') {
-          s.recibido += m.importe
+          if (cross) s.recibidoOtros += m.importe
+          else s.recibido += m.importe
           const pp = perProduct.get(m.destino.id)!
           const e = pp.get(m.origen.id) ?? { enviado: 0, recibido: 0 }
           e.recibido += m.importe
           pp.set(m.origen.id, e)
+        } else if (cross) {
+          s.recibidoOtros += m.importe
         } else {
           s.transferenciasRecibidas += m.importe
         }
@@ -369,11 +399,13 @@ export function computeTotals(ws: Workspace, positions: Map<string, Position>): 
     ganancia += pos.ganancia
     if (pos.estado === 'activo') productosActivos++
   }
+  // Lo aportado y lo reembolsado salen de los productos: el dinero que llega a un producto
+  // cuenta para su dueño, venga de la cuenta que venga (también de otro titular).
   let aportado = 0
   let reembolsado = 0
-  for (const m of ws.movimientos) {
-    if (m.tipo === 'inversion') aportado += m.importe
-    else if (m.tipo === 'reembolso') reembolsado += m.importe
+  for (const pos of positions.values()) {
+    aportado += pos.aportado
+    reembolsado += pos.reembolsado
   }
   return {
     patrimonio,
@@ -430,11 +462,12 @@ export function summarizeByType(ws: Workspace, positions: Map<string, Position>)
 
 // ── Evolución en el tiempo ──────────────────────────────────────────────────
 
-export function buildTimeline(ws: Workspace, today: string, maxPoints = 48): TimelinePoint[] {
-  if (ws.movimientos.length === 0) return []
+/** Fechas del gráfico de evolución: inicio, fin de cada mes y hoy. */
+export function timelineDates(movimientos: Movimiento[], today: string, maxPoints = 48): string[] {
+  if (movimientos.length === 0) return []
   let first: string | null = null
   let last: string | null = null
-  for (const m of ws.movimientos) {
+  for (const m of movimientos) {
     first = minDate(first, m.fecha)
     last = maxDate(last, m.fecha)
   }
@@ -455,16 +488,38 @@ export function buildTimeline(ws: Workspace, today: string, maxPoints = 48): Tim
   })
   if (dates[dates.length - 1] !== end) dates.push(end)
 
-  const unique = [...new Set(dates)].sort()
-  return unique.map((fecha) => {
-    let capital = 0
-    let patrimonio = 0
-    for (const p of ws.productos) {
-      const pos = evaluateProduct(p, ws.movimientos, { asOf: fecha, mode: 'historico' })
-      capital += pos.capital
-      patrimonio += pos.saldo
+  return [...new Set(dates)].sort()
+}
+
+/** Capital y patrimonio de un conjunto de productos en una fecha del histórico. */
+function valueAt(ws: Workspace, fecha: string): { capital: number; patrimonio: number } {
+  let capital = 0
+  let patrimonio = 0
+  for (const p of ws.productos) {
+    const pos = evaluateProduct(p, ws.movimientos, { asOf: fecha, mode: 'historico' })
+    capital += pos.capital
+    patrimonio += pos.saldo
+  }
+  return { capital, patrimonio }
+}
+
+export function buildTimeline(ws: Workspace, today: string, maxPoints = 48): TimelinePoint[] {
+  return timelineDates(ws.movimientos, today, maxPoints).map((fecha) => ({ fecha, ...valueAt(ws, fecha) }))
+}
+
+/** Un punto del gráfico con varios titulares: `${id}:p` (patrimonio) y `${id}:c` (capital) de cada uno. */
+export type MultiTimelinePoint = { fecha: string } & Record<string, number | string>
+
+/** Evolución de varios titulares en las mismas fechas, cada uno por separado (no se suman). */
+export function buildTimelineMulti(series: { id: string; ws: Workspace }[], all: Movimiento[], today: string): MultiTimelinePoint[] {
+  return timelineDates(all, today).map((fecha) => {
+    const point: MultiTimelinePoint = { fecha }
+    for (const s of series) {
+      const v = valueAt(s.ws, fecha)
+      point[`${s.id}:p`] = v.patrimonio
+      point[`${s.id}:c`] = v.capital
     }
-    return { fecha, capital, patrimonio }
+    return point
   })
 }
 

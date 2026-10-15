@@ -3,14 +3,14 @@ import { Trash2 } from 'lucide-react'
 import { Sheet } from '../ui/Sheet'
 import { Field, TextInput } from '../ui/Field'
 import { Button } from '../ui/Button'
-import { useData } from '../../store/data'
+import { useData, useTitulares } from '../../store/data'
 import { confirmDialog, toast, useUI } from '../../store/ui'
 import { initials } from '../../lib/format'
 import { isDefaultTitularName, titularColor } from '../../lib/titulares'
 
 export function TitularForm({ modalId, titularId }: { modalId: string; titularId?: string }) {
   const close = useUI((s) => s.close)
-  const titulares = useData((s) => s.titulares)
+  const titulares = useTitulares()
   const addTitular = useData((s) => s.addTitular)
   const updateTitular = useData((s) => s.updateTitular)
   const removeTitular = useData((s) => s.removeTitular)
@@ -38,7 +38,8 @@ export function TitularForm({ modalId, titularId }: { modalId: string; titularId
     if (!existing) return
     const ok = await confirmDialog({
       title: `¿Eliminar a «${existing.nombre}»?`,
-      message: 'Se borrarán sus cuentas, productos y movimientos. Esta acción no se puede deshacer.',
+      message:
+        'Se borrarán sus cuentas y productos, sus movimientos (también los que iban o venían de otros titulares) y sus transferencias mensuales. Esta acción no se puede deshacer.',
       confirmLabel: 'Eliminar',
       danger: true,
     })
@@ -52,7 +53,7 @@ export function TitularForm({ modalId, titularId }: { modalId: string; titularId
   return (
     <Sheet
       title={existing ? 'Datos del titular' : 'Nuevo titular'}
-      subtitle={existing ? 'Nombre y código, como en la cabecera del Excel' : 'Tendrá sus propias cuentas, productos y movimientos, por separado'}
+      subtitle={existing ? 'Nombre y código, como en la cabecera del Excel' : 'Se verá junto a los demás titulares, con sus propias cuentas y productos'}
       size="sm"
       onClose={() => close(modalId)}
       footer={

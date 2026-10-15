@@ -3,19 +3,18 @@
 
 import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
-import type { Cuenta, EntityRef, Movimiento, PersistedData, Producto, Titular, Valoracion, Workspace } from '../types'
-import { buildDemoWorkspace } from '../lib/demo'
+import type { Cuenta, Dataset, EntityRef, Movimiento, PersistedData, Producto, Programada, Titular, Valoracion } from '../types'
+import { buildDemoDataset } from '../lib/demo'
 import { todayISO } from '../lib/dates'
 import { round2 } from '../lib/format'
 import { nowStamp, uid } from '../lib/id'
 import { inferMovementType } from '../lib/meta'
-import { defaultTitularName } from '../lib/titulares'
+import { aplicarProgramadas, sincronizarProgramada } from '../lib/programadas'
+import { defaultTitularName, emptyDataset } from '../lib/titulares'
 import { DATA_VERSION, sanitizeData } from './sanitize'
 
 export { DATA_VERSION, sanitizeData }
 export const STORAGE_KEY = 'mis-inversiones'
-
-export const EMPTY_WORKSPACE: Workspace = Object.freeze({ cuentas: [], productos: [], movimientos: [] }) as Workspace
 
 export type CuentaInput = Omit<Cuenta, 'id' | 'createdAt'>
 export type ProductoInput = Omit<Producto, 'id' | 'createdAt' | 'valoraciones'>
@@ -27,6 +26,7 @@ export interface MovimientoInput {
   importe: number
   concepto: string
 }
+export type ProgramadaInput = Pick<Programada, 'origen' | 'destino' | 'importe' | 'inicio' | 'fin' | 'concepto'>
 
 interface Actions {
   setHideAmounts: (v: boolean) => void
@@ -34,7 +34,8 @@ interface Actions {
   addTitular: (data: { codigo: string; nombre: string }) => string
   updateTitular: (id: string, data: Partial<Pick<Titular, 'codigo' | 'nombre'>>) => void
   removeTitular: (id: string) => void
-  switchTitular: (id: string) => void
+  /** Lo pone el primero de la lista (el principal). */
+  makePrincipal: (id: string) => void
 
   addCuenta: (data: CuentaInput) => string
   updateCuenta: (id: string, data: Partial<CuentaInput>) => void
@@ -50,42 +51,61 @@ interface Actions {
   updateMovimiento: (id: string, data: MovimientoInput) => void
   removeMovimiento: (id: string) => void
 
+  addProgramada: (data: ProgramadaInput) => string
+  updateProgramada: (id: string, data: ProgramadaInput) => void
+  /** Elimina la transferencia mensual y los movimientos que ya había apuntado. */
+  removeProgramada: (id: string) => void
+  /** Apunta los movimientos de las transferencias mensuales que tocan hasta hoy. */
+  aplicarProgramadas: () => void
+
   loadDemo: () => void
-  clearWorkspace: () => void
+  setVerEjemplo: (v: boolean) => void
+  removeDemo: () => void
+  /** Borra cuentas, productos, movimientos y transferencias (se quedan los titulares). */
+  clearData: () => void
   resetAll: () => void
   importData: (data: PersistedData) => void
 }
 
 export type DataState = PersistedData & Actions
 
-/** Datos de partida: dos titulares, cada uno con sus cuentas y movimientos por separado. */
-function initialData(): PersistedData {
-  const a = uid()
-  const b = uid()
+/** Datos de partida: dos titulares, «Titular 1» (el principal) y «Titular 2». */
+function initialDataset(): Dataset {
   const stamp = nowStamp()
+  return emptyDataset([
+    { id: uid(), codigo: '', nombre: defaultTitularName(1), createdAt: stamp },
+    { id: uid(), codigo: '', nombre: defaultTitularName(2), createdAt: stamp },
+  ])
+}
+
+function initialData(): PersistedData {
+  return { version: DATA_VERSION, datos: initialDataset(), ejemplo: null, verEjemplo: false, hideAmounts: false }
+}
+
+const usesAny = (ref: EntityRef, cuentas: Set<string>, productos: Set<string>) =>
+  ref.kind === 'cuenta' ? cuentas.has(ref.id) : productos.has(ref.id)
+
+/** Quita cuentas y productos, con los movimientos y transferencias mensuales que los usan. */
+function removeEntities(ds: Dataset, cuentas: Set<string>, productos: Set<string>): Dataset {
+  const fuera = (r: EntityRef) => usesAny(r, cuentas, productos)
   return {
-    version: DATA_VERSION,
-    titulares: [
-      { id: a, codigo: '', nombre: defaultTitularName(1), createdAt: stamp },
-      { id: b, codigo: '', nombre: defaultTitularName(2), createdAt: stamp },
-    ],
-    activeTitularId: a,
-    workspaces: { [a]: { cuentas: [], productos: [], movimientos: [] }, [b]: { cuentas: [], productos: [], movimientos: [] } },
-    hideAmounts: false,
+    ...ds,
+    cuentas: ds.cuentas.filter((c) => !cuentas.has(c.id)),
+    productos: ds.productos.filter((p) => !productos.has(p.id)),
+    movimientos: ds.movimientos.filter((m) => !fuera(m.origen) && !fuera(m.destino)),
+    programadas: ds.programadas.filter((p) => !fuera(p.origen) && !fuera(p.destino)),
   }
 }
 
-const refUses = (ref: EntityRef, kind: EntityRef['kind'], id: string) => ref.kind === kind && ref.id === id
+/** Los datos que se están viendo: el ejemplo o los tuyos. */
+export const currentDataset = (s: PersistedData): Dataset => (s.verEjemplo && s.ejemplo ? s.ejemplo : s.datos)
 
 export const useData = create<DataState>()(
   persist(
     (set, get) => {
-      /** Modifica el espacio de trabajo del titular activo. */
-      const updateWs = (fn: (ws: Workspace) => Workspace) =>
-        set((s) => {
-          const current = s.workspaces[s.activeTitularId] ?? { cuentas: [], productos: [], movimientos: [] }
-          return { workspaces: { ...s.workspaces, [s.activeTitularId]: fn(current) } }
-        })
+      /** Modifica los datos que se están viendo. */
+      const updateDs = (fn: (ds: Dataset) => Dataset) =>
+        set((s) => (s.verEjemplo && s.ejemplo ? { ejemplo: fn(s.ejemplo) } : { datos: fn(s.datos) }))
 
       return {
         ...initialData(),
@@ -95,24 +115,19 @@ export const useData = create<DataState>()(
         // ── Titulares ───────────────────────────────────────────────────────
         addTitular: ({ codigo, nombre }) => {
           const id = uid()
-          set((s) => ({
+          updateDs((ds) => ({
+            ...ds,
             titulares: [
-              ...s.titulares,
-              {
-                id,
-                codigo: codigo.trim(),
-                nombre: nombre.trim() || defaultTitularName(s.titulares.filter((t) => !t.demo).length + 1),
-                createdAt: nowStamp(),
-              },
+              ...ds.titulares,
+              { id, codigo: codigo.trim(), nombre: nombre.trim() || defaultTitularName(ds.titulares.length + 1), createdAt: nowStamp() },
             ],
-            workspaces: { ...s.workspaces, [id]: { cuentas: [], productos: [], movimientos: [] } },
-            activeTitularId: id,
           }))
           return id
         },
         updateTitular: (id, data) =>
-          set((s) => ({
-            titulares: s.titulares.map((t) =>
+          updateDs((ds) => ({
+            ...ds,
+            titulares: ds.titulares.map((t) =>
               t.id === id
                 ? {
                     ...t,
@@ -123,84 +138,61 @@ export const useData = create<DataState>()(
             ),
           })),
         removeTitular: (id) =>
-          set((s) => {
-            const titulares = s.titulares.filter((t) => t.id !== id)
-            const workspaces = { ...s.workspaces }
-            delete workspaces[id]
-            if (titulares.length === 0) return initialData()
-            return {
-              titulares,
-              workspaces,
-              activeTitularId: s.activeTitularId === id ? titulares[0].id : s.activeTitularId,
-            }
+          updateDs((ds) => {
+            if (ds.titulares.length <= 1 || !ds.titulares.some((t) => t.id === id)) return ds
+            const cuentas = new Set(ds.cuentas.filter((c) => c.titularId === id).map((c) => c.id))
+            const productos = new Set(ds.productos.filter((p) => p.titularId === id).map((p) => p.id))
+            return { ...removeEntities(ds, cuentas, productos), titulares: ds.titulares.filter((t) => t.id !== id) }
           }),
-        switchTitular: (id) => {
-          if (get().titulares.some((t) => t.id === id)) set({ activeTitularId: id })
-        },
+        makePrincipal: (id) =>
+          updateDs((ds) => {
+            const t = ds.titulares.find((x) => x.id === id)
+            return t ? { ...ds, titulares: [t, ...ds.titulares.filter((x) => x.id !== id)] } : ds
+          }),
 
         // ── Cuentas ─────────────────────────────────────────────────────────
         addCuenta: (data) => {
           const id = uid()
-          updateWs((ws) => ({ ...ws, cuentas: [...ws.cuentas, { ...data, nombre: data.nombre.trim(), id, createdAt: nowStamp() }] }))
+          updateDs((ds) => ({ ...ds, cuentas: [...ds.cuentas, { ...data, nombre: data.nombre.trim(), id, createdAt: nowStamp() }] }))
           return id
         },
-        updateCuenta: (id, data) =>
-          updateWs((ws) => ({ ...ws, cuentas: ws.cuentas.map((c) => (c.id === id ? { ...c, ...data } : c)) })),
-        removeCuenta: (id) =>
-          updateWs((ws) => ({
-            ...ws,
-            cuentas: ws.cuentas.filter((c) => c.id !== id),
-            movimientos: ws.movimientos.filter((m) => !refUses(m.origen, 'cuenta', id) && !refUses(m.destino, 'cuenta', id)),
-          })),
+        updateCuenta: (id, data) => updateDs((ds) => ({ ...ds, cuentas: ds.cuentas.map((c) => (c.id === id ? { ...c, ...data } : c)) })),
+        removeCuenta: (id) => updateDs((ds) => removeEntities(ds, new Set([id]), new Set())),
 
         // ── Productos ───────────────────────────────────────────────────────
         addProducto: (data) => {
           const id = uid()
-          updateWs((ws) => ({
-            ...ws,
-            productos: [...ws.productos, { ...data, nombre: data.nombre.trim(), id, valoraciones: [], createdAt: nowStamp() }],
+          updateDs((ds) => ({
+            ...ds,
+            productos: [...ds.productos, { ...data, nombre: data.nombre.trim(), id, valoraciones: [], createdAt: nowStamp() }],
           }))
           return id
         },
-        updateProducto: (id, data) =>
-          updateWs((ws) => ({ ...ws, productos: ws.productos.map((p) => (p.id === id ? { ...p, ...data } : p)) })),
-        removeProducto: (id) =>
-          updateWs((ws) => ({
-            ...ws,
-            productos: ws.productos.filter((p) => p.id !== id),
-            movimientos: ws.movimientos.filter((m) => !refUses(m.origen, 'producto', id) && !refUses(m.destino, 'producto', id)),
-          })),
+        updateProducto: (id, data) => updateDs((ds) => ({ ...ds, productos: ds.productos.map((p) => (p.id === id ? { ...p, ...data } : p)) })),
+        removeProducto: (id) => updateDs((ds) => removeEntities(ds, new Set(), new Set([id]))),
         addValoracion: (productoId, data) =>
-          updateWs((ws) => ({
-            ...ws,
-            productos: ws.productos.map((p) =>
+          updateDs((ds) => ({
+            ...ds,
+            productos: ds.productos.map((p) =>
               p.id === productoId
-                ? {
-                    ...p,
-                    valoraciones: [
-                      ...p.valoraciones,
-                      { ...data, valor: round2(data.valor), id: uid(), createdAt: nowStamp() },
-                    ],
-                  }
+                ? { ...p, valoraciones: [...p.valoraciones, { ...data, valor: round2(data.valor), id: uid(), createdAt: nowStamp() }] }
                 : p,
             ),
           })),
         removeValoracion: (productoId, valoracionId) =>
-          updateWs((ws) => ({
-            ...ws,
-            productos: ws.productos.map((p) =>
-              p.id === productoId ? { ...p, valoraciones: p.valoraciones.filter((v) => v.id !== valoracionId) } : p,
-            ),
+          updateDs((ds) => ({
+            ...ds,
+            productos: ds.productos.map((p) => (p.id === productoId ? { ...p, valoraciones: p.valoraciones.filter((v) => v.id !== valoracionId) } : p)),
           })),
 
         // ── Movimientos ─────────────────────────────────────────────────────
         addMovimiento: (data) => {
           const id = uid()
           const stamp = nowStamp()
-          updateWs((ws) => ({
-            ...ws,
+          updateDs((ds) => ({
+            ...ds,
             movimientos: [
-              ...ws.movimientos,
+              ...ds.movimientos,
               {
                 id,
                 tipo: inferMovementType(data.origen.kind, data.destino.kind),
@@ -217,9 +209,9 @@ export const useData = create<DataState>()(
           return id
         },
         updateMovimiento: (id, data) =>
-          updateWs((ws) => ({
-            ...ws,
-            movimientos: ws.movimientos.map(
+          updateDs((ds) => ({
+            ...ds,
+            movimientos: ds.movimientos.map(
               (m): Movimiento =>
                 m.id === id
                   ? {
@@ -230,36 +222,76 @@ export const useData = create<DataState>()(
                       destino: { ...data.destino },
                       importe: round2(data.importe),
                       concepto: data.concepto.trim(),
+                      // Si era de una transferencia mensual, se queda con los cambios hechos a mano.
+                      ...(m.programadaId ? { editado: true } : {}),
                       updatedAt: nowStamp(),
                     }
                   : m,
             ),
           })),
-        removeMovimiento: (id) => updateWs((ws) => ({ ...ws, movimientos: ws.movimientos.filter((m) => m.id !== id) })),
+        removeMovimiento: (id) =>
+          updateDs((ds) => {
+            const m = ds.movimientos.find((x) => x.id === id)
+            if (!m) return ds
+            return {
+              ...ds,
+              movimientos: ds.movimientos.filter((x) => x.id !== id),
+              // Si era de una transferencia mensual, ese mes no se vuelve a apuntar.
+              programadas:
+                m.programadaId && m.programadaMes
+                  ? ds.programadas.map((p) =>
+                      p.id === m.programadaId && !p.excluidos.includes(m.programadaMes!) ? { ...p, excluidos: [...p.excluidos, m.programadaMes!] } : p,
+                    )
+                  : ds.programadas,
+            }
+          }),
+
+        // ── Transferencias mensuales ───────────────────────────────────────
+        addProgramada: (data) => {
+          const id = uid()
+          const stamp = nowStamp()
+          updateDs((ds) =>
+            aplicarProgramadas(
+              {
+                ...ds,
+                programadas: [
+                  ...ds.programadas,
+                  { ...data, id, importe: round2(data.importe), concepto: data.concepto.trim(), excluidos: [], createdAt: stamp, updatedAt: stamp },
+                ],
+              },
+              todayISO(),
+            ),
+          )
+          return id
+        },
+        updateProgramada: (id, data) =>
+          updateDs((ds) => {
+            const old = ds.programadas.find((p) => p.id === id)
+            if (!old) return ds
+            const p: Programada = { ...old, ...data, importe: round2(data.importe), concepto: data.concepto.trim(), updatedAt: nowStamp() }
+            return sincronizarProgramada({ ...ds, programadas: ds.programadas.map((x) => (x.id === id ? p : x)) }, p, todayISO())
+          }),
+        removeProgramada: (id) =>
+          updateDs((ds) => ({
+            ...ds,
+            programadas: ds.programadas.filter((p) => p.id !== id),
+            movimientos: ds.movimientos.filter((m) => m.programadaId !== id),
+          })),
+        aplicarProgramadas: () => {
+          const today = todayISO()
+          const s = get()
+          const datos = aplicarProgramadas(s.datos, today)
+          const ejemplo = s.ejemplo ? aplicarProgramadas(s.ejemplo, today) : null
+          if (datos !== s.datos || ejemplo !== s.ejemplo) set({ datos, ejemplo })
+        },
 
         // ── Datos ───────────────────────────────────────────────────────────
-        loadDemo: () => {
-          const existing = get().titulares.find((t) => t.demo)
-          const id = existing?.id ?? uid()
-          const ws = buildDemoWorkspace(todayISO())
-          set((s) => ({
-            titulares: existing
-              ? s.titulares
-              : [...s.titulares, { id, codigo: 'DEMO', nombre: 'Ejemplo (datos ficticios)', demo: true, createdAt: nowStamp() }],
-            workspaces: { ...s.workspaces, [id]: ws },
-            activeTitularId: id,
-          }))
-        },
-        clearWorkspace: () => updateWs(() => ({ cuentas: [], productos: [], movimientos: [] })),
+        loadDemo: () => set({ ejemplo: buildDemoDataset(todayISO()), verEjemplo: true }),
+        setVerEjemplo: (v) => set((s) => ({ verEjemplo: v && !!s.ejemplo })),
+        removeDemo: () => set({ ejemplo: null, verEjemplo: false }),
+        clearData: () => updateDs((ds) => emptyDataset(ds.titulares)),
         resetAll: () => set({ ...initialData() }),
-        importData: (data) =>
-          set({
-            version: DATA_VERSION,
-            titulares: data.titulares,
-            activeTitularId: data.activeTitularId,
-            workspaces: data.workspaces,
-            hideAmounts: data.hideAmounts,
-          }),
+        importData: (data) => set({ version: DATA_VERSION, datos: data.datos, verEjemplo: false, hideAmounts: data.hideAmounts }),
       }
     },
     {
@@ -267,13 +299,13 @@ export const useData = create<DataState>()(
       version: DATA_VERSION,
       storage: createJSONStorage(() => localStorage),
       // Datos de una versión anterior: se pasan tal cual y `sanitizeData` (en `merge`) los
-      // actualiza según su campo `version`. Sin esta función, zustand los descartaría.
+      // convierte al formato actual. Sin esta función, zustand los descartaría.
       migrate: (persisted) => persisted as PersistedData,
       partialize: (s): PersistedData => ({
         version: s.version,
-        titulares: s.titulares,
-        activeTitularId: s.activeTitularId,
-        workspaces: s.workspaces,
+        datos: s.datos,
+        ejemplo: s.ejemplo,
+        verEjemplo: s.verEjemplo,
         hideAmounts: s.hideAmounts,
       }),
       merge: (persisted, current) => {
@@ -284,26 +316,20 @@ export const useData = create<DataState>()(
   ),
 )
 
-/** Espacio de trabajo (cuentas, productos y movimientos) del titular activo. */
-export function useWorkspace(): Workspace {
-  return useData((s) => s.workspaces[s.activeTitularId] ?? EMPTY_WORKSPACE)
+// Al abrir la app se apuntan las transferencias mensuales que hayan tocado desde la última vez.
+useData.getState().aplicarProgramadas()
+
+/** Los datos que se están viendo (todos los titulares). */
+export function useDataset(): Dataset {
+  return useData(currentDataset)
 }
 
-export function useActiveTitular(): Titular {
-  return useData((s) => s.titulares.find((t) => t.id === s.activeTitularId) ?? s.titulares[0])
+export function useTitulares(): Titular[] {
+  return useData((s) => currentDataset(s).titulares)
 }
 
-/** Copia de seguridad completa (todos los titulares). */
+/** Copia de seguridad completa (tus datos, sin el ejemplo). */
 export function exportBackup(): string {
   const s = useData.getState()
-  const data: PersistedData & { app: string; exportedAt: string } = {
-    app: 'mis-inversiones',
-    exportedAt: nowStamp(),
-    version: DATA_VERSION,
-    titulares: s.titulares,
-    activeTitularId: s.activeTitularId,
-    workspaces: s.workspaces,
-    hideAmounts: s.hideAmounts,
-  }
-  return JSON.stringify(data, null, 2)
+  return JSON.stringify({ app: 'mis-inversiones', exportedAt: nowStamp(), version: DATA_VERSION, datos: s.datos, hideAmounts: s.hideAmounts }, null, 2)
 }

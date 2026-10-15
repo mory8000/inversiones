@@ -5,7 +5,7 @@ import { buildFlowGraph } from './flow'
 import { parseNumber, fmtEUR, fmtPct } from './format'
 import { inferMovementType } from './meta'
 import { buildDemoWorkspace } from './demo'
-import { movementsToCSV, buildLookup, filterMovements, EMPTY_FILTERS } from './movements'
+import { movementsToCSV, buildLookup, filterMovements, movementKind, totalsOf, EMPTY_FILTERS } from './movements'
 import { addMonths, daysBetween } from './dates'
 
 let n = 0
@@ -18,6 +18,7 @@ const mov = (fecha: string, origen: EntityRef, destino: EntityRef, importe: numb
 }
 const prod = (id: string, tipo: Producto['tipo'], extra: Partial<Producto> = {}): Producto => ({
   id,
+  titularId: 'T',
   tipo,
   nombre: id,
   entidad: '',
@@ -115,8 +116,8 @@ describe('depósitos', () => {
 describe('cuentas, totales y resumen', () => {
   const ws: Workspace = {
     cuentas: [
-      { id: 'A', nombre: 'A', entidad: '', iban: '', color: '#000', notas: '', createdAt: '' },
-      { id: 'B', nombre: 'B', entidad: '', iban: '', color: '#000', notas: '', createdAt: '' },
+      { id: 'A', titularId: 'T', nombre: 'A', entidad: '', iban: '', color: '#000', notas: '', createdAt: '' },
+      { id: 'B', titularId: 'T', nombre: 'B', entidad: '', iban: '', color: '#000', notas: '', createdAt: '' },
     ],
     productos: [prod('F1', 'fondo', { valoraciones: [val('2025-12-01', 'porcentaje', 10)] }), prod('F2', 'fondo'), prod('K', 'cartera')],
     movimientos: [
@@ -213,12 +214,77 @@ describe('datos de ejemplo', () => {
     const ws = buildDemoWorkspace('2026-10-15')
     const lookup = buildLookup(ws)
     const csv = movementsToCSV(ws.movimientos, lookup)
-    expect(csv.startsWith('\ufeffFecha;Tipo;De;')).toBe(true)
+    expect(csv.startsWith('\ufeffFecha;Tipo;Titular (de);De;')).toBe(true)
     expect(csv).toContain(';200,00;')
     const filtered = filterMovements(ws.movimientos, lookup, { ...EMPTY_FILTERS, tipo: 'traspaso' })
     expect(filtered).toHaveLength(1)
     const searched = filterMovements(ws.movimientos, lookup, { ...EMPTY_FILTERS, q: 'vacaciones' })
     expect(searched).toHaveLength(1)
+  })
+})
+
+describe('entre titulares', () => {
+  // T1 envía 1.000 € de su cuenta al fondo de T2: cuenta como inversión de T2, no de T1.
+  const ws: Workspace = {
+    cuentas: [
+      { id: 'C1', titularId: 'T1', nombre: 'Cuenta de T1', entidad: '', iban: '', color: '#000', notas: '', createdAt: '' },
+      { id: 'C2', titularId: 'T2', nombre: 'Cuenta de T2', entidad: '', iban: '', color: '#000', notas: '', createdAt: '' },
+    ],
+    productos: [prod('F1', 'fondo', { titularId: 'T1' }), prod('F2', 'fondo', { titularId: 'T2' })],
+    movimientos: [
+      mov('2025-01-01', C('C1'), P('F1'), 500),
+      mov('2025-02-01', C('C1'), P('F2'), 1000),
+      mov('2025-03-01', C('C1'), C('C2'), 200),
+    ],
+  }
+  const positions = computePositions(ws, '2026-01-01')
+  const of = (titular: string) => {
+    const own = new Map([...positions].filter(([id]) => ws.productos.find((p) => p.id === id)?.titularId === titular))
+    return computeTotals(ws, own)
+  }
+
+  it('lo invertido cuenta para el dueño del producto que lo recibe', () => {
+    expect(of('T1').aportado).toBe(500)
+    expect(of('T1').patrimonio).toBe(500)
+    expect(of('T2').aportado).toBe(1000)
+    expect(of('T2').patrimonio).toBe(1000)
+  })
+
+  it('la cuenta separa lo enviado a otro titular de lo invertido en lo suyo', () => {
+    const c1 = computeAccountStats(ws).get('C1')!
+    expect(c1.enviado).toBe(500)
+    expect(c1.enviadoOtros).toBe(1200)
+    expect(c1.transferenciasEnviadas).toBe(0)
+    expect(c1.netoInvertido).toBe(500)
+    const c2 = computeAccountStats(ws).get('C2')!
+    expect(c2.recibidoOtros).toBe(200)
+  })
+
+  it('se ven como «entre titulares», salvo para quien lo recibe en un producto', () => {
+    const lookup = buildLookup(ws)
+    const [own, toFund, toAccount] = ws.movimientos
+    expect(movementKind(lookup, own)).toBe('inversion')
+    expect(movementKind(lookup, toFund)).toBe('entreTitulares')
+    expect(movementKind(lookup, toFund, 'T1')).toBe('entreTitulares')
+    expect(movementKind(lookup, toFund, 'T2')).toBe('inversion')
+    expect(movementKind(lookup, toAccount, 'T2')).toBe('entreTitulares')
+    const t1 = filterMovements(ws.movimientos, lookup, { ...EMPTY_FILTERS, titular: 'T1', tipo: 'inversion' })
+    expect(t1.map((m) => m.importe)).toEqual([500])
+    const t2 = filterMovements(ws.movimientos, lookup, { ...EMPTY_FILTERS, titular: 'T2' })
+    expect(t2).toHaveLength(2)
+    expect(totalsOf(t2, lookup, 'T2')).toMatchObject({ inversion: 1000, entreTitulares: 200 })
+    expect(totalsOf(ws.movimientos, lookup)).toMatchObject({ inversion: 500, entreTitulares: 1200 })
+  })
+
+  it('el diagrama separa lo que sigue invertido de cada titular', () => {
+    const titulares = [
+      { id: 'T1', codigo: '', nombre: 'Ana', createdAt: '' },
+      { id: 'T2', codigo: '', nombre: 'Luis', createdAt: '' },
+    ]
+    const g = buildFlowGraph({ ...ws, titulares }, positions, { from: null, to: null })
+    const saldo = g.nodes.filter((n) => n.kind === 'saldo').map((n) => `${n.label}=${n.value}`)
+    expect(saldo.sort()).toEqual(['Sigue invertido · Ana=500', 'Sigue invertido · Luis=1000'])
+    expect(g.nodes.find((n) => n.id === 'L:c:C1')?.label).toBe('Cuenta de T1 · Ana')
   })
 })
 

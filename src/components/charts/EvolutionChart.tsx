@@ -1,6 +1,6 @@
 import { useId } from 'react'
 import { Area, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import type { TimelinePoint } from '../../lib/finance'
+import type { MultiTimelinePoint, TimelinePoint } from '../../lib/finance'
 import { fmtDate, fmtEUR, fmtEURCompact, fmtMonthShort, HIDDEN } from '../../lib/format'
 import { useHidden } from '../ui/Amount'
 
@@ -80,6 +80,84 @@ export function EvolutionChart({ points, height = 240 }: { points: TimelinePoint
           />
           <Area type="monotone" dataKey="patrimonio" stroke="#2F5BEA" strokeWidth={2.25} fill={`url(#pat-${gid})`} isAnimationActive={false} />
           <Line type="monotone" dataKey="capital" stroke="#94A3B8" strokeWidth={1.75} strokeDasharray="5 4" dot={false} isAnimationActive={false} />
+        </ComposedChart>
+      </ResponsiveContainer>
+    </div>
+  )
+}
+
+export interface ChartSeries {
+  id: string
+  name: string
+  color: string
+}
+
+/** Patrimonio (línea continua) y capital invertido (discontinua) de cada titular, por separado. */
+export function MultiEvolutionChart({ points, series, height = 240 }: { points: MultiTimelinePoint[]; series: ChartSeries[]; height?: number }) {
+  const hidden = useHidden()
+  if (points.length < 2) {
+    return (
+      <div className="flex items-center justify-center rounded-xl bg-slate-50 px-4 text-center text-sm text-slate-500" style={{ height }}>
+        La evolución aparecerá cuando haya movimientos en distintas fechas.
+      </div>
+    )
+  }
+  const values = points.flatMap((p) => series.flatMap((s) => [Number(p[`${s.id}:p`]) || 0, Number(p[`${s.id}:c`]) || 0]))
+  const max = Math.max(...values, 0)
+  const domain: [number, number] = [0, Math.ceil((max * 1.08 || 1) / 100) * 100]
+  const money = (v: number) => (hidden ? `${HIDDEN} €` : fmtEUR(v))
+
+  return (
+    <div style={{ height }}>
+      <ResponsiveContainer width="100%" height="100%">
+        <ComposedChart data={points} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+          <CartesianGrid vertical={false} stroke="#EEF1F6" />
+          <XAxis dataKey="fecha" tickFormatter={fmtMonthShort} tick={{ fontSize: 11, fill: '#94A3B8' }} axisLine={false} tickLine={false} minTickGap={28} tickMargin={8} />
+          <YAxis
+            domain={domain}
+            tickFormatter={(v: number) => (hidden ? '•••' : fmtEURCompact(v))}
+            tick={{ fontSize: 11, fill: '#94A3B8' }}
+            axisLine={false}
+            tickLine={false}
+            width={hidden ? 36 : 64}
+          />
+          <Tooltip
+            cursor={{ stroke: '#CBD5E1', strokeDasharray: '3 3' }}
+            content={({ active, payload }) => {
+              if (!active || !payload?.length) return null
+              const p = payload[0].payload as MultiTimelinePoint
+              return (
+                <div className="min-w-52 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm shadow-lg">
+                  <div className="mb-1.5 text-xs font-medium text-slate-500">{fmtDate(p.fecha)}</div>
+                  {series.map((s) => {
+                    const pat = Number(p[`${s.id}:p`]) || 0
+                    const cap = Number(p[`${s.id}:c`]) || 0
+                    return (
+                      <div key={s.id} className="mt-1.5 first:mt-0">
+                        <div className="flex items-center justify-between gap-4">
+                          <span className="flex min-w-0 items-center gap-1.5 font-medium text-slate-700">
+                            <span className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: s.color }} />
+                            <span className="truncate">{s.name}</span>
+                          </span>
+                          <span className="font-semibold text-slate-900 tabular-nums">{money(pat)}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-4 pl-4 text-xs text-slate-500">
+                          <span>Capital invertido</span>
+                          <span className="tabular-nums">{money(cap)}</span>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )
+            }}
+          />
+          {series.map((s) => (
+            <Line key={`${s.id}:c`} type="monotone" dataKey={`${s.id}:c`} stroke={s.color} strokeOpacity={0.45} strokeWidth={1.5} strokeDasharray="5 4" dot={false} isAnimationActive={false} />
+          ))}
+          {series.map((s) => (
+            <Line key={`${s.id}:p`} type="monotone" dataKey={`${s.id}:p`} stroke={s.color} strokeWidth={2.5} dot={false} isAnimationActive={false} />
+          ))}
         </ComposedChart>
       </ResponsiveContainer>
     </div>

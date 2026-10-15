@@ -1,4 +1,4 @@
-import { useWorkspace } from '../../store/data'
+import { useDataset } from '../../store/data'
 
 export const ENTITY_LIST_ID = 'entidades-sugeridas'
 
@@ -27,7 +27,7 @@ const COMMON = [
 
 /** Lista de sugerencias para el campo "Entidad". */
 export function EntitySuggestions() {
-  const ws = useWorkspace()
+  const ws = useDataset()
   const used = [...ws.cuentas.map((c) => c.entidad), ...ws.productos.map((p) => p.entidad)].filter(Boolean)
   const all = [...new Set([...used, ...COMMON])]
   return (

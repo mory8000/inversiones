@@ -116,13 +116,23 @@ export function AccountCard({ c, s }: { c: Cuenta; s: AccountStats }) {
           </dd>
         </div>
       </dl>
-      <div className="mt-3 flex items-center justify-between gap-2 border-t border-slate-100 pt-3 text-xs text-slate-500">
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-slate-100 pt-3 text-xs text-slate-500">
         <span>
           {s.numMovimientos} movimiento{s.numMovimientos === 1 ? '' : 's'}
         </span>
         {hasTransfers && (
           <span className="truncate">
             Transferencias: <Amount value={s.transferenciasRecibidas - s.transferenciasEnviadas} sign decimals={0} className="font-semibold text-slate-700" />
+          </span>
+        )}
+        {s.enviadoOtros > 0 && (
+          <span className="truncate text-fuchsia-700">
+            A otros titulares: <Amount value={s.enviadoOtros} decimals={0} className="font-semibold" />
+          </span>
+        )}
+        {s.recibidoOtros > 0 && (
+          <span className="truncate text-fuchsia-700">
+            De otros titulares: <Amount value={s.recibidoOtros} decimals={0} className="font-semibold" />
           </span>
         )}
       </div>

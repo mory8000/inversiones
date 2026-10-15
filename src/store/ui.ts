@@ -9,12 +9,18 @@ export interface MovementPreset {
   origen?: EntityRef
   destino?: EntityRef
   tipo?: 'inversion' | 'reembolso' | 'traspaso' | 'transferencia'
+  /** Repetir cada mes (transferencia mensual). */
+  repetir?: boolean
+  /** Titular para las cuentas o productos que se creen desde el formulario (origen / destino). */
+  origenTitularId?: string
+  destinoTitularId?: string
+  concepto?: string
 }
 
 export type ModalSpec =
-  | { id: string; type: 'movement'; movementId?: string; preset?: MovementPreset }
-  | { id: string; type: 'product'; productId?: string; presetTipo?: ProductType; onCreated?: (id: string) => void }
-  | { id: string; type: 'account'; accountId?: string; onCreated?: (id: string) => void }
+  | { id: string; type: 'movement'; movementId?: string; programadaId?: string; preset?: MovementPreset }
+  | { id: string; type: 'product'; productId?: string; presetTipo?: ProductType; presetTitularId?: string; onCreated?: (id: string) => void }
+  | { id: string; type: 'account'; accountId?: string; presetTitularId?: string; onCreated?: (id: string) => void }
   | { id: string; type: 'valuation'; productId: string }
   | { id: string; type: 'titular'; titularId?: string }
   | {
@@ -71,9 +77,12 @@ export function confirmDialog(opts: { title: string; message: ReactNode; confirm
 
 export const openMovement = (preset?: MovementPreset) => useUI.getState().open({ type: 'movement', preset })
 export const editMovement = (movementId: string) => useUI.getState().open({ type: 'movement', movementId })
-export const openProduct = (opts: { productId?: string; presetTipo?: ProductType; onCreated?: (id: string) => void } = {}) =>
+/** Nueva transferencia mensual (o editar una, con `programadaId`). */
+export const openProgramada = (opts: { programadaId?: string; preset?: MovementPreset } = {}) =>
+  useUI.getState().open({ type: 'movement', programadaId: opts.programadaId, preset: { ...opts.preset, repetir: true } })
+export const openProduct = (opts: { productId?: string; presetTipo?: ProductType; presetTitularId?: string; onCreated?: (id: string) => void } = {}) =>
   useUI.getState().open({ type: 'product', ...opts })
-export const openAccount = (opts: { accountId?: string; onCreated?: (id: string) => void } = {}) =>
+export const openAccount = (opts: { accountId?: string; presetTitularId?: string; onCreated?: (id: string) => void } = {}) =>
   useUI.getState().open({ type: 'account', ...opts })
 export const openValuation = (productId: string) => useUI.getState().open({ type: 'valuation', productId })
 export const openTitular = (titularId?: string) => useUI.getState().open({ type: 'titular', titularId })
