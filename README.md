@@ -4,6 +4,9 @@ App para llevar el control de tus **depósitos, fondos, carteras y planes de pen
 Registra cada movimiento de dinero y la app te enseña, de forma clara, **de dónde viene y a dónde va cada euro**,
 cuánto has invertido, cuánto ha vuelto a tus cuentas y cuánto has ganado.
 
+**Abrir la app → https://mory8000.github.io/inversiones/** (funciona en el ordenador y en el móvil, y se puede
+instalar como una app).
+
 Sustituye al antiguo `Inversiones.xlsx` y mantiene sus mismos conceptos: titular (código y nombre), cuenta
 **De → A**, y por cada tipo de producto *Invertido · Reembolso · Traspaso · % · € · Saldo*.
 
@@ -101,8 +104,8 @@ tests, construye la app y la publica. No hace falta abrir ningún PR.
 Configuración (una sola vez, en *Settings* del repositorio):
 
 1. **Pages → Build and deployment → Source: GitHub Actions**.
-2. **Environments → github-pages → Deployment branches and tags**: añadir la rama
-   `arena/fc3a1d34-inversiones` (por defecto GitHub solo deja publicar desde `main`).
+2. **Environments → github-pages → Deployment branches and tags: No restriction** (por defecto GitHub solo
+   deja publicar desde `main`; también valdría añadir una regla para la rama `arena/fc3a1d34-inversiones`).
 
 > Con el plan gratuito de GitHub, Pages solo funciona si el repositorio es público. La web es pública
 > (cualquiera con el enlace puede abrirla), pero cada persona solo ve los datos guardados en su propio navegador.
