@@ -39,7 +39,13 @@ export type ModalSpec =
     }
   | { id: string; type: 'account'; accountId?: string; presetTitularId?: string; presetExterna?: boolean; onCreated?: (id: string) => void }
   | { id: string; type: 'investment'; productId: string }
+  /** Ventana de una cuenta con saldo (p. ej. «MyInvestor»): su saldo y lo que se puede hacer. */
+  | { id: string; type: 'cuenta'; cuentaId: string }
   | { id: string; type: 'valuation'; productId: string }
+  /** Cambiar el interés (TAE) de un depósito. */
+  | { id: string; type: 'interes'; productId: string }
+  /** Qué suma en el TOTAL de Inicio. */
+  | { id: string; type: 'total' }
   | { id: string; type: 'titular'; titularId?: string }
   | {
       id: string
@@ -54,10 +60,17 @@ export type ModalSpec =
 type DistributiveOmit<T, K extends keyof T> = T extends unknown ? Omit<T, K> : never
 export type ModalInput = DistributiveOmit<ModalSpec, 'id'>
 
+/** Botón dentro de un aviso (p. ej. «Deshacer»). */
+export interface ToastAction {
+  label: string
+  onClick: () => void
+}
+
 export interface Toast {
   id: string
   message: string
   kind: 'success' | 'info' | 'error'
+  action?: ToastAction
 }
 
 interface UIState {
@@ -65,7 +78,7 @@ interface UIState {
   toasts: Toast[]
   open: (spec: ModalInput) => string
   close: (id: string) => void
-  toast: (message: string, kind?: Toast['kind']) => void
+  toast: (message: string, kind?: Toast['kind'], action?: ToastAction) => void
   dismissToast: (id: string) => void
 }
 
@@ -78,10 +91,11 @@ export const useUI = create<UIState>()((set, get) => ({
     return id
   },
   close: (id) => set((s) => ({ modals: s.modals.filter((m) => m.id !== id) })),
-  toast: (message, kind = 'success') => {
+  toast: (message, kind = 'success', action) => {
     const id = uid()
-    set((s) => ({ toasts: [...s.toasts.slice(-2), { id, message, kind }] }))
-    window.setTimeout(() => get().dismissToast(id), 3200)
+    set((s) => ({ toasts: [...s.toasts.slice(-2), { id, message, kind, ...(action ? { action } : {}) }] }))
+    // Con botón (p. ej. «Deshacer») se deja más tiempo para pulsarlo.
+    window.setTimeout(() => get().dismissToast(id), action ? 7000 : 3200)
   },
   dismissToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
 }))
@@ -106,5 +120,9 @@ export const openAccount = (opts: { accountId?: string; presetTitularId?: string
 /** Ventanilla de una inversión: su resumen y los movimientos que se pueden hacer. */
 export const openInvestment = (productId: string) => useUI.getState().open({ type: 'investment', productId })
 export const openValuation = (productId: string) => useUI.getState().open({ type: 'valuation', productId })
+/** Ventana de una cuenta con saldo (p. ej. «MyInvestor»). */
+export const openCuenta = (cuentaId: string) => useUI.getState().open({ type: 'cuenta', cuentaId })
+export const openInteres = (productId: string) => useUI.getState().open({ type: 'interes', productId })
+export const openTotal = () => useUI.getState().open({ type: 'total' })
 export const openTitular = (titularId?: string) => useUI.getState().open({ type: 'titular', titularId })
-export const toast = (message: string, kind?: Toast['kind']) => useUI.getState().toast(message, kind)
+export const toast = (message: string, kind?: Toast['kind'], action?: ToastAction) => useUI.getState().toast(message, kind, action)

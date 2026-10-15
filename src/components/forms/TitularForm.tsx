@@ -4,9 +4,11 @@ import { Sheet } from '../ui/Sheet'
 import { Field, TextInput } from '../ui/Field'
 import { Button } from '../ui/Button'
 import { useData, useTitulares } from '../../store/data'
-import { confirmDialog, toast, useUI } from '../../store/ui'
+import { confirmDialog, useUI } from '../../store/ui'
+import { accion } from '../../store/deshacer'
 import { initials } from '../../lib/format'
-import { isDefaultTitularName, titularColor } from '../../lib/titulares'
+import { esFondoAhorro, isDefaultTitularName, titularColor } from '../../lib/titulares'
+import { Switch } from '../ui/Switch'
 
 export function TitularForm({ modalId, titularId }: { modalId: string; titularId?: string }) {
   const close = useUI((s) => s.close)
@@ -19,18 +21,16 @@ export function TitularForm({ modalId, titularId }: { modalId: string; titularId
   const [nombre, setNombre] = useState(existing?.nombre ?? '')
   const [codigo, setCodigo] = useState(existing?.codigo ?? '')
   const [submitted, setSubmitted] = useState(false)
+  /** Si lo suyo suma en el TOTAL de Inicio. Si pasa a llamarse «Fondo ahorro», se propone dejarlo fuera. */
+  const [fueraElegido, setFueraElegido] = useState<boolean | null>(null)
+  const fuera = fueraElegido ?? (existing ? !!existing.fueraDelTotal || (esFondoAhorro(nombre) && !esFondoAhorro(existing.nombre)) : esFondoAhorro(nombre))
   const error = !nombre.trim() ? 'Escribe un nombre' : null
 
   const save = () => {
     setSubmitted(true)
     if (error) return
-    if (existing) {
-      updateTitular(existing.id, { nombre, codigo })
-      toast('Datos guardados')
-    } else {
-      addTitular({ nombre, codigo })
-      toast('Titular creado')
-    }
+    if (existing) accion(`Cambiar datos de «${nombre.trim()}»`, () => updateTitular(existing.id, { nombre, codigo, fueraDelTotal: fuera }), 'Datos guardados')
+    else accion(`Nuevo titular «${nombre.trim()}»`, () => addTitular({ nombre, codigo, fueraDelTotal: fuera }), 'Titular creado')
     close(modalId)
   }
 
@@ -39,13 +39,12 @@ export function TitularForm({ modalId, titularId }: { modalId: string; titularId
     const ok = await confirmDialog({
       title: `¿Eliminar a «${existing.nombre}»?`,
       message:
-        'Se borrarán sus cuentas y productos, sus movimientos (también los que iban o venían de otros titulares) y sus transferencias mensuales. Esta acción no se puede deshacer.',
+        'Se borrarán sus cuentas y productos, sus movimientos (también los que iban o venían de otros titulares) y sus transferencias mensuales. Si te equivocas, pulsa «Deshacer».',
       confirmLabel: 'Eliminar',
       danger: true,
     })
     if (ok) {
-      removeTitular(existing.id)
-      toast('Titular eliminado')
+      accion(`Eliminar titular «${existing.nombre}»`, () => removeTitular(existing.id), 'Titular eliminado')
       close(modalId)
     }
   }
@@ -107,6 +106,15 @@ export function TitularForm({ modalId, titularId }: { modalId: string; titularId
         <Field label="Código" htmlFor="tit-codigo" optional hint="Por ejemplo, tu número de cliente">
           <TextInput id="tit-codigo" value={codigo} maxLength={30} placeholder="Ej.: 000123" onChange={(e) => setCodigo(e.target.value)} />
         </Field>
+        <div className="flex items-start justify-between gap-3 rounded-2xl border border-slate-200 p-3.5">
+          <label htmlFor="tit-total" className="min-w-0">
+            <span className="block text-sm font-semibold text-slate-900">Lo suyo suma en el TOTAL de Inicio</span>
+            <span className="mt-0.5 block text-[13px] text-slate-500">
+              {fuera ? 'No suma en el TOTAL (p. ej. «Fondo ahorro»). Su tarjeta sigue con todas sus cifras.' : 'Sus inversiones y cuentas suman en el TOTAL.'}
+            </span>
+          </label>
+          <Switch id="tit-total" checked={!fuera} onChange={(v) => setFueraElegido(!v)} label="Lo suyo suma en el TOTAL de Inicio" />
+        </div>
         <button type="submit" className="hidden" />
       </form>
     </Sheet>

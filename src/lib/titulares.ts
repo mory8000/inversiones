@@ -52,6 +52,12 @@ const simple = (s: string) =>
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z0-9]/g, '')
 
+/**
+ * ¿Es un «Fondo ahorro»? (Titular, producto o cuenta que no suma en el TOTAL de Inicio.)
+ * Admite «Fondo ahorro», «Fondo de ahorro», «FONDO-AHORRO», «Fondo ahorro de Pablo»…
+ */
+export const esFondoAhorro = (nombre: string): boolean => /fondo(de)?ahorro/.test(simple(nombre))
+
 /** Cuentas con saldo de un titular (la primera es su cuenta principal). */
 export const cuentasConSaldo = (cuentas: Cuenta[], titularId: string): Cuenta[] => cuentas.filter((c) => c.titularId === titularId && !c.externa)
 

@@ -78,7 +78,15 @@ export function buildDemoWorkspace(today: string, titularId = 'demo-t-1'): Works
   const dep6 = producto({ tipo: 'deposito', nombre: 'Depósito 6 meses', tae: 3, vencimiento: dep6Fin })
   // Al vencer el de 6 meses, se renueva el mismo día en uno de 12 meses.
   const dep12Inicio = dep6Fin
-  const dep12 = producto({ tipo: 'deposito', nombre: 'Depósito 12 meses', tae: 2.5, vencimiento: addMonths(dep12Inicio, 12) })
+  // Los intereses pueden variar: a los 5 meses el banco le baja el interés del 2,5 % al 2,25 %.
+  const cambioTae = addMonths(dep12Inicio, 5)
+  const dep12 = producto({
+    tipo: 'deposito',
+    nombre: 'Depósito 12 meses',
+    tae: 2.5,
+    vencimiento: addMonths(dep12Inicio, 12),
+    cambiosTae: cambioTae <= today ? [{ id: demoId('tae'), desde: cambioTae, tae: 2.25, createdAt: `${cambioTae}T09:00:00.000Z` }] : [],
+  })
   const plan = producto({ tipo: 'plan', nombre: 'Plan de pensiones indexado global' })
 
   const movimientos: Movimiento[] = []
@@ -144,21 +152,22 @@ export function buildDemoWorkspace(today: string, titularId = 'demo-t-1'): Works
 }
 
 /**
- * Ejemplo completo con dos titulares: Marta (la principal) y Pablo. Marta envía cada mes
- * 150 € de su cuenta MyInvestor al fondo de Pablo, y una vez 2.000 € a un depósito de Pablo:
- * ese dinero cuenta para Pablo, no para Marta.
+ * Ejemplo completo con dos titulares: Marta (la principal) y «Fondo ahorro». Marta envía cada
+ * mes 150 € de su cuenta MyInvestor al fondo del «Fondo ahorro», y una vez 2.000 € a su
+ * depósito: ese dinero cuenta para el «Fondo ahorro», no para Marta. El «Fondo ahorro» no
+ * suma en el TOTAL de Inicio.
  */
 export function buildDemoDataset(today: string): Dataset {
   const at = atFor(today)
   const stamp = `${at(25, 1)}T09:00:00.000Z`
   const marta: Titular = { id: 'demo-t-1', codigo: '0001', nombre: 'Marta', createdAt: stamp }
-  const pablo: Titular = { id: 'demo-t-2', codigo: '0002', nombre: 'Pablo', createdAt: stamp }
+  const ahorro: Titular = { id: 'demo-t-2', codigo: '0002', nombre: 'Fondo ahorro', fueraDelTotal: true, createdAt: stamp }
   const ws = buildDemoWorkspace(today, marta.id)
   const myinvestor = ws.cuentas[0]
 
-  const productoDePablo = (p: Partial<Producto> & Pick<Producto, 'tipo' | 'nombre'>): Producto => ({
+  const productoDelAhorro = (p: Partial<Producto> & Pick<Producto, 'tipo' | 'nombre'>): Producto => ({
     id: demoId('p'),
-    titularId: pablo.id,
+    titularId: ahorro.id,
     entidad: 'MyInvestor',
     isin: '',
     notas: '',
@@ -168,42 +177,42 @@ export function buildDemoDataset(today: string): Dataset {
     createdAt: stamp,
     ...p,
   })
-  const fondoPablo = productoDePablo({
+  const fondoAhorro = productoDelAhorro({
     tipo: 'fondo',
-    nombre: 'Fondo indexado de Pablo',
+    nombre: 'Fondo indexado',
     isin: 'IE00B03HCZ61',
     notas: 'Recibe una transferencia mensual de Marta',
     valoraciones: valoraciones(today, [[11, 1.4], [8, 3.9], [5, 6.2], [2, 7.5], [0, 9.3]]),
   })
   const depInicio = at(9, 15)
-  const depositoPablo = productoDePablo({ tipo: 'deposito', nombre: 'Depósito de Pablo', tae: 2.75, vencimiento: addMonths(depInicio, 12) })
+  const depositoAhorro = productoDelAhorro({ tipo: 'deposito', nombre: 'Depósito ahorro', tae: 2.75, vencimiento: addMonths(depInicio, 12) })
 
   const regalo: Movimiento = {
     id: demoId('m'),
     tipo: 'inversion',
     fecha: depInicio,
     origen: { kind: 'cuenta', id: myinvestor.id },
-    destino: { kind: 'producto', id: depositoPablo.id },
+    destino: { kind: 'producto', id: depositoAhorro.id },
     importe: 2000,
-    concepto: 'Regalo de cumpleaños para Pablo',
+    concepto: 'Aportación extra al Fondo ahorro',
     createdAt: `${depInicio}T11:00:00.000Z`,
     updatedAt: `${depInicio}T11:00:00.000Z`,
   }
 
   const ds: Dataset = {
-    titulares: [marta, pablo],
+    titulares: [marta, ahorro],
     cuentas: ws.cuentas,
-    productos: [...ws.productos, fondoPablo, depositoPablo],
+    productos: [...ws.productos, fondoAhorro, depositoAhorro],
     movimientos: [...ws.movimientos, regalo],
     programadas: [
       {
         id: 'demo-prog-1',
         origen: { kind: 'cuenta', id: myinvestor.id },
-        destino: { kind: 'producto', id: fondoPablo.id },
+        destino: { kind: 'producto', id: fondoAhorro.id },
         importe: 150,
         inicio: at(14, 5),
         fin: null,
-        concepto: 'Transferencia mensual a Pablo',
+        concepto: 'Transferencia mensual a Fondo ahorro',
         excluidos: [],
         createdAt: stamp,
         updatedAt: stamp,

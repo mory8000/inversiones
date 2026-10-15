@@ -5,6 +5,7 @@ import type { Position } from '../lib/finance'
 import type { FinanceData } from '../store/useFinance'
 import { useData } from '../store/data'
 import { openInvestment, openProduct, toast } from '../store/ui'
+import { deshacer, useUltimoCambio } from '../store/deshacer'
 import { PRODUCT_META } from '../lib/meta'
 import { fmtPct } from '../lib/format'
 import { moveInList } from '../lib/titulares'
@@ -150,6 +151,7 @@ const SortableGrid = lazy(() => import('./InvestmentTilesSortable'))
 export function InvestmentTiles({ fin }: { fin: FinanceData }) {
   const { ds, positions, lookup } = fin
   const reorder = useData((s) => s.reorderProductos)
+  const ultimoCambio = useUltimoCambio()
   const [sorting, setSorting] = useState(false)
   const multi = ds.titulares.length > 1
   const visibles = ds.productos.filter((p) => positions.get(p.id) && positions.get(p.id)!.estado !== 'cerrado')
@@ -181,7 +183,9 @@ export function InvestmentTiles({ fin }: { fin: FinanceData }) {
               icon={Check}
               onClick={() => {
                 setSorting(false)
-                toast('Orden guardado')
+                // El orden se guarda al moverlas; con «Deshacer» vuelve al de antes de ordenar.
+                if (ultimoCambio === 'Orden de las inversiones') toast('Orden guardado', 'success', { label: 'Deshacer', onClick: deshacer })
+                else toast('Orden guardado')
               }}
             >
               Listo

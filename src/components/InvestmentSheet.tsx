@@ -1,42 +1,21 @@
 import { useEffect, type ReactNode } from 'react'
-import { ArrowDownLeft, ArrowUpRight, CalendarSync, ChevronRight, Pencil, RefreshCw, Repeat, type LucideIcon } from 'lucide-react'
-import type { Movimiento, Producto } from '../types'
+import { ArrowDownLeft, ArrowUpRight, CalendarSync, ChevronRight, Pencil, Repeat } from 'lucide-react'
 import { useFinance } from '../store/useFinance'
-import { editMovement, openProduct, openValuation, useUI } from '../store/ui'
-import { aportarA, retirarDe, traspasarDe } from '../store/acciones'
-import { involvesProduct } from '../lib/finance'
-import { entityName, movementKind, ownerOf, sameRef, sortMovementsDesc, type Lookup } from '../lib/movements'
+import { openProduct, useUI } from '../store/ui'
+import { aportarA, programarAportacionMensual, retirarDe, traspasarDe } from '../store/acciones'
+import { involvesProduct, sumaEnTotal } from '../lib/finance'
+import { sortMovementsDesc } from '../lib/movements'
 import { MOVEMENT_META, PRODUCT_META } from '../lib/meta'
-import { diaDe } from '../lib/programadas'
-import { fmtDate } from '../lib/format'
 import { navigate, paths } from '../lib/router'
-import { cn } from '../lib/cn'
 import { Sheet } from './ui/Sheet'
 import { Button } from './ui/Button'
 import { Amount, GainBadge } from './ui/Amount'
-import { MovementAvatar, ProductAvatar } from './ui/icons'
+import { PercentBox } from './PercentBox'
+import { ActionTile } from './ui/ActionTile'
+import { ProductAvatar } from './ui/icons'
 import { DepositProgress, StatusBadge } from './ProductCard'
-import { movementLabel } from './movements/MovementRow'
-
-/** Botón grande de una acción («Aportar», «Retirar»…). */
-function Action({ icon: Icon, label, text, color, soft, onClick, disabled }: { icon: LucideIcon; label: string; text: string; color: string; soft: string; onClick: () => void; disabled?: boolean }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className="flex min-h-[4.5rem] min-w-0 flex-col items-start gap-2 rounded-2xl border border-slate-200 bg-white p-3 text-left transition-colors hover:border-slate-300 hover:bg-slate-50 active:bg-slate-100 disabled:opacity-45 sm:flex-row sm:gap-3"
-    >
-      <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-xl" style={{ backgroundColor: soft, color }}>
-        <Icon className="size-[18px]" strokeWidth={2.4} />
-      </span>
-      <span className="min-w-0">
-        <span className="block text-[15px] font-semibold text-slate-900">{label}</span>
-        <span className="block text-xs leading-snug text-slate-500">{text}</span>
-      </span>
-    </button>
-  )
-}
+import { MovementMini } from './movements/MovementMini'
+import { ProgramadaItem } from './ProgramadaItem'
 
 function Stat({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -47,35 +26,14 @@ function Stat({ label, children }: { label: string; children: ReactNode }) {
   )
 }
 
-/** Movimiento en pequeño (para la ventanilla). */
-function MiniMovement({ m, p, lookup }: { m: Movimiento; p: Producto; lookup: Lookup }) {
-  const ref = { kind: 'producto' as const, id: p.id }
-  const incoming = sameRef(m.destino, ref)
-  const other = incoming ? m.origen : m.destino
-  const otherOwner = ownerOf(lookup, other)
-  const label = movementLabel(m, lookup, ref)
-  return (
-    <button type="button" onClick={() => editMovement(m.id)} className="flex w-full items-center gap-3 px-1 py-2.5 text-left hover:bg-slate-50">
-      <MovementAvatar tipo={movementKind(lookup, m, p.titularId)} size="sm" />
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-semibold text-slate-800">{label}</span>
-        <span className="block truncate text-xs text-slate-500">
-          {fmtDate(m.fecha)} · {incoming ? 'de' : 'a'} {entityName(lookup, other)}
-          {otherOwner && otherOwner.id !== p.titularId ? ` (${otherOwner.nombre})` : ''}
-        </span>
-      </span>
-      <Amount value={incoming ? m.importe : -m.importe} sign className={cn('text-sm font-semibold', incoming ? 'text-emerald-600' : 'text-slate-900')} />
-    </button>
-  )
-}
-
 /**
  * Ventanilla de una inversión: se abre al tocarla en Inicio. Enseña cómo va y deja hacer
  * cualquier movimiento (aportar, retirar, traspasar, actualizar su valor…).
  */
 export function InvestmentSheet({ modalId, productId }: { modalId: string; productId: string }) {
   const close = useUI((s) => s.close)
-  const { ds, ws, positions, lookup } = useFinance()
+  const fin = useFinance()
+  const { ds, ws, positions, lookup } = fin
   const p = ds.productos.find((x) => x.id === productId)
 
   // Si se elimina el producto (desde «Editar»), se cierra la ventanilla.
@@ -90,6 +48,7 @@ export function InvestmentSheet({ modalId, productId }: { modalId: string; produ
   const multi = ds.titulares.length > 1
   const closed = pos.estado === 'cerrado'
   const isDeposit = p.tipo === 'deposito'
+  const ref = { kind: 'producto' as const, id: p.id }
   const recent = sortMovementsDesc(ws.movimientos.filter((m) => involvesProduct(m, p.id))).slice(0, 4)
   const mensuales = ds.programadas.filter((x) => x.destino.kind === 'producto' && x.destino.id === p.id)
   const done = () => close(modalId)
@@ -135,25 +94,35 @@ export function InvestmentSheet({ modalId, productId }: { modalId: string; produ
               <Amount value={pos.capital} />
             </Stat>
           </dl>
-          {mensuales.map((x) => {
-            const de = ownerOf(lookup, x.origen)
-            return (
-              <p key={x.id} className="mt-3 flex items-start gap-2 text-[13px] text-fuchsia-900">
-                <CalendarSync className="mt-0.5 size-4 shrink-0 text-fuchsia-600" />
-                <span>
-                  Recibe <Amount value={x.importe} className="font-semibold" /> el día {diaDe(x)} de cada mes desde «{entityName(lookup, x.origen)}»
-                  {de && de.id !== p.titularId ? ` (de ${de.nombre})` : ''}.
-                </span>
-              </p>
-            )
-          })}
         </div>
+
+        {!sumaEnTotal(p, lookup.titulares) && (
+          <p className="-mt-2 rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-500">
+            No suma en el TOTAL de Inicio
+            {lookup.titulares.get(p.titularId)?.fueraDelTotal ? ` (como todo lo de «${titular?.nombre}»)` : ''}. Sigue contando para su titular.
+          </p>
+        )}
+
+        {/* El % que genera (rentabilidad o interés), para cambiarlo */}
+        {!closed && <PercentBox p={p} pos={pos} />}
+
+        {/* Transferencias mensuales que recibe */}
+        {mensuales.length > 0 && (
+          <section>
+            <h3 className="mb-2 text-sm font-semibold text-slate-900">{mensuales.length === 1 ? 'Transferencia mensual' : 'Transferencias mensuales'}</h3>
+            <ul className="space-y-2">
+              {mensuales.map((x) => (
+                <ProgramadaItem key={x.id} p={x} fin={fin} />
+              ))}
+            </ul>
+          </section>
+        )}
 
         {/* Movimientos que se pueden hacer */}
         <section>
           <h3 className="mb-2 text-sm font-semibold text-slate-900">¿Qué quieres hacer?</h3>
           <div className="grid grid-cols-2 gap-2">
-            <Action
+            <ActionTile
               icon={ArrowUpRight}
               label="Aportar"
               text="Meter más dinero"
@@ -161,7 +130,7 @@ export function InvestmentSheet({ modalId, productId }: { modalId: string; produ
               soft={MOVEMENT_META.inversion.soft}
               onClick={() => aportarA(ds, p)}
             />
-            <Action
+            <ActionTile
               icon={ArrowDownLeft}
               label="Retirar"
               text="Reembolso a una cuenta"
@@ -169,7 +138,7 @@ export function InvestmentSheet({ modalId, productId }: { modalId: string; produ
               soft={MOVEMENT_META.reembolso.soft}
               onClick={() => retirarDe(ds, p)}
             />
-            <Action
+            <ActionTile
               icon={Repeat}
               label="Traspasar"
               text="A otra inversión"
@@ -177,11 +146,14 @@ export function InvestmentSheet({ modalId, productId }: { modalId: string; produ
               soft={MOVEMENT_META.traspaso.soft}
               onClick={() => traspasarDe(p)}
             />
-            {isDeposit ? (
-              <Action icon={Pencil} label="TAE y vencimiento" text="Interés y fecha de fin" color="#B45309" soft="#FEF3C7" onClick={() => openProduct({ productId: p.id })} />
-            ) : (
-              <Action icon={RefreshCw} label="Actualizar valor" text="Cuánto vale hoy" color="#0F766E" soft="#CCFBF1" onClick={() => openValuation(p.id)} />
-            )}
+            <ActionTile
+              icon={CalendarSync}
+              label="Programar transferencia mensual"
+              text="Que se apunte sola cada mes"
+              color="#C026D3"
+              soft="#FAE8FF"
+              onClick={() => programarAportacionMensual(ds, p)}
+            />
           </div>
         </section>
 
@@ -196,11 +168,11 @@ export function InvestmentSheet({ modalId, productId }: { modalId: string; produ
           {recent.length === 0 ? (
             <p className="rounded-xl bg-slate-50 p-3 text-sm text-slate-500">Todavía no tiene movimientos. Pulsa «Aportar» para apuntar el primero.</p>
           ) : (
-            <div className="divide-y divide-slate-100">
+            <ul className="divide-y divide-slate-100">
               {recent.map((m) => (
-                <MiniMovement key={m.id} m={m} p={p} lookup={lookup} />
+                <MovementMini key={m.id} m={m} perspective={ref} lookup={lookup} ds={ds} />
               ))}
-            </div>
+            </ul>
           )}
           <Button
             variant="soft"

@@ -1,5 +1,5 @@
 import { useMemo, useState, type CSSProperties } from 'react'
-import { ChevronDown, Trash2 } from 'lucide-react'
+import { Ban, ChevronDown, Plus, Trash2 } from 'lucide-react'
 import type { ProductType } from '../../types'
 import { Sheet } from '../ui/Sheet'
 import { Field, NumberInput, SelectInput, TextArea, TextInput } from '../ui/Field'
@@ -8,9 +8,13 @@ import { PRODUCT_ICONS } from '../ui/icons'
 import { PRODUCT_META, PRODUCT_TYPES } from '../../lib/meta'
 import { useData } from '../../store/data'
 import { useFinance } from '../../store/useFinance'
-import { confirmDialog, openAccount, openInvestment, toast, useUI } from '../../store/ui'
-import { fmtEUR, fmtNumberInput, parseNumber } from '../../lib/format'
-import { cuentaPrincipal } from '../../lib/titulares'
+import { confirmDialog, openAccount, openInvestment, useUI } from '../../store/ui'
+import { accion } from '../../store/deshacer'
+import { anadirDinero } from '../../store/acciones'
+import { fmtDate, fmtEUR, fmtNumberInput, parseNumber } from '../../lib/format'
+import { cuentaPrincipal, esFondoAhorro } from '../../lib/titulares'
+import { saldoMinimoDesde } from '../../lib/saldo'
+import { Switch } from '../ui/Switch'
 import { addMonths, isValidISODate } from '../../lib/dates'
 import { navigate, paths } from '../../lib/router'
 import { cn } from '../../lib/cn'
@@ -53,6 +57,9 @@ export function ProductForm({
   const [vencimiento, setVencimiento] = useState(existing?.vencimiento ?? '')
   const [notas, setNotas] = useState(existing?.notas ?? '')
   const [showMore, setShowMore] = useState(!!(existing?.notas || existing?.isin))
+  /** Si suma en el TOTAL de Inicio. Al crearlo, lo que se llame «Fondo ahorro» empieza fuera. */
+  const [fueraElegido, setFueraElegido] = useState<boolean | null>(null)
+  const fuera = fueraElegido ?? (existing ? !!existing.fueraDelTotal || (esFondoAhorro(nombre) && !esFondoAhorro(existing.nombre)) : esFondoAhorro(nombre))
 
   // Primera aportación (solo al crear desde la lista de productos).
   const offerFirst = !existing && (!onCreated || !!abrirVentanilla)
@@ -80,6 +87,11 @@ export function ProductForm({
   const firstAmount = importe.trim() ? parseNumber(importe) : null
   const wantsFirst = offerFirst && importe.trim() !== ''
 
+  // La primera aportación desde una cuenta con saldo (MyInvestor) no puede ser mayor que lo que hay.
+  const cuentaElegidaObj = ws.cuentas.find((c) => c.id === cuenta)
+  const disponible = wantsFirst && cuentaElegidaObj && !cuentaElegidaObj.externa && isValidISODate(fecha) ? Math.max(0, saldoMinimoDesde(ws.movimientos, cuentaElegidaObj.id, fecha)) : null
+  const sinSaldo = disponible !== null && firstAmount !== null && firstAmount > disponible + 0.005
+
   const errors = {
     nombre: !nombre.trim() ? 'Ponle un nombre al producto' : null,
     tae: isDeposit && tae.trim() && (taeNum === null || taeNum < 0 || taeNum > 100) ? 'Escribe un interés válido (p. ej. 2,5)' : null,
@@ -87,6 +99,7 @@ export function ProductForm({
     importe: wantsFirst && (firstAmount === null || firstAmount <= 0) ? 'Importe no válido' : null,
     cuenta: wantsFirst && !cuenta ? 'Elige de qué cuenta sale el dinero' : null,
     fecha: wantsFirst && !isValidISODate(fecha) ? 'Fecha no válida' : null,
+    saldo: sinSaldo ? 'No hay suficiente dinero en la cuenta' : null,
   }
   const hasErrors = Object.values(errors).some(Boolean)
   const err = (k: keyof typeof errors) => (submitted ? errors[k] : null)
@@ -112,18 +125,24 @@ export function ProductForm({
       notas: notas.trim(),
       tae: isDeposit ? taeNum : null,
       vencimiento: isDeposit && vencimiento ? vencimiento : null,
+      fueraDelTotal: fuera,
     }
     if (existing) {
-      updateProducto(existing.id, data)
-      toast('Producto actualizado')
+      accion(`Cambiar inversión «${data.nombre}»`, () => updateProducto(existing.id, data), 'Inversión actualizada')
       close(modalId)
       return
     }
-    const id = addProducto(data)
-    if (wantsFirst && firstAmount && cuenta) {
-      addMovimiento({ fecha, origen: { kind: 'cuenta', id: cuenta }, destino: { kind: 'producto', id }, importe: firstAmount, concepto: 'Aportación inicial' })
-    }
-    toast(`${PRODUCT_META[tipo].label} creado`)
+    const id = accion(
+      `Nueva inversión «${data.nombre}»${wantsFirst && firstAmount && !hidden ? ` con ${fmtEUR(firstAmount)}` : ''}`,
+      () => {
+        const nuevo = addProducto(data)
+        if (wantsFirst && firstAmount && cuenta) {
+          addMovimiento({ fecha, origen: { kind: 'cuenta', id: cuenta }, destino: { kind: 'producto', id: nuevo }, importe: firstAmount, concepto: 'Aportación inicial' })
+        }
+        return nuevo
+      },
+      `${PRODUCT_META[tipo].label} creado`,
+    )
     close(modalId)
     if (onCreated) onCreated(id)
     else if (abrirVentanilla) openInvestment(id)
@@ -137,14 +156,13 @@ export function ProductForm({
       title: `¿Eliminar «${existing.nombre}»?`,
       message:
         n > 0
-          ? `También se eliminarán sus ${n} movimiento${n === 1 ? '' : 's'}. Esta acción no se puede deshacer.`
-          : 'Esta acción no se puede deshacer.',
+          ? `También se eliminarán sus ${n} movimiento${n === 1 ? '' : 's'}. Si te equivocas, pulsa «Deshacer».`
+          : 'Si te equivocas, pulsa «Deshacer».',
       confirmLabel: 'Eliminar',
       danger: true,
     })
     if (ok) {
-      removeProducto(existing.id)
-      toast('Producto eliminado')
+      accion(`Eliminar inversión «${existing.nombre}»`, () => removeProducto(existing.id), 'Inversión eliminada')
       close(modalId)
       navigate(paths.productos())
     }
@@ -233,7 +251,12 @@ export function ProductForm({
         {isDeposit && (
           <div className="space-y-4 rounded-2xl bg-amber-50/60 p-4">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <Field label="Interés (TAE)" htmlFor="prod-tae" error={err('tae')} hint="Interés anual del depósito">
+              <Field
+                label={existing?.cambiosTae?.length ? 'Interés al contratarlo (TAE)' : 'Interés (TAE)'}
+                htmlFor="prod-tae"
+                error={err('tae')}
+                hint={existing ? 'Si el interés cambia, usa «Cambiar interés» en su ventanilla (desde una fecha)' : 'Interés anual del depósito'}
+              >
                 <NumberInput id="prod-tae" suffix="%" placeholder="2,50" value={tae} invalid={!!err('tae')} onChange={(e) => setTae(e.target.value)} />
               </Field>
               <Field label="Fecha de vencimiento" htmlFor="prod-venc" error={err('vencimiento')} optional>
@@ -312,6 +335,25 @@ export function ProductForm({
                 <option value="__new__">＋ Crear una cuenta nueva…</option>
               </SelectInput>
             </Field>
+            {disponible !== null && !sinSaldo && !hidden && (
+              <p className="mt-2 text-[13px] text-slate-500">
+                Disponible en «{cuentaElegidaObj?.nombre}»: {fmtEUR(disponible)}
+                {fecha < today ? ` (el ${fmtDate(fecha)})` : ''}
+              </p>
+            )}
+            {sinSaldo && cuentaElegidaObj && (
+              <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800" role="alert" data-sin-saldo>
+                <p className="flex items-center gap-2 font-semibold">
+                  <Ban className="size-4 shrink-0" /> No hay suficiente dinero en «{cuentaElegidaObj.nombre}»
+                </p>
+                <p className="mt-1">
+                  Hay {hidden ? '•••••• €' : fmtEUR(disponible ?? 0)} disponibles: no se puede aportar más. Añade dinero primero o pon un importe menor.
+                </p>
+                <Button size="sm" icon={Plus} wrap className="mt-2.5" onClick={() => anadirDinero(ds, cuentaElegidaObj.id)}>
+                  Añadir dinero a «{cuentaElegidaObj.nombre}»
+                </Button>
+              </div>
+            )}
             {(() => {
               const c = ws.cuentas.find((x) => x.id === cuenta)
               const from = c && ds.titulares.find((t) => t.id === c.titularId)
@@ -324,6 +366,16 @@ export function ProductForm({
             })()}
           </div>
         )}
+
+        <div className="flex items-start justify-between gap-3 rounded-2xl border border-slate-200 p-3.5">
+          <label htmlFor="prod-total" className="min-w-0">
+            <span className="block text-sm font-semibold text-slate-900">Suma en el TOTAL de Inicio</span>
+            <span className="mt-0.5 block text-[13px] text-slate-500">
+              {fuera ? 'No suma en el TOTAL (p. ej. un «Fondo ahorro»). Sigue contando para su titular.' : 'Su saldo suma en el TOTAL de Inicio.'}
+            </span>
+          </label>
+          <Switch id="prod-total" checked={!fuera} onChange={(v) => setFueraElegido(!v)} label="Suma en el TOTAL de Inicio" />
+        </div>
 
         <div>
           <button

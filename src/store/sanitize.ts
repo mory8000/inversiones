@@ -3,12 +3,12 @@
 // Va en un módulo aparte a propósito: el store se hidrata de forma síncrona al
 // crearse, así que estas funciones tienen que estar inicializadas antes.
 
-import type { Cuenta, Dataset, EntityRef, Movimiento, PersistedData, Producto, Programada, Titular, Workspace } from '../types'
+import type { CambioTae, Cuenta, Dataset, EntityRef, Movimiento, PersistedData, Producto, Programada, Titular, Workspace } from '../types'
 import { isValidISODate, todayISO } from '../lib/dates'
 import { buildDemoDataset } from '../lib/demo'
 import { nowStamp, uid } from '../lib/id'
 import { inferMovementType } from '../lib/meta'
-import { conCuentaPrincipal, defaultTitularName } from '../lib/titulares'
+import { conCuentaPrincipal, defaultTitularName, esFondoAhorro } from '../lib/titulares'
 
 /**
  * Versión del formato de datos.
@@ -19,8 +19,11 @@ import { conCuentaPrincipal, defaultTitularName } from '../lib/titulares'
  * - 4: cuentas con saldo (como «MyInvestor», suman en el patrimonio) y cuentas externas
  *      (de donde viene el dinero). El titular principal tiene su cuenta «MyInvestor».
  *      Los productos se guardan en el orden que elige el usuario.
+ * - 5: TOTAL de Inicio: titulares, productos y cuentas pueden quedar fuera (`fueraDelTotal`;
+ *      «Fondo ahorro» queda fuera solo). Los depósitos pueden cambiar de interés
+ *      (`cambiosTae`).
  */
-export const DATA_VERSION = 4
+export const DATA_VERSION = 5
 
 /** Nombre del único titular que creaba la versión 1. */
 const V1_DEFAULT_NAME = 'Titular principal'
@@ -43,12 +46,22 @@ function sanitizeTitulares(raw: unknown): RawTitular[] {
       id: t.id as string,
       codigo: str(t.codigo),
       nombre: str(t.nombre, 'Titular').trim() || 'Titular',
+      ...fuera(t),
       createdAt: str(t.createdAt, nowStamp()),
       demo: t.demo === true,
     }))
 }
 
-const cleanTitular = ({ id, codigo, nombre, createdAt }: RawTitular | Titular): Titular => ({ id, codigo, nombre, createdAt })
+/** `fueraDelTotal` solo se guarda cuando es `true`. */
+const fuera = (x: Record<string, unknown> | { fueraDelTotal?: boolean }): { fueraDelTotal?: true } => (x.fueraDelTotal === true ? { fueraDelTotal: true } : {})
+
+const cleanTitular = ({ id, codigo, nombre, fueraDelTotal, createdAt }: RawTitular | Titular): Titular => ({
+  id,
+  codigo,
+  nombre,
+  ...fuera({ fueraDelTotal }),
+  createdAt,
+})
 
 function sanitizeCuenta(c: Record<string, unknown>, titularId: string): Cuenta {
   return {
@@ -61,6 +74,7 @@ function sanitizeCuenta(c: Record<string, unknown>, titularId: string): Cuenta {
     notas: str(c.notas),
     // Hasta la versión 3 todas las cuentas eran «de dónde sale el dinero»: externas.
     externa: c.externa !== false,
+    ...fuera(c),
     createdAt: str(c.createdAt, nowStamp()),
   }
 }
@@ -75,6 +89,7 @@ function sanitizeProducto(p: Record<string, unknown>, titularId: string): Produc
     isin: str(p.isin),
     notas: str(p.notas),
     tae: typeof p.tae === 'number' && Number.isFinite(p.tae) ? p.tae : null,
+    ...cambiosTae(p.cambiosTae),
     vencimiento: typeof p.vencimiento === 'string' && p.vencimiento ? p.vencimiento : null,
     valoraciones: arr(p.valoraciones).map((v) => ({
       id: str(v.id, uid()),
@@ -84,8 +99,17 @@ function sanitizeProducto(p: Record<string, unknown>, titularId: string): Produc
       porcentaje: num(v.porcentaje),
       createdAt: str(v.createdAt, nowStamp()),
     })),
+    ...fuera(p),
     createdAt: str(p.createdAt, nowStamp()),
   }
+}
+
+/** Cambios de interés de un depósito (solo se guardan si hay alguno). */
+function cambiosTae(raw: unknown): { cambiosTae?: CambioTae[] } {
+  const list = arr(raw)
+    .filter((c) => isValidISODate(str(c.desde)) && typeof c.tae === 'number' && Number.isFinite(c.tae))
+    .map((c) => ({ id: str(c.id, uid()), desde: str(c.desde), tae: c.tae as number, createdAt: str(c.createdAt, nowStamp()) }))
+  return list.length ? { cambiosTae: uniqueById(list) } : {}
 }
 
 function sanitizeMovimientos(raw: unknown): Movimiento[] {
@@ -234,6 +258,7 @@ export function sanitizeData(raw: unknown): PersistedData | null {
   if (!data) return null
   const version = typeof raw.version === 'number' ? raw.version : 0
   if (version < 4) data = upgradeV4(data)
+  if (version < 5) data = upgradeV5(data)
   return { version: DATA_VERSION, ...data, hideAmounts }
 }
 
@@ -248,6 +273,23 @@ function upgradeV4(data: Omit<PersistedData, 'version' | 'hideAmounts'>): Omit<P
     datos: conCuentaPrincipal(data.datos, uid, stamp),
     ejemplo: data.ejemplo ? buildDemoDataset(todayISO()) : null,
   }
+}
+
+/**
+ * Versión 5: lo que se llame «Fondo ahorro» (un titular, un producto o una cuenta) queda fuera
+ * del TOTAL de Inicio. Si es un titular, queda fuera entero (con todo lo suyo).
+ * El ejemplo se vuelve a crear (ahora tiene un «Fondo ahorro» y un depósito con cambio de interés).
+ */
+export function marcarFondoAhorro(ds: Dataset): Dataset {
+  const titulares = ds.titulares.map((t) => (esFondoAhorro(t.nombre) ? { ...t, fueraDelTotal: true } : t))
+  const fueraEntero = new Set(titulares.filter((t) => t.fueraDelTotal).map((t) => t.id))
+  const marca = <T extends { titularId: string; nombre: string; fueraDelTotal?: boolean }>(x: T): T =>
+    !fueraEntero.has(x.titularId) && esFondoAhorro(x.nombre) ? { ...x, fueraDelTotal: true } : x
+  return { ...ds, titulares, cuentas: ds.cuentas.map(marca), productos: ds.productos.map(marca) }
+}
+
+function upgradeV5(data: Omit<PersistedData, 'version' | 'hideAmounts'>): Omit<PersistedData, 'version' | 'hideAmounts'> {
+  return { ...data, datos: marcarFondoAhorro(data.datos), ejemplo: data.ejemplo ? buildDemoDataset(todayISO()) : null }
 }
 
 /** Resumen de un conjunto de datos (para confirmar antes de restaurar una copia). */

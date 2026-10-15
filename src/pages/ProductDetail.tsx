@@ -1,8 +1,8 @@
 import { useMemo } from 'react'
-import { ArrowDownLeft, ArrowLeft, ArrowUpRight, Pencil, RefreshCw, Repeat, SearchX } from 'lucide-react'
+import { ArrowDownLeft, ArrowLeft, ArrowUpRight, CalendarSync, Pencil, Repeat, SearchX } from 'lucide-react'
 import { useFinance } from '../store/useFinance'
-import { openProduct, openValuation } from '../store/ui'
-import { aportarA, retirarDe, traspasarDe } from '../store/acciones'
+import { openInteres, openProduct } from '../store/ui'
+import { aportarA, programarAportacionMensual, retirarDe, traspasarDe } from '../store/acciones'
 import { buildProductTimeline, involvesProduct, type Position } from '../lib/finance'
 import { counterparts, ownerId } from '../lib/movements'
 import { PRODUCT_META } from '../lib/meta'
@@ -19,6 +19,7 @@ import { BreakdownList, counterpartItems } from '../components/Breakdown'
 import { DepositProgress, StatusBadge } from '../components/ProductCard'
 import type { Producto } from '../types'
 import { TitularTag } from '../components/Titulares'
+import { PercentBox } from '../components/PercentBox'
 
 export function BackLink({ label, fallback }: { label: string; fallback: string }) {
   return (
@@ -46,10 +47,15 @@ function Line({ label, value, sign, strong, sub, tone }: { label: string; value:
 
 function methodText(p: Producto, pos: Position): string {
   switch (pos.metodo) {
-    case 'tae':
-      return pos.deposito?.apertura
-        ? `Interés del ${fmtPct((pos.deposito.tae ?? 0) / 100)} TAE desde el ${fmtDate(pos.deposito.apertura)} (${pos.deposito.diasTranscurridos} días).`
-        : 'Interés calculado con la TAE desde la primera aportación.'
+    case 'tae': {
+      const d = pos.deposito
+      if (!d?.apertura) return 'Interés calculado con la TAE desde la primera aportación.'
+      if (d.tramos.length > 1)
+        return `Interés calculado tramo a tramo desde el ${fmtDate(d.apertura)} (${d.diasTranscurridos} días): ${d.tramos
+          .map((t) => `${fmtPct(t.tae / 100)} ${t.desde ? `desde el ${fmtDate(t.desde)}` : 'al principio'}`)
+          .join(', ')}.`
+      return `Interés del ${fmtPct(d.tae / 100)} TAE desde el ${fmtDate(d.apertura)} (${d.diasTranscurridos} días).`
+    }
     case 'porcentaje':
       return `Rentabilidad del ${fmtPct((pos.valoracion?.porcentaje ?? 0) / 100, { sign: true })} indicada el ${fmtDate(pos.valoracion?.fecha)}, como en el Excel.`
     case 'valor':
@@ -57,7 +63,7 @@ function methodText(p: Producto, pos: Position): string {
     default:
       return p.tipo === 'deposito'
         ? 'Sin interés indicado.'
-        : 'Aún no has indicado cuánto vale hoy: el saldo es igual al capital. Pulsa «Actualizar valor».'
+        : 'Aún no has indicado cuánto gana o pierde: el saldo es igual al capital. Pulsa «Cambiar %».'
   }
 }
 
@@ -142,7 +148,9 @@ export function ProductDetail({ id }: { id: string }) {
             </p>
           )}
 
-          <div className="mt-5 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+          {!closed && <PercentBox p={p} pos={pos} className="mt-4" />}
+
+          <div className="mt-4 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
             <Button variant="soft" icon={ArrowUpRight} onClick={() => aportarA(ds, p)}>
               Aportar
             </Button>
@@ -152,15 +160,9 @@ export function ProductDetail({ id }: { id: string }) {
             <Button variant="soft" icon={Repeat} onClick={() => traspasarDe(p)}>
               Traspasar
             </Button>
-            {isDeposit ? (
-              <Button variant="soft" icon={Pencil} onClick={() => openProduct({ productId: p.id })}>
-                TAE y vencimiento
-              </Button>
-            ) : (
-              <Button variant="soft" icon={RefreshCw} onClick={() => openValuation(p.id)}>
-                Actualizar valor
-              </Button>
-            )}
+            <Button variant="soft" icon={CalendarSync} wrap onClick={() => programarAportacionMensual(ds, p)}>
+              Programar transferencia mensual
+            </Button>
           </div>
         </div>
       </Card>
@@ -236,8 +238,18 @@ export function ProductDetail({ id }: { id: string }) {
               <CardHeader title="Datos del depósito" />
               <dl className="grid grid-cols-2 gap-x-4 gap-y-3 px-4 pt-3 pb-5 text-sm sm:px-5">
                 <div>
-                  <dt className="text-xs text-slate-500">Interés (TAE)</dt>
-                  <dd className="font-semibold text-slate-900">{fmtPct(pos.deposito.tae / 100)}</dd>
+                  <dt className="text-xs text-slate-500">Interés (TAE) hoy</dt>
+                  <dd className="font-semibold text-slate-900">
+                    {fmtPct(pos.deposito.tae / 100)}
+                    <button type="button" onClick={() => openInteres(p.id)} className="ml-2 text-xs font-semibold text-brand-700 underline underline-offset-2">
+                      Cambiar
+                    </button>
+                  </dd>
+                  {pos.deposito.tramos.length > 1 && (
+                    <dd className="mt-0.5 text-xs text-slate-500">
+                      {pos.deposito.tramos.map((t) => `${fmtPct(t.tae / 100)} ${t.desde ? `desde ${fmtDate(t.desde)}` : 'al principio'}`).join(' · ')}
+                    </dd>
+                  )}
                 </div>
                 <div>
                   <dt className="text-xs text-slate-500">Apertura</dt>

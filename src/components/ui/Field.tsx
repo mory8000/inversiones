@@ -2,9 +2,11 @@ import { forwardRef, type InputHTMLAttributes, type ReactNode, type SelectHTMLAt
 import { ChevronDown } from 'lucide-react'
 import { cn } from '../../lib/cn'
 
-export const inputBase =
-  'w-full rounded-xl border bg-white px-3.5 text-[15px] text-slate-900 outline-none transition placeholder:text-slate-400 ' +
+/** Estilo común de los campos (sin tamaño ni color de letra: cada campo pone el suyo, para que no choquen). */
+const fieldBase =
+  'w-full rounded-xl border bg-white px-3.5 outline-none transition placeholder:text-slate-400 ' +
   'focus:border-brand-500 focus:ring-4 focus:ring-brand-100 disabled:bg-slate-50 disabled:text-slate-500'
+export const inputBase = `${fieldBase} text-[15px] text-slate-900`
 
 export function Field({
   label,
@@ -74,11 +76,11 @@ export function TextArea({ className, ...rest }: TextareaHTMLAttributes<HTMLText
   return <textarea className={cn(inputBase, 'min-h-20 border-slate-300 py-2.5', className)} {...rest} />
 }
 
-/** Campo numérico con sufijo (€ o %). Acepta coma o punto decimal. */
+/** Campo numérico con sufijo (€ o %). Acepta coma o punto decimal. `textColor`: color de la cifra. */
 export const NumberInput = forwardRef<
   HTMLInputElement,
-  Omit<InputHTMLAttributes<HTMLInputElement>, 'size'> & { suffix?: string; invalid?: boolean; big?: boolean }
->(function NumberInput({ suffix, invalid, big, className, ...rest }, ref) {
+  Omit<InputHTMLAttributes<HTMLInputElement>, 'size'> & { suffix?: string; invalid?: boolean; big?: boolean; textColor?: string }
+>(function NumberInput({ suffix, invalid, big, textColor = 'text-slate-900', className, ...rest }, ref) {
   return (
     <div className="relative">
       <input
@@ -86,8 +88,9 @@ export const NumberInput = forwardRef<
         inputMode="decimal"
         autoComplete="off"
         className={cn(
-          inputBase,
-          big ? 'h-14 text-2xl font-semibold tracking-tight' : 'h-11',
+          fieldBase,
+          textColor,
+          big ? 'h-14 text-2xl font-semibold tracking-tight' : 'h-11 text-[15px]',
           suffix && (big ? 'pr-12' : 'pr-10'),
           'tabular-nums',
           invalid ? 'border-rose-400' : 'border-slate-300',

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import type { EntityRef, Movimiento, Producto, Valoracion, Workspace } from '../types'
-import { buildTimeline, computeAccountStats, computePositions, computeTotals, evaluateProduct, summarizeByType } from './finance'
+import type { Cuenta, Dataset, EntityRef, Movimiento, Producto, Valoracion, Workspace } from '../types'
+import { buildTimeline, computeAccountStats, computeGranTotal, computePositions, computeTotals, evaluateProduct, interesEntre, summarizeByType, taeEn } from './finance'
+import { faltaDinero, saldoEn, saldoMinimoDesde } from './saldo'
 import { buildFlowGraph } from './flow'
 import { parseNumber, fmtEUR, fmtPct } from './format'
 import { inferMovementType } from './meta'
@@ -110,6 +111,94 @@ describe('depósitos', () => {
     expect(pos.saldo).toBe(0)
     expect(pos.ganancia).toBe(250)
     expect(pos.estado).toBe('cerrado')
+  })
+})
+
+describe('el interés de un depósito puede cambiar', () => {
+  // 10.000 € al 3 % desde el 1 de enero; desde el 1 de julio, al 2 %.
+  const d = prod('D', 'deposito', {
+    tae: 3,
+    vencimiento: '2027-01-01',
+    cambiosTae: [{ id: 'c1', desde: '2026-07-01', tae: 2, createdAt: '2026-07-01T09:00:00.000Z' }],
+  })
+  const movs = [mov('2026-01-01', C('A'), P('D'), 10000)]
+  const tramo1 = (10000 * 0.03 * daysBetween('2026-01-01', '2026-07-01')) / 365
+  const tramo2 = (10000 * 0.02 * daysBetween('2026-07-01', '2027-01-01')) / 365
+
+  it('cada tramo se calcula con su TAE', () => {
+    expect(taeEn(d, '2026-06-30')).toBe(3)
+    expect(taeEn(d, '2026-07-01')).toBe(2)
+    const antes = evaluateProduct(d, movs, { asOf: '2026-06-01', mode: 'actual' })
+    expect(antes.deposito).toMatchObject({ tae: 3, taeDesde: null })
+    expect(antes.deposito?.interesesHoy).toBeCloseTo((10000 * 0.03 * daysBetween('2026-01-01', '2026-06-01')) / 365, 6)
+    const pos = evaluateProduct(d, movs, { asOf: '2026-10-15', mode: 'actual' })
+    expect(pos.deposito).toMatchObject({ tae: 2, taeDesde: '2026-07-01' })
+    expect(pos.deposito?.tramos).toEqual([
+      { desde: null, tae: 3 },
+      { desde: '2026-07-01', tae: 2 },
+    ])
+    expect(pos.deposito?.interesesHoy).toBeCloseTo(tramo1 + (10000 * 0.02 * daysBetween('2026-07-01', '2026-10-15')) / 365, 6)
+    expect(pos.deposito?.interesesVencimiento).toBeCloseTo(tramo1 + tramo2, 6)
+    expect(pos.saldo).toBeCloseTo(10000 + pos.deposito!.interesesHoy, 6)
+  })
+
+  it('un cambio anterior a la apertura rige desde el principio; sin cambios, como siempre', () => {
+    const desdeAntes = { ...d, cambiosTae: [{ id: 'c0', desde: '2025-12-01', tae: 4, createdAt: '' }] }
+    expect(interesEntre(desdeAntes, 10000, '2026-01-01', '2027-01-01')).toBeCloseTo(400, 6)
+    expect(interesEntre({ tae: 2.5 }, 10000, '2026-01-01', '2027-01-01')).toBeCloseTo(250, 6)
+    expect(interesEntre({ tae: 2.5 }, 0, '2026-01-01', '2027-01-01')).toBe(0)
+  })
+
+  it('también admite interés negativo', () => {
+    const neg = prod('N', 'deposito', { tae: -1, vencimiento: null })
+    const pos = evaluateProduct(neg, [mov('2026-01-01', C('A'), P('N'), 1000)], { asOf: '2027-01-01', mode: 'actual' })
+    expect(pos.saldo).toBeCloseTo(990, 6)
+    expect(pos.ganancia).toBeCloseTo(-10, 6)
+  })
+})
+
+describe('rentabilidad en %, positiva o negativa', () => {
+  it('si las acciones suben un 3 %, el fondo vale un 3 % más; si bajan, menos', () => {
+    const movs = [mov('2026-01-10', C('A'), P('F'), 2000)]
+    const sube = evaluateProduct(prod('F', 'fondo', { valoraciones: [val('2026-10-01', 'porcentaje', 3)] }), movs, { asOf: '2026-10-15', mode: 'actual' })
+    expect(sube.saldo).toBeCloseTo(2060, 6)
+    expect(sube.ganancia).toBeCloseTo(60, 6)
+    const baja = evaluateProduct(prod('F', 'fondo', { valoraciones: [val('2026-10-01', 'porcentaje', -4.5)] }), movs, { asOf: '2026-10-15', mode: 'actual' })
+    expect(baja.saldo).toBeCloseTo(1910, 6)
+    expect(baja.rentabilidad).toBeCloseTo(-0.045, 6)
+  })
+})
+
+describe('saldo de la cuenta principal: no se puede sacar más de lo que hay', () => {
+  // MyInvestor: entran 1.000 € el 1 de marzo y salen 700 € el 1 de junio.
+  const movs = [mov('2026-03-01', C('X'), C('M'), 1000), mov('2026-06-01', C('M'), P('F'), 700)]
+
+  it('saldo de cada día y lo mínimo que habrá desde una fecha', () => {
+    expect(saldoEn(movs, 'M', '2026-02-01')).toBe(0)
+    expect(saldoEn(movs, 'M', '2026-04-01')).toBe(1000)
+    expect(saldoEn(movs, 'M', '2026-10-15')).toBe(300)
+    // Desde abril hay 1.000 €, pero en junio salen 700: solo se pueden sacar 300 sin quedarse en negativo.
+    expect(saldoMinimoDesde(movs, 'M', '2026-04-01')).toBe(300)
+    expect(saldoMinimoDesde(movs, 'M', '2026-02-01')).toBe(0)
+  })
+
+  it('sacar más de lo que hay se detecta (también con fecha pasada)', () => {
+    const hoy = [...movs, mov('2026-10-15', C('M'), P('F'), 500)]
+    expect(faltaDinero(movs, hoy, 'M', '2026-10-15')).toMatchObject({ falta: 200, disponible: 300, saldoMinimo: -200 })
+    expect(faltaDinero(movs, [...movs, mov('2026-10-15', C('M'), P('F'), 300)], 'M', '2026-10-15')).toBeNull()
+    // En abril había 1.000 €, pero si salen 500 entonces, en junio faltarían 200.
+    const abril = [...movs, mov('2026-04-01', C('M'), P('F'), 500)]
+    expect(faltaDinero(movs, abril, 'M', '2026-04-01')).toMatchObject({ falta: 200, disponible: 300 })
+    // Antes de que entrara el dinero no había nada.
+    expect(faltaDinero(movs, [...movs, mov('2026-02-01', C('M'), P('F'), 10)], 'M', '2026-02-01')).toMatchObject({ falta: 10, disponible: 0 })
+  })
+
+  it('un cambio que mejora una cuenta que ya estaba en negativo no se bloquea', () => {
+    const negativa = [mov('2026-03-01', C('M'), P('F'), 1000)]
+    const menos = [mov('2026-03-01', C('M'), P('F'), 800)]
+    expect(faltaDinero(negativa, menos, 'M', '2026-03-01')).toBeNull()
+    const mas = [mov('2026-03-01', C('M'), P('F'), 1200)]
+    expect(faltaDinero(negativa, mas, 'M', '2026-03-01')).toMatchObject({ falta: 200 })
   })
 })
 
@@ -313,5 +402,79 @@ describe('formato', () => {
     expect(fmtPct(null)).toBe('—')
     expect(fmtEUR(-12.5)).toBe('\u221212,50\u00a0€')
     expect(fmtPct(-0.031, { sign: true })).toBe('\u22123,10\u00a0%')
+  })
+})
+
+describe('TOTAL de todo, menos lo que se deja fuera («Fondo ahorro»)', () => {
+  const cuenta = (id: string, titularId: string, externa: boolean, extra: Partial<Cuenta> = {}): Cuenta => ({
+    id,
+    titularId,
+    nombre: id,
+    entidad: '',
+    iban: '',
+    color: '#000',
+    notas: '',
+    externa,
+    createdAt: '',
+    ...extra,
+  })
+  const base = (extra: { t2Fuera?: boolean; productoFuera?: boolean; cuentaFuera?: boolean } = {}): Dataset => ({
+    titulares: [
+      { id: 'T1', codigo: '', nombre: 'Luis', createdAt: '' },
+      { id: 'T2', codigo: '', nombre: 'Fondo ahorro', createdAt: '', ...(extra.t2Fuera ? { fueraDelTotal: true } : {}) },
+    ],
+    cuentas: [cuenta('MY', 'T1', false), cuenta('BBVA', 'T1', true), cuenta('C2', 'T2', false, extra.cuentaFuera ? { fueraDelTotal: true } : {})],
+    productos: [
+      prod('F', 'fondo', { titularId: 'T1', valoraciones: [val('2026-09-01', 'porcentaje', 10)] }),
+      prod('D', 'deposito', { titularId: 'T1', tae: 0 }),
+      prod('K', 'cartera', { titularId: 'T1', ...(extra.productoFuera ? { fueraDelTotal: true, nombre: 'Fondo ahorro' } : {}) }),
+      prod('F2', 'fondo', { titularId: 'T2' }),
+    ],
+    movimientos: [
+      mov('2026-01-01', C('BBVA'), C('MY'), 5000),
+      mov('2026-01-02', C('MY'), P('F'), 1000),
+      mov('2026-01-03', C('MY'), P('D'), 2000),
+      mov('2026-01-04', C('MY'), P('K'), 500),
+      mov('2026-01-05', C('MY'), P('F2'), 300),
+      mov('2026-01-06', C('MY'), C('C2'), 200),
+    ],
+    programadas: [],
+  })
+  const total = (ds: Dataset) => computeGranTotal(ds, computePositions(ds, '2026-10-15'), computeAccountStats(ds))
+
+  it('suma todo: inversiones de todos y el saldo real de las cuentas con saldo', () => {
+    const t = total(base())
+    // F 1.100 + D 2.000 + K 500 + F2 300 = 3.900 · MY 1.000 + C2 200 = 1.200
+    expect(t).toMatchObject({ inversiones: 3900, cuentas: 1200, total: 5100, capital: 3800, ganancia: 100 })
+    expect(t.porTipo.map((r) => [r.tipo, r.saldo])).toEqual([
+      ['deposito', 2000],
+      ['fondo', 1400],
+      ['cartera', 500],
+    ])
+    expect(t.fuera).toEqual([])
+  })
+
+  it('el «Fondo ahorro» (titular entero) queda fuera con todo lo suyo', () => {
+    const t = total(base({ t2Fuera: true }))
+    expect(t).toMatchObject({ inversiones: 3600, cuentas: 1000, total: 4600 })
+    expect(t.fuera).toEqual([{ nivel: 'titular', id: 'T2', titularId: 'T2', nombre: 'Fondo ahorro', valor: 500 }])
+  })
+
+  it('o solo un producto o una cuenta', () => {
+    const t = total(base({ productoFuera: true, cuentaFuera: true }))
+    expect(t).toMatchObject({ inversiones: 3400, cuentas: 1000, total: 4400 })
+    expect(t.fuera.map((x) => [x.nivel, x.id, x.valor])).toEqual([
+      ['producto', 'K', 500],
+      ['cuenta', 'C2', 200],
+    ])
+  })
+
+  it('el saldo de la cuenta principal es real: si es negativo, resta', () => {
+    const ds = base()
+    ds.movimientos.push(mov('2026-02-01', C('MY'), P('F'), 2000))
+    const t = total(ds)
+    expect(computeAccountStats(ds).get('MY')!.saldo).toBe(-1000)
+    expect(t.cuentas).toBe(-800)
+    expect(t.total).toBeCloseTo(3900 + 2200 - 800, 6)
   })
 })

@@ -1,85 +1,18 @@
-import { CircleCheck, CircleAlert, Info } from 'lucide-react'
-import { useUI, type ModalSpec } from '../store/ui'
-import { Sheet } from './ui/Sheet'
-import { Button } from './ui/Button'
-import { MovementForm } from './forms/MovementForm'
-import { ProductForm } from './forms/ProductForm'
-import { AccountForm } from './forms/AccountForm'
-import { ValuationForm } from './forms/ValuationForm'
-import { TitularForm } from './forms/TitularForm'
-import { InvestmentSheet } from './InvestmentSheet'
+import { Suspense, lazy, useEffect } from 'react'
+import { CircleCheck, CircleAlert, Info, Undo2, Redo2, X } from 'lucide-react'
+import { useUI } from '../store/ui'
 
-function ConfirmDialog({ spec }: { spec: Extract<ModalSpec, { type: 'confirm' }> }) {
-  const close = useUI((s) => s.close)
-  const done = (ok: boolean) => {
-    spec.resolve(ok)
-    close(spec.id)
-  }
-  return (
-    <Sheet
-      title={spec.title}
-      size="sm"
-      onClose={() => done(false)}
-      footer={
-        <div className="flex justify-end gap-2">
-          <Button variant="secondary" onClick={() => done(false)}>
-            Cancelar
-          </Button>
-          <Button variant={spec.danger ? 'danger' : 'primary'} onClick={() => done(true)} data-autofocus>
-            {spec.confirmLabel ?? 'Aceptar'}
-          </Button>
-        </div>
-      }
-    >
-      <div className="text-[15px] text-slate-600">{spec.message}</div>
-    </Sheet>
-  )
-}
+const cargarVentanas = () => import('./ModalHost')
+const ModalHost = lazy(cargarVentanas)
 
-/** Muestra las ventanas abiertas (pueden apilarse). */
+/** Muestra las ventanas abiertas (pueden apilarse). Se cargan al poco de arrancar la app. */
 export function Modals() {
-  const modals = useUI((s) => s.modals)
-  return (
-    <>
-      {modals.map((m) => {
-        switch (m.type) {
-          case 'movement':
-            return <MovementForm key={m.id} modalId={m.id} movementId={m.movementId} programadaId={m.programadaId} preset={m.preset} />
-          case 'product':
-            return (
-              <ProductForm
-                key={m.id}
-                modalId={m.id}
-                productId={m.productId}
-                presetTipo={m.presetTipo}
-                presetTitularId={m.presetTitularId}
-                onCreated={m.onCreated}
-                abrirVentanilla={m.abrirVentanilla}
-              />
-            )
-          case 'account':
-            return (
-              <AccountForm
-                key={m.id}
-                modalId={m.id}
-                accountId={m.accountId}
-                presetTitularId={m.presetTitularId}
-                presetExterna={m.presetExterna}
-                onCreated={m.onCreated}
-              />
-            )
-          case 'investment':
-            return <InvestmentSheet key={m.id} modalId={m.id} productId={m.productId} />
-          case 'valuation':
-            return <ValuationForm key={m.id} modalId={m.id} productId={m.productId} />
-          case 'titular':
-            return <TitularForm key={m.id} modalId={m.id} titularId={m.titularId} />
-          case 'confirm':
-            return <ConfirmDialog key={m.id} spec={m} />
-        }
-      })}
-    </>
-  )
+  const hay = useUI((s) => s.modals.length > 0)
+  useEffect(() => {
+    const t = window.setTimeout(() => void cargarVentanas(), 800)
+    return () => window.clearTimeout(t)
+  }, [])
+  return <Suspense fallback={null}>{hay && <ModalHost />}</Suspense>
 }
 
 export function Toasts() {
@@ -89,16 +22,44 @@ export function Toasts() {
     <div className="pointer-events-none fixed inset-x-0 bottom-24 z-[60] flex flex-col items-center gap-2 px-4 lg:bottom-6" aria-live="polite">
       {toasts.map((t) => {
         const Icon = t.kind === 'error' ? CircleAlert : t.kind === 'info' ? Info : CircleCheck
+        const iconClass = t.kind === 'error' ? 'size-4 shrink-0 text-rose-300' : t.kind === 'info' ? 'size-4 shrink-0 text-sky-300' : 'size-4 shrink-0 text-emerald-300'
+        if (!t.action) {
+          return (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => dismiss(t.id)}
+              className="pointer-events-auto flex max-w-full animate-toast items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-left text-sm font-medium text-white shadow-lg"
+            >
+              <Icon className={iconClass} />
+              {t.message}
+            </button>
+          )
+        }
+        const ActionIcon = t.action.label === 'Rehacer' ? Redo2 : Undo2
         return (
-          <button
+          <div
             key={t.id}
-            type="button"
-            onClick={() => dismiss(t.id)}
-            className="pointer-events-auto flex animate-toast items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white shadow-lg"
+            role="status"
+            className="pointer-events-auto flex max-w-full animate-toast items-center gap-1 rounded-xl bg-slate-900 py-1.5 pr-1.5 pl-4 text-sm font-medium text-white shadow-lg"
           >
-            <Icon className={t.kind === 'error' ? 'size-4 text-rose-300' : 'size-4 text-emerald-300'} />
-            {t.message}
-          </button>
+            <Icon className={iconClass} />
+            <span className="ml-1 min-w-0 flex-1 py-1">{t.message}</span>
+            <button
+              type="button"
+              onClick={() => {
+                dismiss(t.id)
+                t.action!.onClick()
+              }}
+              className="ml-1 inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-white/10 px-3 font-semibold text-emerald-300 hover:bg-white/15"
+            >
+              <ActionIcon className="size-4" strokeWidth={2.4} />
+              {t.action.label}
+            </button>
+            <button type="button" onClick={() => dismiss(t.id)} aria-label="Cerrar aviso" className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg text-white/50 hover:text-white">
+              <X className="size-4" />
+            </button>
+          </div>
         )
       })}
     </div>

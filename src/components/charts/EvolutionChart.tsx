@@ -18,7 +18,8 @@ export function EvolutionChart({ points, height = 240 }: { points: TimelinePoint
   const min = Math.min(...values)
   const max = Math.max(...values)
   const pad = (max - min) * 0.08 || max * 0.1 || 1
-  const domain: [number, number] = [Math.max(0, Math.floor((min - pad) / 100) * 100), Math.ceil((max + pad) / 100) * 100]
+  // Empieza en 0 salvo que haya valores negativos (p. ej. una cuenta con saldo en negativo).
+  const domain: [number, number] = [min < 0 ? Math.floor((min - pad) / 100) * 100 : Math.max(0, Math.floor((min - pad) / 100) * 100), Math.ceil((max + pad) / 100) * 100]
 
   return (
     <div style={{ height }}>
@@ -104,7 +105,9 @@ export function MultiEvolutionChart({ points, series, height = 240 }: { points: 
   }
   const values = points.flatMap((p) => series.flatMap((s) => [Number(p[`${s.id}:p`]) || 0, Number(p[`${s.id}:c`]) || 0]))
   const max = Math.max(...values, 0)
-  const domain: [number, number] = [0, Math.ceil((max * 1.08 || 1) / 100) * 100]
+  const min = Math.min(...values, 0)
+  // Desde 0, o más abajo si algún titular llega a estar en negativo (saldo real de su cuenta).
+  const domain: [number, number] = [min < 0 ? Math.floor((min * 1.08) / 100) * 100 : 0, Math.ceil((max * 1.08 || 1) / 100) * 100]
   const money = (v: number) => (hidden ? `${HIDDEN} €` : fmtEUR(v))
 
   return (

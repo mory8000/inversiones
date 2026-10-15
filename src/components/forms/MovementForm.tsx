@@ -1,6 +1,6 @@
-import { useState, type CSSProperties } from 'react'
-import { ArrowDown, ArrowRight, CalendarSync, Info, Trash2, TriangleAlert } from 'lucide-react'
-import type { EntityKind, EntityRef, MovementType, Titular } from '../../types'
+import { useMemo, useState, type CSSProperties } from 'react'
+import { ArrowDown, ArrowRight, Ban, CalendarSync, Info, Plus, Trash2, TriangleAlert } from 'lucide-react'
+import type { EntityKind, EntityRef, Movimiento, MovementType, Programada, Titular } from '../../types'
 import { Sheet } from '../ui/Sheet'
 import { Field, NumberInput, SelectInput, TextInput } from '../ui/Field'
 import { Button } from '../ui/Button'
@@ -10,10 +10,13 @@ import { CROSS_META, MOVEMENT_META, MOVEMENT_TYPES, PRODUCT_META, PRODUCT_TYPES,
 import { useData } from '../../store/data'
 import { useFinance } from '../../store/useFinance'
 import { confirmDialog, openAccount, openProduct, openProgramada, toast, useUI, type MovementPreset } from '../../store/ui'
+import { accion } from '../../store/deshacer'
+import { anadirDinero, borrarMovimiento, etiquetaMovimiento } from '../../store/acciones'
 import { fmtDate, fmtEUR, fmtNumberInput, parseNumber } from '../../lib/format'
-import { isValidISODate, todayISO } from '../../lib/dates'
+import { isValidISODate, minDate, todayISO } from '../../lib/dates'
 import { entityName, isConSaldo, isExterna, parseRefKey, refKey, type Lookup } from '../../lib/movements'
-import { diaDe, fechasDebidas, movimientosDe } from '../../lib/programadas'
+import { aplicarProgramadas, diaDe, fechasDebidas, movimientosDe, sincronizarProgramada } from '../../lib/programadas'
+import { faltaDinero, saldoMinimoDesde, type FaltaDinero } from '../../lib/saldo'
 import { cn } from '../../lib/cn'
 
 const NEW = '__new__'
@@ -64,7 +67,6 @@ export function MovementForm({
   const addCuenta = useData((s) => s.addCuenta)
   const addMovimiento = useData((s) => s.addMovimiento)
   const updateMovimiento = useData((s) => s.updateMovimiento)
-  const removeMovimiento = useData((s) => s.removeMovimiento)
   const addProgramada = useData((s) => s.addProgramada)
   const updateProgramada = useData((s) => s.updateProgramada)
   const removeProgramada = useData((s) => s.removeProgramada)
@@ -127,18 +129,63 @@ export function MovementForm({
   const hasErrors = Object.values(errors).some(Boolean)
   const err = (k: keyof typeof errors) => (submitted ? errors[k] : null)
 
-  // Aviso si se saca más dinero del que hay en el producto o en la cuenta con saldo.
-  let saldoOrigen: number | null = null
+  // Aviso si se saca más dinero del que hay en un producto (puede ser correcto: ganancias, intereses…).
+  let saldoProducto: number | null = null
   if (origenRef?.kind === 'producto') {
     const pos = positions.get(origenRef.id)
-    if (pos) saldoOrigen = pos.saldo
-  } else if (origenRef && isConSaldo(lookup, origenRef)) {
-    const st = accounts.get(origenRef.id)
-    if (st) saldoOrigen = st.saldo
+    if (pos) saldoProducto = pos.saldo + (existing && existing.origen.kind === 'producto' && existing.origen.id === origenRef.id ? existing.importe : 0)
   }
-  if (saldoOrigen !== null && existing && origenRef && existing.origen.kind === origenRef.kind && existing.origen.id === origenRef.id) saldoOrigen += existing.importe
+  const exceedsProducto = !repetir && saldoProducto !== null && amount !== null && amount > Math.max(0, saldoProducto) + 0.005
+
+  // ── ¿Hay dinero en la cuenta con saldo (MyInvestor) de la que sale? ──────
+  // No se puede sacar más de lo que hay: ni ese día ni después (si hay movimientos posteriores).
   const origenConSaldo = !!origenRef && isConSaldo(lookup, origenRef)
-  const exceeds = !repetir && saldoOrigen !== null && amount !== null && amount > Math.max(0, saldoOrigen) + 0.005
+  const sinEste = useMemo(() => (existing ? ws.movimientos.filter((m) => m.id !== existing.id) : ws.movimientos), [ws.movimientos, existing])
+  /** Lo que hay disponible en la cuenta de origen en la fecha elegida (sin contar este movimiento). */
+  const disponible = origenConSaldo && origenRef && isValidISODate(fecha) ? Math.max(0, saldoMinimoDesde(sinEste, origenRef.id, fecha)) : null
+  const borrador: Movimiento | null =
+    origenRef && destinoRef && amount !== null && amount > 0 && isValidISODate(fecha) && origen !== destino
+      ? {
+          id: existing?.id ?? '__nuevo__',
+          tipo: inferMovementType(origenRef.kind, destinoRef.kind),
+          fecha,
+          origen: origenRef,
+          destino: destinoRef,
+          importe: amount,
+          concepto,
+          createdAt: existing?.createdAt ?? '9999',
+          updatedAt: '',
+        }
+      : null
+  const desde = existing ? minDate(existing.fecha, fecha) : fecha
+  const despues = borrador ? [...sinEste, borrador] : null
+  /** Movimiento normal: falta dinero en la cuenta de origen. */
+  const sinSaldo: FaltaDinero | null = !repetir && despues && origenConSaldo && origenRef ? faltaDinero(ws.movimientos, despues, origenRef.id, desde, sinEste) : null
+  /** Al cambiar un movimiento, otras cuentas con saldo que se quedarían en negativo (p. ej. si se baja dinero añadido que ya se ha invertido). */
+  const avisos: FaltaDinero[] = []
+  if (!repetir && existing && despues) {
+    const afectadas = new Set<string>()
+    for (const r of [existing.origen, existing.destino, destinoRef]) if (r && isConSaldo(lookup, r)) afectadas.add(r.id)
+    if (origenConSaldo && origenRef) afectadas.delete(origenRef.id)
+    for (const id of afectadas) {
+      const f = faltaDinero(ws.movimientos, despues, id, desde)
+      if (f) avisos.push(f)
+    }
+  }
+  /** Transferencia mensual: ¿hay dinero para las que tocan hasta hoy? */
+  const sinSaldoMensual = useMemo((): FaltaDinero | null => {
+    if (!repetir || !origenConSaldo || !origenRef || !destinoRef || amount === null || amount <= 0 || !isValidISODate(fecha) || origen === destino) return null
+    if (fin && (!isValidISODate(fin) || fin < fecha)) return null
+    const data = { origen: origenRef, destino: destinoRef, importe: amount, inicio: fecha, fin: fin || null, concepto }
+    const draft: Programada = prog ? { ...prog, ...data } : { id: '__nueva__', ...data, excluidos: [], createdAt: '', updatedAt: '' }
+    const simulado = prog
+      ? sincronizarProgramada({ ...ds, programadas: ds.programadas.map((x) => (x.id === prog.id ? draft : x)) }, draft, today)
+      : aplicarProgramadas({ ...ds, programadas: [...ds.programadas, draft] }, today)
+    return faltaDinero(ds.movimientos, simulado.movimientos, origenRef.id, prog ? minDate(prog.inicio, fecha) : fecha)
+    // origenRef y destinoRef salen de origen y destino.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [repetir, origenConSaldo, amount, fecha, fin, origen, destino, concepto, prog, ds, today])
+  const bloqueado = !!sinSaldo || !!sinSaldoMensual
 
   // Transferencia mensual: cuántas se apuntan ya (desde la primera fecha hasta hoy).
   const debidas = repetir && isValidISODate(fecha) ? fechasDebidas({ inicio: fecha, fin: fin && isValidISODate(fin) ? fin : null }, today) : []
@@ -147,33 +194,58 @@ export function MovementForm({
   const save = () => {
     setSubmitted(true)
     if (hasErrors || (!origenRef && !nuevaExterna) || !destinoRef || amount === null) return
-    let from = origenRef
-    if (nuevaExterna && externaNuevaT) {
-      const id = addCuenta({ titularId: externaNuevaT, nombre: NOMBRE_EXTERNA, entidad: '', iban: '', color: '#64748B', notas: '', externa: true })
-      from = { kind: 'cuenta', id }
+    if (bloqueado && origenRef) {
+      toast(`No hay suficiente dinero en «${entityName(lookup, origenRef)}»`, 'error')
+      document.querySelector('[data-sin-saldo]')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      return
     }
-    if (!from) return
-    const origenRef2 = from
+    const imp = hidden ? '' : ` ${fmtEUR(amount)}`
+    const dNombre = entityName(lookup, destinoRef)
     if (repetir) {
-      const data = { origen: origenRef2, destino: destinoRef, importe: amount, inicio: fecha, fin: fin || null, concepto }
-      if (prog) {
-        updateProgramada(prog.id, data)
-        toast('Transferencia mensual actualizada')
-      } else {
-        addProgramada(data)
-        toast(debidas.length ? `Transferencia mensual guardada: ${debidas.length} apuntada${debidas.length === 1 ? '' : 's'} hasta hoy` : 'Transferencia mensual guardada')
-      }
+      const etiqueta = `${prog ? 'Cambiar transferencia mensual' : 'Transferencia mensual'}:${imp} al mes a «${dNombre}»`
+      accion(
+        etiqueta,
+        () => {
+          const from = crearOrigen()
+          if (!from) return
+          const data = { origen: from, destino: destinoRef, importe: amount, inicio: fecha, fin: fin || null, concepto }
+          if (prog) updateProgramada(prog.id, data)
+          else addProgramada(data)
+        },
+        prog
+          ? 'Transferencia mensual actualizada'
+          : debidas.length
+            ? `Transferencia mensual guardada: ${debidas.length} apuntada${debidas.length === 1 ? '' : 's'} hasta hoy`
+            : 'Transferencia mensual guardada',
+      )
     } else {
-      const data = { fecha, origen: origenRef2, destino: destinoRef, importe: amount, concepto }
-      if (existing) {
-        updateMovimiento(existing.id, data)
-        toast('Movimiento actualizado')
-      } else {
-        addMovimiento(data)
-        toast('Movimiento guardado')
-      }
+      const etiqueta = nuevaExterna
+        ? `Añadir dinero:${imp} a «${dNombre}»`
+        : origenRef
+          ? `${existing ? 'Cambiar movimiento: ' : ''}${etiquetaMovimiento(lookup, { origen: origenRef, destino: destinoRef, importe: amount }, hidden)}`
+          : 'Movimiento'
+      accion(
+        etiqueta,
+        () => {
+          const from = crearOrigen()
+          if (!from) return
+          const data = { fecha, origen: from, destino: destinoRef, importe: amount, concepto }
+          if (existing) updateMovimiento(existing.id, data)
+          else addMovimiento(data)
+        },
+        existing ? 'Movimiento actualizado' : 'Movimiento guardado',
+      )
     }
     close(modalId)
+  }
+
+  /** El origen elegido o, para «Añadir dinero» sin cuentas externas, la cuenta externa que se crea ahora. */
+  const crearOrigen = (): EntityRef | null => {
+    if (nuevaExterna && externaNuevaT) {
+      const id = addCuenta({ titularId: externaNuevaT, nombre: NOMBRE_EXTERNA, entidad: '', iban: '', color: '#64748B', notas: '', externa: true })
+      return { kind: 'cuenta', id }
+    }
+    return origenRef
   }
 
   const remove = async () => {
@@ -182,33 +254,24 @@ export function MovementForm({
       const ok = await confirmDialog({
         title: '¿Eliminar la transferencia mensual?',
         message:
-          n > 0
+          (n > 0
             ? `Dejará de apuntarse cada mes y se borrarán también las ${n} transferencia${n === 1 ? '' : 's'} ya apuntada${n === 1 ? '' : 's'}. Si solo quieres que no siga, pon una fecha en «Hasta».`
-            : 'Dejará de apuntarse cada mes.',
+            : 'Dejará de apuntarse cada mes.') + ' Si te equivocas, pulsa «Deshacer».',
         confirmLabel: 'Eliminar',
         danger: true,
       })
       if (ok) {
-        removeProgramada(prog.id)
-        toast('Transferencia mensual eliminada')
+        accion(
+          `Eliminar transferencia mensual:${hidden ? '' : ` ${fmtEUR(prog.importe)}`} al mes a «${entityName(lookup, prog.destino)}»`,
+          () => removeProgramada(prog.id),
+          'Transferencia mensual eliminada',
+        )
         close(modalId)
       }
       return
     }
     if (!existing) return
-    const ok = await confirmDialog({
-      title: '¿Eliminar este movimiento?',
-      message: parent
-        ? 'Los saldos se recalcularán. Este mes no se volverá a apuntar; los demás meses de la transferencia mensual siguen igual.'
-        : 'Los saldos se recalcularán automáticamente. Esta acción no se puede deshacer.',
-      confirmLabel: 'Eliminar',
-      danger: true,
-    })
-    if (ok) {
-      removeMovimiento(existing.id)
-      toast('Movimiento eliminado')
-      close(modalId)
-    }
+    if (await borrarMovimiento(ds, existing)) close(modalId)
   }
 
   /** Titular por defecto para lo que se cree desde aquí. */
@@ -347,7 +410,9 @@ export function MovementForm({
           <Button variant="secondary" onClick={() => close(modalId)}>
             Cancelar
           </Button>
-          <Button onClick={save}>{existing || prog ? 'Guardar cambios' : repetir ? 'Guardar transferencia' : 'Guardar movimiento'}</Button>
+          <Button onClick={save} className={bloqueado ? 'opacity-50' : undefined} aria-disabled={bloqueado || undefined}>
+            {existing || prog ? 'Guardar cambios' : repetir ? 'Guardar transferencia' : 'Guardar movimiento'}
+          </Button>
         </div>
       }
     >
@@ -396,7 +461,7 @@ export function MovementForm({
                   onClick={() => changeTipo(t)}
                   aria-pressed={active}
                   className={cn(
-                    'flex items-start gap-2.5 rounded-xl border p-3 text-left transition-all',
+                    'flex min-w-0 items-start gap-2.5 rounded-xl border p-3 text-left transition-all max-[359px]:flex-col max-[359px]:gap-1.5',
                     active ? 'border-transparent ring-2' : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50',
                   )}
                   style={active ? ({ backgroundColor: m.soft, '--tw-ring-color': m.color } as CSSProperties) : undefined}
@@ -431,7 +496,8 @@ export function MovementForm({
             hint={
               [
                 multi && fromT ? `De ${fromT.nombre}` : null,
-                saldoOrigen !== null && !hidden ? `Saldo actual: ${fmtEUR(saldoOrigen)}` : null,
+                disponible !== null && !hidden ? `Disponible: ${fmtEUR(disponible)}${fecha < today ? ` (el ${fmtDate(fecha)})` : ''}` : null,
+                saldoProducto !== null && !hidden ? `Saldo actual: ${fmtEUR(saldoProducto)}` : null,
                 nuevaExterna ? `Se creará la cuenta «${NOMBRE_EXTERNA}» (luego puedes cambiarle el nombre en Cuentas)` : null,
               ]
                 .filter(Boolean)
@@ -504,6 +570,33 @@ export function MovementForm({
           </Field>
         </div>
 
+        {bloqueado && origenRef && (
+          <div className="rounded-xl border border-rose-200 bg-rose-50 p-3.5 text-sm text-rose-800" role="alert" data-sin-saldo>
+            <p className="flex items-center gap-2 font-semibold">
+              <Ban className="size-4 shrink-0" /> No hay suficiente dinero en «{oName}»
+            </p>
+            {sinSaldo ? (
+              <p className="mt-1">
+                Hay {hidden ? '•••••• €' : fmtEUR(disponible ?? sinSaldo.disponible)} disponibles{fecha < today ? ` (el ${fmtDate(fecha)})` : ''} y quieres{' '}
+                {destinoRef?.kind === 'producto' ? 'aportar' : destinoRef && isExterna(lookup, destinoRef) ? 'sacar' : 'enviar'} {hidden ? '•••••• €' : fmtEUR(amount ?? 0)}: faltan{' '}
+                <strong>{hidden ? '•••••• €' : fmtEUR(sinSaldo.falta)}</strong>.
+              </p>
+            ) : (
+              sinSaldoMensual && (
+                <p className="mt-1">
+                  Para apuntar {debidas.length === 1 ? 'la transferencia que toca' : `las ${debidas.length} transferencias que tocan`} hasta hoy (desde el{' '}
+                  {fmtDate(fecha)}) faltan <strong>{hidden ? '•••••• €' : fmtEUR(sinSaldoMensual.falta)}</strong> en «{oName}»: en esas fechas no había bastante
+                  dinero.
+                </p>
+              )
+            )}
+            <p className="mt-1">No se puede aportar más dinero del que hay. Añade dinero primero desde tu banco o pon un importe menor.</p>
+            <Button size="sm" icon={Plus} wrap className="mt-2.5" onClick={() => anadirDinero(ds, origenRef.id)}>
+              Añadir dinero a «{oName}»
+            </Button>
+          </div>
+        )}
+
         {/* Repetir cada mes */}
         {!existing && (
           <div className={cn('rounded-2xl border p-3.5 sm:p-4', repetir ? 'border-fuchsia-200 bg-fuchsia-50/60' : 'border-slate-200')}>
@@ -554,22 +647,23 @@ export function MovementForm({
           />
         </Field>
 
-        {exceeds && saldoOrigen !== null && (
+        {exceedsProducto && saldoProducto !== null && (
           <div className="flex gap-2.5 rounded-xl bg-amber-50 p-3 text-sm text-amber-800">
             <TriangleAlert className="mt-0.5 size-4 shrink-0" />
-            {origenConSaldo ? (
-              <span>
-                En «{oName}» hay {hidden ? '•••••• €' : fmtEUR(Math.max(0, saldoOrigen))}. Si el dinero vino de fuera, apunta también la aportación desde tu
-                cuenta externa (botón «Añadir dinero» de «{oName}»).
-              </span>
-            ) : (
-              <span>
-                El importe supera el saldo actual de «{oName}» ({hidden ? 'oculto' : fmtEUR(saldoOrigen)}). Puede ser correcto si incluye
-                ganancias o intereses.
-              </span>
-            )}
+            <span>
+              El importe supera el saldo actual de «{oName}» ({hidden ? 'oculto' : fmtEUR(saldoProducto)}). Puede ser correcto si incluye ganancias o intereses.
+            </span>
           </div>
         )}
+        {avisos.map((a) => (
+          <div key={a.cuentaId} className="flex gap-2.5 rounded-xl bg-amber-50 p-3 text-sm text-amber-800" data-aviso-saldo>
+            <TriangleAlert className="mt-0.5 size-4 shrink-0" />
+            <span>
+              Con este cambio, «{entityName(lookup, { kind: 'cuenta', id: a.cuentaId })}» se quedará en negativo ({hidden ? '•••••• €' : fmtEUR(a.saldoMinimo)}), porque
+              ese dinero ya se ha usado. Se puede guardar igualmente: su saldo será el real.
+            </span>
+          </div>
+        ))}
         {!repetir && fecha > todayISO() && isValidISODate(fecha) && (
           <div className="flex gap-2.5 rounded-xl bg-sky-50 p-3 text-sm text-sky-800">
             <Info className="mt-0.5 size-4 shrink-0" />

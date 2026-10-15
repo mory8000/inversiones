@@ -10,22 +10,28 @@
 //
 // Además se admite indicar directamente el "valor actual" en € (lo que ves en
 // la app del banco) y, para depósitos, se calcula el interés con la TAE y las
-// fechas de apertura y vencimiento.
+// fechas de apertura y vencimiento. El interés puede cambiar: cada tramo se
+// calcula con la TAE que regía entonces.
 //
-// Las cuentas con saldo (como «MyInvestor») llevan su saldo: lo que entra menos
-// lo que sale. Ese dinero, aún sin invertir, suma en el patrimonio del titular.
-// Las cuentas externas solo dicen de dónde viene el dinero: no llevan saldo.
+// Las cuentas con saldo (como «MyInvestor») llevan su saldo real: lo que entra
+// menos lo que sale, positivo o negativo. Ese dinero, aún sin invertir, suma en
+// el patrimonio del titular. Las cuentas externas solo dicen de dónde viene el
+// dinero: no llevan saldo.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import type { Movimiento, Producto, ProductType, Valoracion, Workspace } from '../types'
+import type { Dataset, Movimiento, Producto, ProductType, Titular, Valoracion, Workspace } from '../types'
 import { addMonths, daysBetween, endOfMonth, maxDate, minDate } from './dates'
 import { PRODUCT_TYPES } from './meta'
 
 export const EPS = 0.005
 
 export interface DepositInfo {
-  /** TAE en % (2.5 = 2,5 %). */
+  /** TAE vigente hoy en % (2.5 = 2,5 %). */
   tae: number
+  /** Desde cuándo rige la TAE de hoy (`null`: desde el principio). */
+  taeDesde: string | null
+  /** Tramos de interés: el inicial (`desde: null`) y los cambios, en orden. */
+  tramos: { desde: string | null; tae: number }[]
   apertura: string | null
   vencimiento: string | null
   diasTotales: number | null
@@ -201,6 +207,46 @@ function rentabilidadDe(ganancia: number, capital: number, invertido: number): n
   return null
 }
 
+// ── Interés de los depósitos (puede cambiar con el tiempo) ──────────────────
+
+/** Tramos de interés de un depósito: el inicial (`desde: null`) y después cada cambio, por fecha. */
+export function tramosTae(p: Pick<Producto, 'tae' | 'cambiosTae'>): { desde: string | null; tae: number }[] {
+  const cambios = [...(p.cambiosTae ?? [])].sort((a, b) => (a.desde === b.desde ? a.createdAt.localeCompare(b.createdAt) : a.desde.localeCompare(b.desde)))
+  return [{ desde: null, tae: p.tae ?? 0 }, ...cambios.map((c) => ({ desde: c.desde, tae: c.tae }))]
+}
+
+/** Tramo que rige en una fecha. */
+function tramoEn(tramos: { desde: string | null; tae: number }[], fecha: string): { desde: string | null; tae: number } {
+  let t = tramos[0]
+  for (const x of tramos) if (x.desde !== null && x.desde <= fecha) t = x
+  return t
+}
+
+/** TAE (en %) que rige en una fecha. */
+export function taeEn(p: Pick<Producto, 'tae' | 'cambiosTae'>, fecha: string): number {
+  return tramoEn(tramosTae(p), fecha).tae
+}
+
+/**
+ * Interés simple de `base` euros entre dos fechas, con la TAE de cada tramo:
+ * base × TAE × días / 365, sumando tramo a tramo.
+ */
+export function interesEntre(p: Pick<Producto, 'tae' | 'cambiosTae'>, base: number, desde: string, hasta: string): number {
+  if (base <= 0 || hasta <= desde) return 0
+  const tramos = tramosTae(p)
+  let total = 0
+  let cursor = desde
+  let tae = tramoEn(tramos, desde).tae
+  for (const t of tramos) {
+    if (t.desde === null || t.desde <= desde) continue
+    if (t.desde >= hasta) break
+    total += base * (tae / 100) * (daysBetween(cursor, t.desde) / 365)
+    cursor = t.desde
+    tae = t.tae
+  }
+  return total + base * (tae / 100) * (daysBetween(cursor, hasta) / 365)
+}
+
 // ── Evaluación de un producto ───────────────────────────────────────────────
 
 interface EvalOptions {
@@ -254,17 +300,20 @@ export function evaluateProduct(p: Producto, movimientos: Movimiento[], opts: Ev
 
   if (p.tipo === 'deposito') {
     metodo = 'tae'
-    const tae = p.tae ?? 0
     const venc = p.vencimiento || null
     const apertura = primeraEntrada
     const fin = venc && venc < asOf ? venc : asOf
     const diasTranscurridos = apertura ? Math.max(0, daysBetween(apertura, fin)) : 0
     const diasTotales = apertura && venc ? Math.max(0, daysBetween(apertura, venc)) : null
-    const interesesHoy = base * (tae / 100) * (diasTranscurridos / 365)
-    const interesesVencimiento = diasTotales !== null ? base * (tae / 100) * (diasTotales / 365) : null
+    const interesesHoy = apertura ? interesEntre(p, base, apertura, fin) : 0
+    const interesesVencimiento = apertura && venc ? interesEntre(p, base, apertura, venc) : null
     saldo = base + interesesHoy
+    const tramos = tramosTae(p)
+    const vigente = tramoEn(tramos, fin)
     deposito = {
-      tae,
+      tae: vigente.tae,
+      taeDesde: vigente.desde,
+      tramos,
       apertura,
       vencimiento: venc,
       diasTotales,
@@ -440,8 +489,8 @@ export function computeAccountStats(ws: Workspace): Map<string, AccountStats> {
 
 // ── Totales y resumen por tipo ──────────────────────────────────────────────
 
-/** Dinero en una cuenta con saldo que suma en el patrimonio (nunca menos de 0). */
-export const efectivoDe = (s: AccountStats | undefined): number => (s && !s.externa ? Math.max(0, s.saldo) : 0)
+/** Dinero en una cuenta con saldo: su saldo real, positivo o negativo (así suma en el patrimonio). */
+export const efectivoDe = (s: AccountStats | undefined): number => (s && !s.externa ? s.saldo : 0)
 
 export function computeTotals(ws: Workspace, positions: Map<string, Position>, accounts?: Map<string, AccountStats>): Totals {
   let patrimonio = 0
@@ -570,8 +619,8 @@ export function timelineDates(movimientos: Movimiento[], today: string, maxPoint
 }
 
 /**
- * Capital y patrimonio en una fecha del histórico: productos y dinero de las cuentas con saldo
- * (que suma en los dos, porque es dinero puesto que aún no se ha invertido).
+ * Capital y patrimonio en una fecha del histórico: productos y saldo real de las cuentas con
+ * saldo (que suma en los dos, porque es dinero puesto que aún no se ha invertido).
  */
 function valueAt(ws: Workspace, fecha: string): { capital: number; patrimonio: number } {
   let capital = 0
@@ -589,9 +638,9 @@ function valueAt(ws: Workspace, fecha: string): { capital: number; patrimonio: n
       if (m.destino.kind === 'cuenta' && m.destino.id === c.id) saldo += m.importe
       if (m.origen.kind === 'cuenta' && m.origen.id === c.id) saldo -= m.importe
     }
-    const efectivo = Math.max(0, saldo)
-    capital += efectivo
-    patrimonio += efectivo
+    // El saldo real (puede ser negativo si ha salido más de lo que ha entrado).
+    capital += saldo
+    patrimonio += saldo
   }
   return { capital, patrimonio }
 }
@@ -622,4 +671,102 @@ export function buildProductTimeline(p: Producto, movimientos: Movimiento[], tod
   if (own.length === 0) return []
   const ws: Workspace = { cuentas: [], productos: [p], movimientos: own }
   return buildTimeline(ws, today, 36)
+}
+
+// ── TOTAL de Inicio: todo, menos lo que se deja fuera (p. ej. «Fondo ahorro») ─
+
+/** Algo que no suma en el TOTAL: un titular entero, un producto o una cuenta con saldo. */
+export interface FueraDelTotal {
+  nivel: 'titular' | 'producto' | 'cuenta'
+  id: string
+  titularId: string
+  nombre: string
+  /** Lo que vale: el patrimonio del titular o el saldo del producto o de la cuenta. */
+  valor: number
+}
+
+export interface GranTotal {
+  /** Inversiones + saldo real de las cuentas con saldo, de lo que suma. */
+  total: number
+  /** Valor de las inversiones que suman. */
+  inversiones: number
+  /** Saldo real de las cuentas con saldo que suman (puede ser negativo). */
+  cuentas: number
+  /** Capital invertido en lo que suma. */
+  capital: number
+  /** Beneficio (o pérdida) de las inversiones que suman. */
+  ganancia: number
+  rentabilidad: number | null
+  /** Valor por tipo de producto (solo los tipos que tienen dinero). */
+  porTipo: { tipo: ProductType; saldo: number; ganancia: number; n: number }[]
+  /** Saldo de cada cuenta con saldo que suma. */
+  porCuenta: { cuentaId: string; saldo: number }[]
+  /** Lo que se deja fuera, con lo que vale. */
+  fuera: FueraDelTotal[]
+}
+
+/** ¿Suma en el TOTAL? No si se ha dejado fuera, o si su titular se ha dejado fuera. */
+export function sumaEnTotal(item: { titularId: string; fueraDelTotal?: boolean }, titulares: Map<string, Titular>): boolean {
+  return !item.fueraDelTotal && !titulares.get(item.titularId)?.fueraDelTotal
+}
+
+export function computeGranTotal(ds: Dataset, positions: Map<string, Position>, accounts: Map<string, AccountStats>): GranTotal {
+  const titulares = new Map(ds.titulares.map((t) => [t.id, t]))
+  const porTipo = new Map<ProductType, { tipo: ProductType; saldo: number; ganancia: number; n: number }>()
+  const porCuenta: { cuentaId: string; saldo: number }[] = []
+  const fuera: FueraDelTotal[] = []
+  const patrimonioDe = new Map<string, number>()
+  const suma = (id: string, v: number) => patrimonioDe.set(id, (patrimonioDe.get(id) ?? 0) + v)
+  let inversiones = 0
+  let cuentas = 0
+  let capital = 0
+  let ganancia = 0
+
+  for (const p of ds.productos) {
+    const pos = positions.get(p.id)
+    if (!pos) continue
+    suma(p.titularId, pos.saldo)
+    if (!sumaEnTotal(p, titulares)) {
+      if (p.fueraDelTotal && !titulares.get(p.titularId)?.fueraDelTotal) fuera.push({ nivel: 'producto', id: p.id, titularId: p.titularId, nombre: p.nombre, valor: pos.saldo })
+      continue
+    }
+    inversiones += pos.saldo
+    capital += pos.capital
+    ganancia += pos.ganancia
+    if (pos.saldo > EPS) {
+      const r = porTipo.get(p.tipo) ?? { tipo: p.tipo, saldo: 0, ganancia: 0, n: 0 }
+      r.saldo += pos.saldo
+      r.ganancia += pos.ganancia
+      r.n++
+      porTipo.set(p.tipo, r)
+    }
+  }
+  for (const c of ds.cuentas) {
+    if (c.externa) continue
+    const saldo = efectivoDe(accounts.get(c.id))
+    suma(c.titularId, saldo)
+    if (!sumaEnTotal(c, titulares)) {
+      if (c.fueraDelTotal && !titulares.get(c.titularId)?.fueraDelTotal) fuera.push({ nivel: 'cuenta', id: c.id, titularId: c.titularId, nombre: c.nombre, valor: saldo })
+      continue
+    }
+    cuentas += saldo
+    porCuenta.push({ cuentaId: c.id, saldo })
+  }
+  for (const t of ds.titulares) {
+    if (t.fueraDelTotal) fuera.unshift({ nivel: 'titular', id: t.id, titularId: t.id, nombre: t.nombre, valor: patrimonioDe.get(t.id) ?? 0 })
+  }
+  // Los titulares primero, en su orden.
+  fuera.sort((a, b) => (a.nivel === 'titular' ? 0 : 1) - (b.nivel === 'titular' ? 0 : 1))
+
+  return {
+    total: inversiones + cuentas,
+    inversiones,
+    cuentas,
+    capital,
+    ganancia,
+    rentabilidad: capital > EPS ? ganancia / capital : null,
+    porTipo: PRODUCT_TYPES.map((t) => porTipo.get(t)).filter((r): r is NonNullable<typeof r> => !!r),
+    porCuenta,
+    fuera,
+  }
 }

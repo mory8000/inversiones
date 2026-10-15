@@ -1,8 +1,8 @@
 import { useMemo } from 'react'
-import { ArrowDownLeft, ArrowRightLeft, ArrowUpRight, Pencil, Plus, SearchX, TriangleAlert } from 'lucide-react'
+import { ArrowDownLeft, ArrowRightLeft, ArrowUpRight, CalendarSync, Pencil, Plus, SearchX, TriangleAlert } from 'lucide-react'
 import { useFinance } from '../store/useFinance'
 import { openAccount, openMovement } from '../store/ui'
-import { anadirDinero, invertirDesde } from '../store/acciones'
+import { anadirDinero, invertirDesde, programarMensual, sacarDinero } from '../store/acciones'
 import { cuentaPrincipal } from '../lib/titulares'
 import { involvesAccount } from '../lib/finance'
 import { counterparts } from '../lib/movements'
@@ -83,15 +83,15 @@ export function AccountDetail({ id }: { id: string }) {
 
           {!c.externa && (
             <div className="mt-5">
-              <div className="text-sm text-slate-500">Saldo (sin invertir)</div>
-              <Amount value={s.saldo} className={`text-3xl font-bold tracking-tight sm:text-4xl ${s.saldo < -0.005 ? 'text-amber-700' : 'text-slate-900'}`} />
-              <p className="mt-1 text-[13px] text-slate-500">Es dinero de {titular?.nombre ?? 'este titular'}: suma en su patrimonio.</p>
+              <div className="text-sm text-slate-500">Saldo real (sin invertir)</div>
+              <Amount value={s.saldo} className={`text-3xl font-bold tracking-tight sm:text-4xl ${s.saldo < -0.005 ? 'text-rose-700' : 'text-slate-900'}`} />
+              <p className="mt-1 text-[13px] text-slate-500">Lo que ha entrado menos lo que ha salido. Es dinero de {titular?.nombre ?? 'este titular'}: suma en su patrimonio.</p>
               {s.saldo < -0.005 && (
-                <p className="mt-3 flex gap-2 rounded-xl bg-amber-50 p-3 text-sm text-amber-800">
+                <p className="mt-3 flex gap-2 rounded-xl bg-rose-50 p-3 text-sm text-rose-800">
                   <TriangleAlert className="mt-0.5 size-4 shrink-0" />
                   <span>
-                    Han salido <Amount value={-s.saldo} className="font-semibold" /> más de los que han entrado. Apunta de dónde vino ese dinero con «Añadir dinero»
-                    (una aportación desde tu cuenta externa).
+                    Saldo negativo: han salido <Amount value={-s.saldo} className="font-semibold" /> más de los que han entrado. Apunta de dónde vino ese dinero con
+                    «Añadir dinero» (una aportación desde tu cuenta externa) o revisa los movimientos.
                   </span>
                 </p>
               )}
@@ -167,9 +167,17 @@ export function AccountDetail({ id }: { id: string }) {
 
           <div className="mt-4 grid grid-cols-1 gap-2 sm:flex sm:flex-wrap">
             {!c.externa && (
-              <Button icon={Plus} onClick={() => anadirDinero(ds, c.id)}>
-                Añadir dinero (desde cuenta externa)
-              </Button>
+              <>
+                <Button icon={Plus} onClick={() => anadirDinero(ds, c.id)}>
+                  Añadir dinero (desde cuenta externa)
+                </Button>
+                <Button variant="soft" icon={CalendarSync} onClick={() => programarMensual(ds, c.titularId, c.id)}>
+                  Programar transferencia mensual
+                </Button>
+                <Button variant="soft" icon={ArrowDownLeft} onClick={() => sacarDinero(ds, c.id)}>
+                  Sacar dinero (a cuenta externa)
+                </Button>
+              </>
             )}
             {c.externa && principal && (
               <Button

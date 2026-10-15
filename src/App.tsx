@@ -1,6 +1,8 @@
 import { useEffect } from 'react'
 import { useRoute } from './lib/router'
 import { useData } from './store/data'
+import { useUI } from './store/ui'
+import { deshacer, rehacer } from './store/deshacer'
 import { AppShell } from './components/layout/AppShell'
 import { Modals, Toasts } from './components/Modals'
 import { Dashboard } from './pages/Dashboard'
@@ -22,6 +24,26 @@ export default function App() {
     }
     document.addEventListener('visibilitychange', onVisible)
     return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [])
+
+  // Teclado (ordenador): Ctrl+Z deshace y Ctrl+Y (o Ctrl+Mayús+Z) rehace, salvo mientras se escribe en un campo.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return
+      const t = e.target as HTMLElement | null
+      if (t && (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName))) return
+      if (useUI.getState().modals.length > 0) return
+      const k = e.key.toLowerCase()
+      if (k === 'z' && !e.shiftKey) {
+        e.preventDefault()
+        deshacer()
+      } else if (k === 'y' || (k === 'z' && e.shiftKey)) {
+        e.preventDefault()
+        rehacer()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
   }, [])
 
   useEffect(() => {

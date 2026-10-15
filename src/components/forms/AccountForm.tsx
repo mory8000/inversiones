@@ -7,11 +7,13 @@ import { AccountAvatar } from '../ui/icons'
 import { ACCOUNT_COLORS } from '../../lib/meta'
 import { useData } from '../../store/data'
 import { useFinance } from '../../store/useFinance'
-import { confirmDialog, toast, useUI } from '../../store/ui'
+import { confirmDialog, useUI } from '../../store/ui'
+import { accion } from '../../store/deshacer'
+import { Switch } from '../ui/Switch'
 import { navigate, paths } from '../../lib/router'
 import { EntitySuggestions, ENTITY_LIST_ID } from './EntitySuggestions'
 import { TitularPicker } from '../Titulares'
-import { cuentaPrincipal } from '../../lib/titulares'
+import { cuentaPrincipal, esFondoAhorro } from '../../lib/titulares'
 import { fmtEUR } from '../../lib/format'
 import { cn } from '../../lib/cn'
 
@@ -61,6 +63,9 @@ export function AccountForm({
   // Si no se indica, la primera cuenta de un titular es su cuenta con saldo y las demás, externas.
   const [externa, setExterna] = useState<boolean>(existing?.externa ?? presetExterna ?? !!cuentaPrincipal(ws.cuentas, existing?.titularId ?? presetTitularId ?? ds.titulares[0].id))
   const [submitted, setSubmitted] = useState(false)
+  /** Si su saldo suma en el TOTAL de Inicio (solo cuentas con saldo). Lo que se llame «Fondo ahorro» empieza fuera. */
+  const [fueraElegido, setFueraElegido] = useState<boolean | null>(null)
+  const fuera = fueraElegido ?? (existing ? !!existing.fueraDelTotal || (esFondoAhorro(nombre) && !esFondoAhorro(existing.nombre)) : esFondoAhorro(nombre))
   const error = !nombre.trim() ? 'Ponle un nombre a la cuenta' : null
   const stats = existing ? accounts.get(existing.id) : undefined
   /** Saldo que tendría la cuenta con los movimientos que ya tiene. */
@@ -69,15 +74,13 @@ export function AccountForm({
   const save = () => {
     setSubmitted(true)
     if (error) return
-    const data = { titularId, nombre: nombre.trim(), entidad: entidad.trim(), iban: iban.trim().toUpperCase(), color, notas: notas.trim(), externa }
+    const data = { titularId, nombre: nombre.trim(), entidad: entidad.trim(), iban: iban.trim().toUpperCase(), color, notas: notas.trim(), externa, fueraDelTotal: !externa && fuera }
     if (existing) {
-      updateCuenta(existing.id, data)
-      toast('Cuenta actualizada')
+      accion(`Cambiar cuenta «${data.nombre}»`, () => updateCuenta(existing.id, data), 'Cuenta actualizada')
       close(modalId)
       return
     }
-    const id = addCuenta(data)
-    toast('Cuenta creada')
+    const id = accion(`Nueva cuenta «${data.nombre}»`, () => addCuenta(data), 'Cuenta creada')
     close(modalId)
     onCreated?.(id)
   }
@@ -89,14 +92,13 @@ export function AccountForm({
       title: `¿Eliminar «${existing.nombre}»?`,
       message:
         n > 0
-          ? `También se eliminarán sus ${n} movimiento${n === 1 ? '' : 's'}. Esta acción no se puede deshacer.`
-          : 'Esta acción no se puede deshacer.',
+          ? `También se eliminarán sus ${n} movimiento${n === 1 ? '' : 's'}. Si te equivocas, pulsa «Deshacer».`
+          : 'Si te equivocas, pulsa «Deshacer».',
       confirmLabel: 'Eliminar',
       danger: true,
     })
     if (ok) {
-      removeCuenta(existing.id)
-      toast('Cuenta eliminada')
+      accion(`Eliminar cuenta «${existing.nombre}»`, () => removeCuenta(existing.id), 'Cuenta eliminada')
       close(modalId)
       navigate(paths.cuentas)
     }
@@ -173,6 +175,17 @@ export function AccountForm({
             </p>
           )}
         </fieldset>
+        {!externa && (
+          <div className="flex items-start justify-between gap-3 rounded-2xl border border-slate-200 p-3.5">
+            <label htmlFor="acc-total" className="min-w-0">
+              <span className="block text-sm font-semibold text-slate-900">Su saldo suma en el TOTAL de Inicio</span>
+              <span className="mt-0.5 block text-[13px] text-slate-500">
+                {fuera ? 'No suma en el TOTAL (p. ej. un «Fondo ahorro»). Sigue contando para su titular.' : 'Lo que hay en ella suma en el TOTAL.'}
+              </span>
+            </label>
+            <Switch id="acc-total" checked={!fuera} onChange={(v) => setFueraElegido(!v)} label="Su saldo suma en el TOTAL de Inicio" />
+          </div>
+        )}
         <Field label="Nombre" htmlFor="acc-nombre" error={submitted ? error : null}>
           <TextInput
             id="acc-nombre"

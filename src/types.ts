@@ -13,6 +13,9 @@
 // nunca para quien lo envía.
 //
 // El orden de `productos` es el que elige el usuario para ver sus inversiones.
+//
+// El TOTAL de Inicio suma todo (de todos los titulares) menos lo marcado con
+// `fueraDelTotal` (un titular entero, un producto o una cuenta; p. ej. «Fondo ahorro»).
 // ─────────────────────────────────────────────────────────────────────────────
 
 export type ProductType = 'deposito' | 'fondo' | 'cartera' | 'plan' | 'acciones' | 'otro'
@@ -40,6 +43,8 @@ export interface Titular {
   id: string
   codigo: string
   nombre: string
+  /** No suma en el TOTAL de Inicio (p. ej. «Fondo ahorro»). */
+  fueraDelTotal?: boolean
   createdAt: string
 }
 
@@ -61,6 +66,8 @@ export interface Cuenta {
   notas: string
   /** `true`: cuenta externa (otro banco). `false`: cuenta con saldo (como MyInvestor). */
   externa: boolean
+  /** No suma en el TOTAL de Inicio. */
+  fueraDelTotal?: boolean
   createdAt: string
 }
 
@@ -77,6 +84,19 @@ export interface Valoracion {
   createdAt: string
 }
 
+/**
+ * Cambio del interés de un depósito: desde `desde` (incluido) rige la nueva TAE.
+ * Los intereses pueden variar: cada tramo se calcula con la suya.
+ */
+export interface CambioTae {
+  id: string
+  /** Fecha AAAA-MM-DD desde la que rige. */
+  desde: string
+  /** Interés anual en % (2.5 = 2,5 % TAE). Puede ser negativo. */
+  tae: number
+  createdAt: string
+}
+
 /** Producto de inversión: depósito, fondo, cartera… */
 export interface Producto {
   id: string
@@ -87,11 +107,15 @@ export interface Producto {
   entidad: string
   isin: string
   notas: string
-  /** Solo depósitos: interés anual en % (2.5 = 2,5 % TAE). */
+  /** Solo depósitos: interés anual en % al contratarlo (2.5 = 2,5 % TAE). */
   tae: number | null
+  /** Solo depósitos: cambios del interés después de contratarlo (en orden de fecha). */
+  cambiosTae?: CambioTae[]
   /** Solo depósitos: fecha de vencimiento AAAA-MM-DD. */
   vencimiento: string | null
   valoraciones: Valoracion[]
+  /** No suma en el TOTAL de Inicio (p. ej. «Fondo ahorro»). */
+  fueraDelTotal?: boolean
   createdAt: string
 }
 

@@ -2,7 +2,7 @@
 
 App para llevar el control de tus **depósitos, fondos, carteras y planes de pensiones**, al estilo de MyInvestor.
 Registra cada movimiento de dinero y la app te enseña, de forma clara, **de dónde viene y a dónde va cada euro**,
-cuánto has invertido, cuánto ha vuelto a tus cuentas y cuánto has ganado.
+cuánto has invertido, cuánto ha vuelto a tus cuentas, cuánto has ganado y el **TOTAL** de todo.
 
 **Abrir la app → https://mory8000.github.io/inversiones/** (funciona en el ordenador y en el móvil, y se puede
 instalar como una app).
@@ -13,7 +13,8 @@ Sustituye al antiguo `Inversiones.xlsx` y mantiene sus mismos conceptos: titular
 ![Inicio en escritorio](docs/captura-inicio.jpg)
 
 <p align="center">
-  <img src="docs/movil-inicio.jpg" width="200" alt="Inicio en el móvil: los titulares y su cuenta MyInvestor">
+  <img src="docs/movil-inicio.jpg" width="200" alt="Inicio en el móvil: el TOTAL, sin el Fondo ahorro">
+  <img src="docs/movil-myinvestor.jpg" width="200" alt="La ventana de MyInvestor: añadir dinero, invertir, programar la transferencia mensual">
   <img src="docs/movil-ventanillas.jpg" width="200" alt="Una ventanilla por inversión, en el orden que elijas">
   <img src="docs/movil-movimientos.jpg" width="200" alt="Movimientos en el móvil">
   <img src="docs/movil-flujo.jpg" width="200" alt="Flujo del dinero en el móvil">
@@ -23,19 +24,40 @@ Sustituye al antiguo `Inversiones.xlsx` y mantiene sus mismos conceptos: titular
 
 ## Qué puedes hacer
 
-- **Inicio**: lo primero que se ve son **todos los titulares a la vez** y, justo debajo, **una ventanilla por cada
-  inversión** (fondo, cartera, depósito…):
+- **Inicio**: lo primero que se ve es el **TOTAL** y, debajo, **todos los titulares a la vez** y **una ventanilla
+  por cada inversión** (fondo, cartera, depósito…):
+  - **TOTAL**: todo el dinero (las inversiones de todos los titulares y el saldo de sus cuentas MyInvestor)
+    **menos lo que se deja fuera, como el «Fondo ahorro»**, con su beneficio y el desglose por tipo (depósitos,
+    fondos, carteras… y la cuenta MyInvestor). Con **«Qué suma»** se elige qué entra en el TOTAL (un titular
+    entero, una inversión o una cuenta). Lo que se llama «Fondo ahorro» queda fuera solo.
   - La tarjeta de cada titular (el primero es el principal) con su patrimonio, su rentabilidad, lo invertido, lo
     que tiene sin invertir en su cuenta **MyInvestor** y lo aportado, y lo que ha enviado o recibido de otro
-    titular. **Dentro de la tarjeta del principal** están su cuenta **MyInvestor** (con «Añadir dinero» desde una
-    cuenta externa) y su **transferencia mensual** (programarla o cambiarla).
-  - **Ventanillas**: al tocar una se abre con su saldo y rentabilidad y con lo que se puede hacer: **Aportar**,
-    **Retirar** (reembolso), **Traspasar**, **Actualizar valor** (o TAE y vencimiento, en los depósitos) y ver
-    sus movimientos.
+    titular. En la del principal está su cuenta **MyInvestor**, con «Añadir dinero», «Invertir» y
+    **«Abrir MyInvestor»**.
+  - **Ventana de MyInvestor** (al abrirla): su **saldo real** (positivo o negativo), **Añadir dinero** (desde una
+    cuenta externa), **Invertir**, **Programar transferencia mensual**, **Sacar dinero**, sus transferencias
+    mensuales y el **dinero añadido desde bancos externos**, cada movimiento con sus botones **Editar** y
+    **Borrar**.
+  - **Ventanillas**: al tocar una se abre con su saldo, su **% de rentabilidad** (o su **interés**, en los
+    depósitos) con el botón para cambiarlo, y con lo que se puede hacer: **Aportar**, **Retirar** (reembolso),
+    **Traspasar**, **Programar transferencia mensual** y ver sus movimientos (con **Editar** y **Borrar**).
   - **Ordenar**: pon las ventanillas en el orden que quieras, arrastrándolas o con «Antes» / «Después». El orden
     se guarda y se usa también en *Inversiones*.
   - Debajo: la evolución (una línea por titular), dónde está el dinero de cada uno, el diagrama del flujo del
     dinero, el resumen por tipo de cada titular (como el Excel), los últimos movimientos y las cuentas.
+- **% de beneficio o pérdida**: en cada fondo, cartera, plan… se pone el % que gana o pierde (**«Gana (sube)» o
+  «Pierde (baja)»**): si las acciones suben un 3 %, se pone 3 y su saldo pasa a ser el capital + 3 %. Se ve al
+  momento en su ventanilla y en el TOTAL. También se puede poner su valor en euros.
+- **Interés variable en los depósitos**: «Cambiar interés» pone la nueva TAE **desde una fecha** (hoy, otra
+  fecha o desde el principio para corregirla). Los días de antes se siguen calculando con el interés anterior.
+- **Deshacer**: el botón **«Deshacer»** de arriba (y el de cada aviso) deshace el último cambio: un movimiento
+  apuntado, cambiado o borrado, un %, un interés, una transferencia mensual… Se pueden deshacer varios seguidos
+  y **«Rehacer»**. El historial se guarda en el dispositivo, así que sigue ahí aunque se cierre la app. En el
+  ordenador también vale **Ctrl+Z** (y **Ctrl+Y** para rehacer).
+- **No se puede aportar más dinero del que hay** en MyInvestor (ni en otra cuenta con saldo): si se intenta,
+  sale un aviso con lo que hay disponible, lo que falta y un botón para «Añadir dinero». Se comprueba en la fecha
+  del movimiento y después (si luego hay más salidas, tampoco pueden quedarse sin dinero). Al programar una
+  transferencia mensual que empieza en el pasado, se comprueba que haya dinero para las que ya tocan.
 - **Movimientos**: todos los movimientos de todos los titulares, con su origen (**De**) y destino (**A**) y de quién
   es cada uno, agrupados por meses. Filtros por titular, tipo, cuenta o producto, tipo de producto y periodo;
   buscador; y exportación a Excel (CSV).
@@ -49,21 +71,24 @@ Sustituye al antiguo `Inversiones.xlsx` y mantiene sus mismos conceptos: titular
   ido, su evolución y sus movimientos. En los depósitos: TAE, vencimiento, días restantes e intereses.
 - **Cuentas con saldo y cuentas externas**:
   - **Con saldo (como MyInvestor)**: el dinero que hay en ella es del titular y suma en su patrimonio. La app
-    calcula su saldo con lo que entra y lo que sale. El titular principal tiene la suya, **«MyInvestor»**, que es
-    su cuenta principal.
+    calcula su **saldo real** con lo que entra y lo que sale: puede ser positivo o negativo (si es negativo, se ve
+    en rojo y resta). El titular principal tiene la suya, **«MyInvestor»**, que es su cuenta principal.
   - **Externa (otro banco)**, p. ej. la cuenta nómina: indica de dónde viene el dinero (**aportaciones**) o a
     dónde va. No lleva saldo ni suma en el patrimonio.
   - Con **«Añadir dinero»** se apunta una aportación de una cuenta externa a MyInvestor (si aún no tienes ninguna
-    cuenta externa, se crea «Cuenta externa» y luego le puedes cambiar el nombre).
+    cuenta externa, se crea «Cuenta externa» y luego le puedes cambiar el nombre). Esas aportaciones se pueden
+    **editar o borrar** desde la ventana de MyInvestor (si al borrarla la cuenta se quedara en negativo, avisa).
 - **Detalle de cada cuenta**: su saldo (si lo lleva), lo que ha entrado y salido, a qué productos ha ido el dinero
   y lo que ha vuelto.
 - **Varios titulares, vistos a la vez**: la app empieza con «Titular 1» (el principal) y «Titular 2»; ponles
   nombre desde la propia app. Cada cuenta y cada producto es de un titular, cada titular tiene su color y sus
-  cifras van siempre por separado (nunca se suman). Desde *Ajustes → Titulares* se puede añadir otro titular o
-  elegir cuál es el principal (código y nombre, como en la cabecera del Excel).
+  cifras van siempre por separado (solo el TOTAL de arriba las junta, sin lo que se deja fuera). Desde
+  *Ajustes → Titulares* se puede añadir otro titular o elegir cuál es el principal (código y nombre, como en la
+  cabecera del Excel).
 - **Transferencia mensual**: por ejemplo, de MyInvestor del titular 1 a un fondo o cuenta del titular 2. Se
-  programa una vez, desde la tarjeta del titular principal (importe, día, desde qué cuenta y a qué producto o
-  cuenta), y la app la apunta sola cada mes. Un mes concreto se puede cambiar o borrar sin tocar los demás.
+  programa una vez, **dentro de la ventana de MyInvestor** o de la ventanilla de la inversión (importe, día, desde
+  qué cuenta y a qué producto o cuenta), y la app la apunta sola cada mes. Un mes concreto se puede cambiar o
+  borrar sin tocar los demás.
 - **El dinero cuenta para quien lo recibe**: si sale de la cuenta del titular 1 y entra en un producto o en una
   cuenta con saldo del titular 2, cuenta solo para el titular 2, no para el titular 1 (al titular 1 se le enseña
   como «Enviado a…»).
@@ -99,13 +124,15 @@ Saldo     = Capital × (1 + %)
 €         = Saldo − Capital            (rentabilidad en euros)
 ```
 
-El valor de cada producto se puede actualizar de dos formas (botón **Actualizar valor**):
+El valor de cada producto se puede actualizar de dos formas (botón **Cambiar %**):
 
-- **Rentabilidad (%)**, como en el Excel: `Saldo = Capital × (1 + %)`.
+- **Rentabilidad (%)**, como en el Excel, positiva o negativa: `Saldo = Capital × (1 + %)`. Por ejemplo, con
+  1.000 € y +3 %, 1.030 €; con −2 %, 980 €.
 - **Valor de mercado (€)**: el valor que ves en la app de tu banco. Los movimientos posteriores se suman o restan.
 
 En los **depósitos** el interés se calcula solo con la TAE (interés simple): `capital × TAE × días / 365`,
-desde la primera aportación hasta hoy o hasta el vencimiento.
+desde la primera aportación hasta hoy o hasta el vencimiento. Si el interés cambia, cada tramo se calcula con la
+TAE que regía entonces y se suman.
 
 Cuando sacas todo el dinero de un producto (por ejemplo, al vencer un depósito), queda como **cerrado** y su
 resultado final es lo que has recuperado menos lo que invertiste.
@@ -113,18 +140,27 @@ resultado final es lo que has recuperado menos lo que invertiste.
 Y para cada titular:
 
 ```
-Saldo de una cuenta con saldo = lo que ha entrado − lo que ha salido
-Patrimonio = saldo de sus productos + dinero en sus cuentas con saldo (MyInvestor)
+Saldo de una cuenta con saldo = lo que ha entrado − lo que ha salido      (real: positivo o negativo)
+Patrimonio = saldo de sus productos + saldo de sus cuentas con saldo (MyInvestor)
 Aportado   = lo que ha entrado desde fuera (cuentas externas u otros titulares)
 ```
 
-Si de MyInvestor sale más dinero del que ha entrado, la app avisa de que falta apuntar de dónde vino (una
-aportación desde la cuenta externa) y, mientras tanto, cuenta su saldo como 0.
+Y arriba del todo:
+
+```
+TOTAL = saldo de todas las inversiones + saldo de las cuentas con saldo, de todos los titulares,
+        menos lo que se deja fuera (p. ej. el «Fondo ahorro»)
+```
+
+Si el saldo de MyInvestor queda en negativo (por ejemplo, al borrar dinero añadido que ya se había invertido, o
+si una transferencia mensual llega sin dinero suficiente), se ve en rojo, resta en el patrimonio y en el TOTAL,
+y la app avisa de que falta apuntar de dónde vino el dinero («Añadir dinero»).
 
 ## Tus datos
 
 Todo se guarda **solo en tu navegador** (localStorage): no hay servidor ni cuentas de usuario y tus datos no
-salen del dispositivo. Aunque la web sea pública, quien la abra solo ve **sus propios** datos (al principio, la
+salen del dispositivo. El historial de «Deshacer» también se guarda solo ahí (aparte) y se borra con
+*Ajustes → Borrar todo*. Aunque la web sea pública, quien la abra solo ve **sus propios** datos (al principio, la
 app vacía); nunca los tuyos. Los nombres de los titulares también se guardan solo ahí: no están en el código.
 
 Además, la versión publicada incluye una **política de seguridad (CSP)** que solo deja a la app cargar sus
@@ -175,8 +211,9 @@ Recharts (gráficos), un diagrama de flujo propio en SVG y vite-plugin-pwa (inst
 
 ```
 src/
-├── lib/          Cálculos (finance.ts), diagrama de flujo (flow.ts), movimientos, formatos, fechas…
-├── store/        Datos guardados (data.ts), validación (sanitize.ts), estado de la interfaz (ui.ts)
+├── lib/          Cálculos (finance.ts), saldo día a día (saldo.ts), diagrama de flujo (flow.ts), movimientos…
+├── store/        Datos guardados (data.ts), deshacer (historial.ts, deshacer.ts), validación (sanitize.ts),
+│                 estado de la interfaz (ui.ts)
 ├── components/   Gráficos, formularios, lista de movimientos y piezas de la interfaz
 └── pages/        Inicio, Inversiones, Producto, Cuenta, Movimientos, Flujo y Ajustes
 ```

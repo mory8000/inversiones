@@ -19,6 +19,7 @@ import {
 import { exportBackup, sanitizeData, useData } from '../store/data'
 import { useFinance, type TitularFinance } from '../store/useFinance'
 import { confirmDialog, openProgramada, openTitular, toast } from '../store/ui'
+import { accion } from '../store/deshacer'
 import { entityName, movementsToCSV } from '../lib/movements'
 import { diaDe, movimientosDe, proximaFecha } from '../lib/programadas'
 import { fmtDate, fmtEUR } from '../lib/format'
@@ -81,8 +82,7 @@ function TitularRow({ tf }: { tf: TitularFinance }) {
           size="sm"
           icon={Crown}
           onClick={() => {
-            makePrincipal(titular.id)
-            toast(`${titular.nombre} es ahora el titular principal`)
+            accion(`Hacer principal a «${titular.nombre}»`, () => makePrincipal(titular.id), `${titular.nombre} es ahora el titular principal`)
           }}
           className="shrink-0"
         >
@@ -146,20 +146,17 @@ export function Settings() {
     const ok = await confirmDialog({
       title: '¿Borrar cuentas, productos y movimientos?',
       message:
-        'Se eliminarán las cuentas, productos, movimientos y transferencias mensuales de todos los titulares. Los titulares (y sus nombres) se quedan, y el principal vuelve a tener su cuenta «MyInvestor» vacía. Te recomendamos descargar antes una copia de seguridad.',
+        'Se eliminarán las cuentas, productos, movimientos y transferencias mensuales de todos los titulares. Los titulares (y sus nombres) se quedan, y el principal vuelve a tener su cuenta «MyInvestor» vacía. Si te equivocas, pulsa «Deshacer». Te recomendamos descargar antes una copia de seguridad.',
       confirmLabel: 'Borrar datos',
       danger: true,
     })
-    if (ok) {
-      clearData()
-      toast('Datos borrados')
-    }
+    if (ok) accion('Borrar cuentas, productos y movimientos', clearData, 'Datos borrados')
   }
 
   const reset = async () => {
     const ok = await confirmDialog({
       title: '¿Borrar absolutamente todo?',
-      message: 'Se eliminarán todos los titulares y sus datos de este dispositivo. Esta acción no se puede deshacer.',
+      message: 'Se eliminarán todos los titulares y sus datos de este dispositivo (también el historial de «Deshacer»). Esto no se puede deshacer.',
       confirmLabel: 'Borrarlo todo',
       danger: true,
     })

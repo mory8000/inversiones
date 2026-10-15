@@ -122,7 +122,7 @@ describe('datos guardados', () => {
     expect(s.datos.movimientos).toHaveLength(ws1.movimientos.length + 1)
     expect(s.datos.productos.find((p) => p.id === 'p-luis')?.titularId).toBe('t2')
     // El ejemplo (ficticio) se vuelve a crear con las cuentas nuevas.
-    expect(s.ejemplo?.titulares.map((t) => t.nombre)).toEqual(['Marta', 'Pablo'])
+    expect(s.ejemplo?.titulares.map((t) => t.nombre)).toEqual(['Marta', 'Fondo ahorro'])
     expect(s.verEjemplo).toBe(true)
 
     useData.getState().setVerEjemplo(false)
@@ -130,7 +130,7 @@ describe('datos guardados', () => {
     expect(f.byTitular.get('t2')!.totals.patrimonio).toBe(300)
     expect(f.byTitular.get('t1')!.totals.patrimonio).toBeGreaterThan(20000)
 
-    expect(saved(storage).version).toBe(4)
+    expect(saved(storage).version).toBe(5)
     expect(saved(storage).state.datos.titulares).toHaveLength(2)
   })
 
@@ -180,7 +180,7 @@ describe('datos guardados', () => {
     const v1 = sanitizeData({ version: 1, titulares: [{ id: 't1', codigo: '7', nombre: 'Titular principal' }], activeTitularId: 't1', workspaces: {} })
     // Tiene código, así que se respeta el nombre que tenía.
     expect(v1?.datos.titulares.map((t) => t.nombre)).toEqual(['Titular principal', 'Titular 2'])
-    expect(v1?.version).toBe(4)
+    expect(v1?.version).toBe(5)
   })
 })
 
@@ -290,7 +290,7 @@ describe('transferencia mensual', () => {
 })
 
 describe('datos de ejemplo', () => {
-  it('van aparte de tus datos: Marta envía cada mes a Pablo y cuenta como inversión de Pablo', async () => {
+  it('van aparte de tus datos: Marta envía cada mes al «Fondo ahorro» y cuenta solo para él (que no suma en el TOTAL)', async () => {
     const { useData, finance } = await open(new MemoryStorage())
     useData.getState().loadDemo()
     let s = useData.getState()
@@ -298,7 +298,12 @@ describe('datos de ejemplo', () => {
     expect(s.datos.movimientos).toHaveLength(0)
     const f = finance()
     const [marta, pablo] = f.titulares
-    expect([marta.titular.nombre, pablo.titular.nombre]).toEqual(['Marta', 'Pablo'])
+    expect([marta.titular.nombre, pablo.titular.nombre]).toEqual(['Marta', 'Fondo ahorro'])
+    // El TOTAL es todo menos el «Fondo ahorro»: aquí, lo de Marta.
+    expect(pablo.titular.fueraDelTotal).toBe(true)
+    expect(f.granTotal.total).toBeCloseTo(marta.totals.patrimonio, 6)
+    expect(f.granTotal.fuera).toEqual([expect.objectContaining({ nivel: 'titular', nombre: 'Fondo ahorro' })])
+    expect(f.granTotal.fuera[0].valor).toBeCloseTo(pablo.totals.patrimonio, 6)
     expect(pablo.recibidoTotal).toBeGreaterThan(2000)
     expect(pablo.totals.aportado).toBeCloseTo(pablo.recibidoTotal, 2)
     expect(marta.enviadoTotal).toBeCloseTo(pablo.recibidoTotal, 2)
@@ -378,9 +383,9 @@ describe('cuenta principal «MyInvestor» y cuentas externas (versión 4)', () =
     expect(ahorro().totals.patrimonio).toBe(600)
     expect(ahorro().totals.aportadoTotal).toBe(600)
     expect(luis().enviadoTotal).toBe(600)
-    // Ha salido más de lo que ha entrado (falta apuntar la aportación): el saldo no baja de 0.
+    // Ha salido más de lo que ha entrado (falta apuntar la aportación): el saldo es real, negativo.
     expect(f.accounts.get('c1')!.saldo).toBe(-600)
-    expect(luis().totals).toMatchObject({ efectivo: 0, patrimonio: 0, aportadoTotal: 0 })
+    expect(luis().totals).toMatchObject({ efectivo: -600, patrimonio: -600, aportadoTotal: 0 })
 
     // Aportación desde una cuenta externa a MyInvestor.
     const st = useData.getState()
@@ -390,7 +395,13 @@ describe('cuenta principal «MyInvestor» y cuentas externas (versión 4)', () =
     expect(f.accounts.get('c1')).toMatchObject({ saldo: 400, aportaciones: 1000 })
     expect(luis().totals).toMatchObject({ efectivo: 400, patrimonio: 400, aportadoTotal: 1000, capital: 0 })
     expect(ahorro().totals.patrimonio).toBe(600)
-    expect(saved(storage).version).toBe(4)
+    expect(saved(storage).version).toBe(5)
+    // «Fondo ahorro» no suma en el TOTAL: el TOTAL es lo de Luis (su MyInvestor).
+    expect(s.datos.titulares.map((t) => [t.nombre, !!t.fueraDelTotal])).toEqual([
+      ['Luis', false],
+      ['Fondo ahorro', true],
+    ])
+    expect(f.granTotal).toMatchObject({ total: 400, cuentas: 400, inversiones: 0 })
     s = useData.getState()
     expect(s.datos.cuentas.map((c) => [c.nombre, c.externa])).toEqual([
       ['MyInvestor', false],
@@ -482,5 +493,219 @@ describe('cuenta principal «MyInvestor» y cuentas externas (versión 4)', () =
     expect(s.titulares).toHaveLength(2)
     expect(s.productos).toHaveLength(0)
     expect(s.cuentas).toEqual([expect.objectContaining({ nombre: 'MyInvestor', externa: false, titularId: t1.id })])
+  })
+})
+
+describe('versión 5: TOTAL sin el «Fondo ahorro» e interés que cambia', () => {
+  it('lo que se llama «Fondo ahorro» (titular, producto o cuenta) queda fuera del TOTAL; lo demás, dentro', async () => {
+    const storage = new MemoryStorage()
+    const fondo = (id: string, titularId: string, nombre: string, extra: object = {}) => ({
+      id,
+      titularId,
+      tipo: 'fondo',
+      nombre,
+      entidad: '',
+      isin: '',
+      notas: '',
+      tae: null,
+      vencimiento: null,
+      valoraciones: [],
+      createdAt: '',
+      ...extra,
+    })
+    storage.setItem(
+      'mis-inversiones',
+      legacy(4, {
+        datos: {
+          titulares: [
+            { id: 't1', codigo: '', nombre: 'Luis principal', createdAt: '' },
+            { id: 't2', codigo: '', nombre: 'Ana', createdAt: '' },
+          ],
+          cuentas: [
+            { id: 'c1', titularId: 't1', nombre: 'MyInvestor', entidad: '', iban: '', color: '#000', notas: '', externa: false, createdAt: '' },
+            { id: 'c2', titularId: 't2', nombre: 'Cuenta Fondo-Ahorro', entidad: '', iban: '', color: '#000', notas: '', externa: false, createdAt: '' },
+            { id: 'c3', titularId: 't1', nombre: 'Cuenta ahorro', entidad: '', iban: '', color: '#000', notas: '', externa: true, createdAt: '' },
+          ],
+          productos: [
+            fondo('p1', 't1', 'Fondo de ahorro'),
+            fondo('p2', 't1', 'Vanguard'),
+            {
+              ...fondo('p3', 't1', 'Depósito'),
+              tipo: 'deposito',
+              tae: 2,
+              cambiosTae: [{ id: 'x', desde: '2026-05-01', tae: 1.5, createdAt: '' }, { desde: 'mal', tae: 3 }, { desde: '2026-06-01', tae: 'no' }],
+            },
+          ],
+          movimientos: [],
+          programadas: [],
+        },
+        ejemplo: null,
+        verEjemplo: false,
+        hideAmounts: false,
+      }),
+    )
+    const { useData } = await open(storage)
+    const d = useData.getState().datos
+    expect(d.titulares.map((t) => !!t.fueraDelTotal)).toEqual([false, false])
+    expect(d.cuentas.map((c) => [c.id, !!c.fueraDelTotal])).toEqual([
+      ['c1', false],
+      ['c2', true],
+      ['c3', false],
+    ])
+    expect(d.productos.map((p) => [p.id, !!p.fueraDelTotal])).toEqual([
+      ['p1', true],
+      ['p2', false],
+      ['p3', false],
+    ])
+    // Solo los cambios de interés válidos.
+    expect(d.productos[2].cambiosTae).toEqual([{ id: 'x', desde: '2026-05-01', tae: 1.5, createdAt: '' }])
+    expect(saved(storage).version).toBe(5)
+
+    // Con datos ya de la versión 5, lo que el usuario cambie se respeta (no se vuelve a marcar).
+    useData.getState().setFueraDelTotal({ kind: 'producto', id: 'p1' }, false)
+    const again = await open(storage)
+    expect(again.useData.getState().datos.productos[0].fueraDelTotal).toBeUndefined()
+  })
+
+  it('cambiar el interés de un depósito desde una fecha (o corregir el inicial)', async () => {
+    const { useData, finance } = await open(new MemoryStorage())
+    const st = useData.getState()
+    const [t1] = st.datos.titulares
+    const my = st.datos.cuentas[0].id
+    const ext = st.addCuenta({ titularId: t1.id, nombre: 'BBVA', entidad: '', iban: '', color: '#000', notas: '', externa: true })
+    const dep = st.addProducto({ titularId: t1.id, tipo: 'deposito', nombre: 'Depósito', entidad: '', isin: '', notas: '', tae: 3, vencimiento: null })
+    st.addMovimiento({ fecha: '2026-01-01', origen: { kind: 'cuenta', id: ext }, destino: { kind: 'cuenta', id: my }, importe: 10000, concepto: '' })
+    st.addMovimiento({ fecha: '2026-01-01', origen: { kind: 'cuenta', id: my }, destino: { kind: 'producto', id: dep }, importe: 10000, concepto: '' })
+    st.cambiarTae(dep, '2026-07-01', 2)
+    st.cambiarTae(dep, '2026-07-01', 2.2) // mismo día: sustituye
+    let p = useData.getState().datos.productos.find((x) => x.id === dep)!
+    expect(p.cambiosTae?.map((c) => [c.desde, c.tae])).toEqual([['2026-07-01', 2.2]])
+    expect(finance().positions.get(dep)!.deposito).toMatchObject({ tae: 2.2, taeDesde: '2026-07-01' })
+    st.cambiarTae(dep, null, 3.5)
+    p = useData.getState().datos.productos.find((x) => x.id === dep)!
+    expect(p.tae).toBe(3.5)
+    st.removeCambioTae(dep, p.cambiosTae![0].id)
+    p = useData.getState().datos.productos.find((x) => x.id === dep)!
+    expect(p.cambiosTae).toBeUndefined()
+    expect(finance().positions.get(dep)!.deposito?.tae).toBe(3.5)
+  })
+})
+
+describe('deshacer y rehacer', () => {
+  it('deshace el último cambio y lo puede volver a hacer', async () => {
+    const { useData, finance } = await open(new MemoryStorage())
+    const st = useData.getState()
+    const [t1] = st.datos.titulares
+    const my = st.datos.cuentas[0].id
+    const ext = st.addCuenta({ titularId: t1.id, nombre: 'BBVA', entidad: '', iban: '', color: '#000', notas: '', externa: true })
+    const m = st.addMovimiento({ fecha: '2026-10-01', origen: { kind: 'cuenta', id: ext }, destino: { kind: 'cuenta', id: my }, importe: 1000, concepto: 'Aportación' })
+    st.updateMovimiento(m, { fecha: '2026-10-01', origen: { kind: 'cuenta', id: ext }, destino: { kind: 'cuenta', id: my }, importe: 1500, concepto: 'Aportación' })
+    expect(finance().accounts.get(my)!.saldo).toBe(1500)
+
+    expect(st.deshacer()).toBe('Movimiento cambiado')
+    expect(finance().accounts.get(my)!.saldo).toBe(1000)
+    expect(st.deshacer()).toBe('Nuevo movimiento')
+    expect(useData.getState().datos.movimientos).toHaveLength(0)
+    expect(st.rehacer()).toBe('Nuevo movimiento')
+    expect(useData.getState().datos.movimientos.map((x) => [x.id, x.importe])).toEqual([[m, 1000]])
+    expect(st.rehacer()).toBe('Movimiento cambiado')
+    expect(finance().accounts.get(my)!.saldo).toBe(1500)
+    expect(st.rehacer()).toBeNull()
+
+    // Borrar se deshace (y vuelve igual que estaba).
+    const antes = useData.getState().datos.movimientos[0]
+    st.removeMovimiento(m)
+    expect(useData.getState().datos.movimientos).toHaveLength(0)
+    expect(st.deshacer()).toBe('Movimiento borrado')
+    expect(useData.getState().datos.movimientos[0]).toEqual(antes)
+    // Un cambio nuevo hace que ya no se pueda rehacer lo deshecho.
+    st.addMovimiento({ fecha: '2026-10-02', origen: { kind: 'cuenta', id: ext }, destino: { kind: 'cuenta', id: my }, importe: 5, concepto: '' })
+    expect(st.rehacer()).toBeNull()
+  })
+
+  it('varios cambios de una vez se deshacen juntos, con su nombre; el historial sobrevive a cerrar la app', async () => {
+    const storage = new MemoryStorage()
+    let app = await open(storage)
+    const st = app.useData.getState()
+    const [t1] = st.datos.titulares
+    const my = st.datos.cuentas[0].id
+    app.conDeshacer('Añadir dinero: 2.000,00 € a «MyInvestor»', () => {
+      const ext = st.addCuenta({ titularId: t1.id, nombre: 'Cuenta externa', entidad: '', iban: '', color: '#000', notas: '', externa: true })
+      st.addMovimiento({ fecha: '2026-10-01', origen: { kind: 'cuenta', id: ext }, destino: { kind: 'cuenta', id: my }, importe: 2000, concepto: '' })
+    })
+    expect(app.useData.getState().datos.cuentas).toHaveLength(2)
+    expect(JSON.parse(storage.getItem('mis-inversiones-deshacer')!).pasos).toHaveLength(1)
+
+    app = await open(storage)
+    expect(app.useData.getState().deshacer()).toBe('Añadir dinero: 2.000,00 € a «MyInvestor»')
+    const d = app.useData.getState().datos
+    expect(d.cuentas.map((c) => c.nombre)).toEqual(['MyInvestor'])
+    expect(d.movimientos).toHaveLength(0)
+    expect(storage.getItem('mis-inversiones-deshacer')).toBeNull()
+  })
+
+  it('un historial de otra versión de la app no se usa; «Borrar todo» lo borra', async () => {
+    const storage = new MemoryStorage()
+    let app = await open(storage)
+    app.useData.getState().addTitular({ codigo: '', nombre: 'Tercero' })
+    const h = JSON.parse(storage.getItem('mis-inversiones-deshacer')!)
+    storage.setItem('mis-inversiones-deshacer', JSON.stringify({ ...h, version: 1 }))
+    app = await open(storage)
+    expect(app.useData.getState().deshacer()).toBeNull()
+    app.useData.getState().addTitular({ codigo: '', nombre: 'Cuarto' })
+    expect(storage.getItem('mis-inversiones-deshacer')).not.toBeNull()
+    app.useData.getState().resetAll()
+    expect(storage.getItem('mis-inversiones-deshacer')).toBeNull()
+    expect(app.useData.getState().deshacer()).toBeNull()
+  })
+
+  it('deshacer una transferencia mensual quita también los meses que se apuntaron solos', async () => {
+    const { useData } = await open(new MemoryStorage())
+    const st = useData.getState()
+    const [t1, t2] = st.datos.titulares
+    const my = st.datos.cuentas[0].id
+    const f2 = st.addProducto({ titularId: t2.id, tipo: 'fondo', nombre: 'Fondo de T2', entidad: '', isin: '', notas: '', tae: null, vencimiento: null })
+    expect(t1).toBeTruthy()
+    st.addProgramada({ origen: { kind: 'cuenta', id: my }, destino: { kind: 'producto', id: f2 }, importe: 150, inicio: '2026-07-05', fin: null, concepto: '' })
+    expect(useData.getState().datos.movimientos).toHaveLength(4)
+    // Un mes que se apunta solo después (no es un cambio del usuario: no va al historial).
+    const p = useData.getState().datos.programadas[0]
+    useData.setState((s) => ({
+      datos: {
+        ...s.datos,
+        movimientos: [
+          ...s.datos.movimientos,
+          { ...s.datos.movimientos[0], id: 'auto-nov', fecha: '2026-11-05', programadaId: p.id, programadaMes: '2026-11' },
+        ],
+      },
+    }))
+    expect(st.deshacer()).toBe('Transferencia mensual programada')
+    const d = useData.getState().datos
+    expect(d.programadas).toHaveLength(0)
+    expect(d.movimientos).toHaveLength(0)
+    expect(d.productos).toHaveLength(1)
+  })
+
+  it('al ordenar, los movimientos seguidos se deshacen de una vez; cada dato (tuyo o ejemplo) tiene su historial', async () => {
+    const { useData } = await open(new MemoryStorage())
+    const st = useData.getState()
+    const t1 = st.datos.titulares[0].id
+    const nuevo = (nombre: string) => st.addProducto({ titularId: t1, tipo: 'fondo', nombre, entidad: '', isin: '', notas: '', tae: null, vencimiento: null })
+    const [a, b, c] = [nuevo('A'), nuevo('B'), nuevo('C')]
+    st.reorderProductos([b, a, c])
+    st.reorderProductos([b, c, a])
+    st.reorderProductos([c, b, a])
+    expect(useData.getState().datos.productos.map((p) => p.nombre)).toEqual(['C', 'B', 'A'])
+    expect(st.deshacer()).toBe('Orden de las inversiones')
+    expect(useData.getState().datos.productos.map((p) => p.nombre)).toEqual(['A', 'B', 'C'])
+
+    st.loadDemo()
+    expect(st.deshacer()).toBeNull() // en el ejemplo aún no se ha cambiado nada
+    st.setFueraDelTotal({ kind: 'titular', id: 'demo-t-2' }, false)
+    expect(useData.getState().ejemplo!.titulares[1].fueraDelTotal).toBeUndefined()
+    expect(st.deshacer()).toBe('Sumar en el TOTAL')
+    expect(useData.getState().ejemplo!.titulares[1].fueraDelTotal).toBe(true)
+    st.setVerEjemplo(false)
+    expect(st.deshacer()).toBe('Nueva inversión «C»')
   })
 })

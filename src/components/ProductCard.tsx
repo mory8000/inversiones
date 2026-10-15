@@ -87,7 +87,7 @@ export function AccountCard({ c, s }: { c: Cuenta; s: AccountStats }) {
     <div className="min-w-0">
       <dt className="truncate text-[11px] font-medium text-slate-500">{label}</dt>
       <dd>
-        <Amount value={value} decimals={0} className={warn ? 'text-sm font-bold text-amber-700' : strong ? 'text-sm font-bold text-slate-900' : 'text-sm font-semibold text-slate-800'} />
+        <Amount value={value} decimals={0} className={warn ? 'text-sm font-bold text-rose-600' : strong ? 'text-sm font-bold text-slate-900' : 'text-sm font-semibold text-slate-800'} />
       </dd>
     </div>
   )

@@ -1,5 +1,7 @@
 // Almacén principal de datos. Se guarda automáticamente en el navegador
 // (localStorage), así que funciona sin conexión y sin servidor.
+//
+// Cada cambio queda en el historial para poder deshacerlo (y rehacerlo): ver `historial.ts`.
 
 import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
@@ -12,6 +14,7 @@ import { inferMovementType } from '../lib/meta'
 import { aplicarProgramadas, sincronizarProgramada } from '../lib/programadas'
 import { applyOrder, conCuentaPrincipal, cuentaPrincipal, defaultTitularName, emptyDataset, nuevaCuentaMyInvestor } from '../lib/titulares'
 import { DATA_VERSION, sanitizeData } from './sanitize'
+import { aplicarParche, diferencia, ultimoPaso, useHistorial, type Slot } from './historial'
 
 export { DATA_VERSION, sanitizeData }
 export const STORAGE_KEY = 'mis-inversiones'
@@ -27,12 +30,14 @@ export interface MovimientoInput {
   concepto: string
 }
 export type ProgramadaInput = Pick<Programada, 'origen' | 'destino' | 'importe' | 'inicio' | 'fin' | 'concepto'>
+/** Algo que puede sumar o no en el TOTAL. */
+export type TotalRef = { kind: 'titular' | 'cuenta' | 'producto'; id: string }
 
 interface Actions {
   setHideAmounts: (v: boolean) => void
 
-  addTitular: (data: { codigo: string; nombre: string }) => string
-  updateTitular: (id: string, data: Partial<Pick<Titular, 'codigo' | 'nombre'>>) => void
+  addTitular: (data: { codigo: string; nombre: string; fueraDelTotal?: boolean }) => string
+  updateTitular: (id: string, data: Partial<Pick<Titular, 'codigo' | 'nombre' | 'fueraDelTotal'>>) => void
   removeTitular: (id: string) => void
   /** Lo pone el primero de la lista (el principal). */
   makePrincipal: (id: string) => void
@@ -50,6 +55,14 @@ interface Actions {
   reorderProductos: (ids: string[]) => void
   addValoracion: (productoId: string, data: ValoracionInput) => void
   removeValoracion: (productoId: string, valoracionId: string) => void
+  /**
+   * Cambia el interés (TAE) de un depósito desde una fecha (los intereses pueden variar).
+   * Con `desde: null` se corrige el interés inicial (desde que se contrató).
+   */
+  cambiarTae: (productoId: string, desde: string | null, tae: number) => void
+  removeCambioTae: (productoId: string, cambioId: string) => void
+  /** Suma o no en el TOTAL de Inicio (un titular entero, una cuenta o un producto). */
+  setFueraDelTotal: (ref: TotalRef, fuera: boolean) => void
 
   addMovimiento: (data: MovimientoInput) => string
   updateMovimiento: (id: string, data: MovimientoInput) => void
@@ -69,6 +82,11 @@ interface Actions {
   clearData: () => void
   resetAll: () => void
   importData: (data: PersistedData) => void
+
+  /** Deshace el último cambio de los datos que se están viendo. Devuelve lo que se ha deshecho. */
+  deshacer: () => string | null
+  /** Vuelve a hacer lo último que se ha deshecho. */
+  rehacer: () => string | null
 }
 
 export type DataState = PersistedData & Actions
@@ -107,13 +125,85 @@ function removeEntities(ds: Dataset, cuentas: Set<string>, productos: Set<string
 
 /** Los datos que se están viendo: el ejemplo o los tuyos. */
 export const currentDataset = (s: PersistedData): Dataset => (s.verEjemplo && s.ejemplo ? s.ejemplo : s.datos)
+/** Qué datos se están viendo. */
+export const currentSlot = (s: PersistedData): Slot => (s.verEjemplo && s.ejemplo ? 'ejemplo' : 'datos')
+
+// ── Historial (deshacer) ────────────────────────────────────────────────────
+
+/** Cambios que se están agrupando en un solo paso (ver `conDeshacer`). */
+let lote: { etiqueta: string; slot?: Slot; antes?: Dataset } | null = null
+
+function apuntarPaso(slot: Slot, antes: Dataset, despues: Dataset, etiqueta: string, juntar = false) {
+  const parche = diferencia(antes, despues)
+  if (parche) useHistorial.getState().nuevo({ id: uid(), etiqueta, at: nowStamp(), slot, parche, ...(juntar ? { juntar } : {}) })
+}
+
+/**
+ * Agrupa varios cambios en un solo paso del historial, con un nombre que lo explica
+ * (p. ej. crear la cuenta externa y apuntar la aportación: «Deshacer» quita las dos cosas).
+ */
+export function conDeshacer<T>(etiqueta: string, fn: () => T): T {
+  if (lote) return fn()
+  lote = { etiqueta }
+  try {
+    return fn()
+  } finally {
+    const l = lote
+    lote = null
+    if (l.antes && l.slot) {
+      const s = useData.getState()
+      const despues = l.slot === 'ejemplo' ? s.ejemplo : s.datos
+      if (despues) apuntarPaso(l.slot, l.antes, despues, l.etiqueta)
+    }
+  }
+}
+
+/**
+ * Tras deshacer o rehacer: quita los movimientos de transferencias mensuales que ya no existen
+ * (los que se apuntaron solos después de crearla).
+ */
+function sinHuerfanos(ds: Dataset): Dataset {
+  const ids = new Set(ds.programadas.map((p) => p.id))
+  const movimientos = ds.movimientos.filter((m) => !m.programadaId || ids.has(m.programadaId))
+  return movimientos.length === ds.movimientos.length ? ds : { ...ds, movimientos }
+}
 
 export const useData = create<DataState>()(
   persist(
     (set, get) => {
-      /** Modifica los datos que se están viendo. */
-      const updateDs = (fn: (ds: Dataset) => Dataset) =>
-        set((s) => (s.verEjemplo && s.ejemplo ? { ejemplo: fn(s.ejemplo) } : { datos: fn(s.datos) }))
+      /** Modifica los datos que se están viendo y lo apunta en el historial (para poder deshacerlo). */
+      const updateDs = (fn: (ds: Dataset) => Dataset, etiqueta: string, juntar = false) =>
+        set((s) => {
+          const slot = currentSlot(s)
+          const antes = slot === 'ejemplo' ? s.ejemplo! : s.datos
+          const despues = fn(antes)
+          if (despues === antes) return {}
+          if (lote) {
+            if (!lote.antes) {
+              lote.antes = antes
+              lote.slot = slot
+            }
+          } else apuntarPaso(slot, antes, despues, etiqueta, juntar)
+          return slot === 'ejemplo' ? { ejemplo: despues } : { datos: despues }
+        })
+
+      /** Deshacer o rehacer: aplica el último paso de los datos que se están viendo. */
+      const moverHistorial = (cual: 'deshacer' | 'rehacer'): string | null => {
+        const s = get()
+        const slot = currentSlot(s)
+        const h = useHistorial.getState()
+        const paso = ultimoPaso(cual === 'deshacer' ? h.deshacer : h.rehacer, slot)
+        if (!paso) return null
+        const actual = slot === 'ejemplo' ? s.ejemplo! : s.datos
+        const nuevo = sinHuerfanos(aplicarParche(actual, paso.parche))
+        const inverso = diferencia(actual, nuevo)
+        if (cual === 'deshacer') h.deshecho(paso, inverso)
+        else h.rehecho(paso, inverso)
+        set(slot === 'ejemplo' ? { ejemplo: nuevo } : { datos: nuevo })
+        // Si ha vuelto una transferencia mensual, se apuntan los meses que falten.
+        get().aplicarProgramadas()
+        return paso.etiqueta
+      }
 
       return {
         ...initialData(),
@@ -121,92 +211,192 @@ export const useData = create<DataState>()(
         setHideAmounts: (v) => set({ hideAmounts: v }),
 
         // ── Titulares ───────────────────────────────────────────────────────
-        addTitular: ({ codigo, nombre }) => {
+        addTitular: ({ codigo, nombre, fueraDelTotal }) => {
           const id = uid()
-          updateDs((ds) => ({
-            ...ds,
-            titulares: [
-              ...ds.titulares,
-              { id, codigo: codigo.trim(), nombre: nombre.trim() || defaultTitularName(ds.titulares.length + 1), createdAt: nowStamp() },
-            ],
-          }))
+          updateDs(
+            (ds) => ({
+              ...ds,
+              titulares: [
+                ...ds.titulares,
+                {
+                  id,
+                  codigo: codigo.trim(),
+                  nombre: nombre.trim() || defaultTitularName(ds.titulares.length + 1),
+                  ...(fueraDelTotal ? { fueraDelTotal: true } : {}),
+                  createdAt: nowStamp(),
+                },
+              ],
+            }),
+            `Nuevo titular «${nombre.trim()}»`,
+          )
           return id
         },
         updateTitular: (id, data) =>
-          updateDs((ds) => ({
-            ...ds,
-            titulares: ds.titulares.map((t) =>
-              t.id === id
-                ? {
-                    ...t,
-                    ...(data.codigo !== undefined ? { codigo: data.codigo.trim() } : {}),
-                    ...(data.nombre !== undefined ? { nombre: data.nombre.trim() || t.nombre } : {}),
-                  }
-                : t,
-            ),
-          })),
+          updateDs(
+            (ds) => ({
+              ...ds,
+              titulares: ds.titulares.map((t) => {
+                if (t.id !== id) return t
+                const next: Titular = {
+                  ...t,
+                  ...(data.codigo !== undefined ? { codigo: data.codigo.trim() } : {}),
+                  ...(data.nombre !== undefined ? { nombre: data.nombre.trim() || t.nombre } : {}),
+                }
+                if (data.fueraDelTotal !== undefined) {
+                  if (data.fueraDelTotal) next.fueraDelTotal = true
+                  else delete next.fueraDelTotal
+                }
+                return JSON.stringify(next) === JSON.stringify(t) ? t : next
+              }),
+            }),
+            'Cambio en los datos del titular',
+          ),
         removeTitular: (id) =>
           updateDs((ds) => {
             if (ds.titulares.length <= 1 || !ds.titulares.some((t) => t.id === id)) return ds
             const cuentas = new Set(ds.cuentas.filter((c) => c.titularId === id).map((c) => c.id))
             const productos = new Set(ds.productos.filter((p) => p.titularId === id).map((p) => p.id))
             return { ...removeEntities(ds, cuentas, productos), titulares: ds.titulares.filter((t) => t.id !== id) }
-          }),
+          }, 'Titular eliminado'),
         makePrincipal: (id) =>
           updateDs((ds) => {
             const t = ds.titulares.find((x) => x.id === id)
-            return t ? { ...ds, titulares: [t, ...ds.titulares.filter((x) => x.id !== id)] } : ds
-          }),
+            return t && ds.titulares[0]?.id !== id ? { ...ds, titulares: [t, ...ds.titulares.filter((x) => x.id !== id)] } : ds
+          }, 'Cambio del titular principal'),
 
         // ── Cuentas ─────────────────────────────────────────────────────────
         addCuenta: (data) => {
           const id = uid()
-          updateDs((ds) => ({ ...ds, cuentas: [...ds.cuentas, { ...data, nombre: data.nombre.trim(), id, createdAt: nowStamp() }] }))
+          const { fueraDelTotal, ...rest } = data
+          updateDs(
+            (ds) => ({ ...ds, cuentas: [...ds.cuentas, { ...rest, nombre: data.nombre.trim(), ...(fueraDelTotal ? { fueraDelTotal: true } : {}), id, createdAt: nowStamp() }] }),
+            `Nueva cuenta «${data.nombre.trim()}»`,
+          )
           return id
         },
-        updateCuenta: (id, data) => updateDs((ds) => ({ ...ds, cuentas: ds.cuentas.map((c) => (c.id === id ? { ...c, ...data } : c)) })),
-        removeCuenta: (id) => updateDs((ds) => removeEntities(ds, new Set([id]), new Set())),
+        updateCuenta: (id, data) =>
+          updateDs(
+            (ds) => ({
+              ...ds,
+              cuentas: ds.cuentas.map((c) => {
+                if (c.id !== id) return c
+                const next: Cuenta = { ...c, ...data }
+                if (!next.fueraDelTotal) delete next.fueraDelTotal
+                return JSON.stringify(next) === JSON.stringify(c) ? c : next
+              }),
+            }),
+            'Cuenta cambiada',
+          ),
+        removeCuenta: (id) => updateDs((ds) => removeEntities(ds, new Set([id]), new Set()), 'Cuenta eliminada'),
         crearCuentaPrincipal: (titularId) => {
           const ds = currentDataset(get())
           const existing = cuentaPrincipal(ds.cuentas, titularId)
           if (existing) return existing.id
           const id = uid()
-          updateDs((d) => ({ ...d, cuentas: [nuevaCuentaMyInvestor(titularId, id, nowStamp()), ...d.cuentas] }))
+          updateDs((d) => ({ ...d, cuentas: [nuevaCuentaMyInvestor(titularId, id, nowStamp()), ...d.cuentas] }), 'Cuenta «MyInvestor» creada')
           return id
         },
 
         // ── Productos ───────────────────────────────────────────────────────
         addProducto: (data) => {
           const id = uid()
-          updateDs((ds) => ({
-            ...ds,
-            productos: [...ds.productos, { ...data, nombre: data.nombre.trim(), id, valoraciones: [], createdAt: nowStamp() }],
-          }))
+          const { fueraDelTotal, ...rest } = data
+          updateDs(
+            (ds) => ({
+              ...ds,
+              productos: [
+                ...ds.productos,
+                { ...rest, nombre: data.nombre.trim(), ...(fueraDelTotal ? { fueraDelTotal: true } : {}), id, valoraciones: [], createdAt: nowStamp() },
+              ],
+            }),
+            `Nueva inversión «${data.nombre.trim()}»`,
+          )
           return id
         },
-        updateProducto: (id, data) => updateDs((ds) => ({ ...ds, productos: ds.productos.map((p) => (p.id === id ? { ...p, ...data } : p)) })),
-        removeProducto: (id) => updateDs((ds) => removeEntities(ds, new Set(), new Set([id]))),
-        reorderProductos: (ids) => updateDs((ds) => ({ ...ds, productos: applyOrder(ds.productos, ids) })),
+        updateProducto: (id, data) =>
+          updateDs(
+            (ds) => ({
+              ...ds,
+              productos: ds.productos.map((p) => {
+                if (p.id !== id) return p
+                const next: Producto = { ...p, ...data }
+                if (!next.fueraDelTotal) delete next.fueraDelTotal
+                return JSON.stringify(next) === JSON.stringify(p) ? p : next
+              }),
+            }),
+            'Inversión cambiada',
+          ),
+        removeProducto: (id) => updateDs((ds) => removeEntities(ds, new Set(), new Set([id])), 'Inversión eliminada'),
+        reorderProductos: (ids) => updateDs((ds) => ({ ...ds, productos: applyOrder(ds.productos, ids) }), 'Orden de las inversiones', true),
         addValoracion: (productoId, data) =>
-          updateDs((ds) => ({
-            ...ds,
-            productos: ds.productos.map((p) =>
-              p.id === productoId
-                ? { ...p, valoraciones: [...p.valoraciones, { ...data, valor: round2(data.valor), id: uid(), createdAt: nowStamp() }] }
-                : p,
-            ),
-          })),
+          updateDs(
+            (ds) => ({
+              ...ds,
+              productos: ds.productos.map((p) =>
+                p.id === productoId
+                  ? { ...p, valoraciones: [...p.valoraciones, { ...data, valor: round2(data.valor), id: uid(), createdAt: nowStamp() }] }
+                  : p,
+              ),
+            }),
+            'Rentabilidad cambiada',
+          ),
         removeValoracion: (productoId, valoracionId) =>
-          updateDs((ds) => ({
-            ...ds,
-            productos: ds.productos.map((p) => (p.id === productoId ? { ...p, valoraciones: p.valoraciones.filter((v) => v.id !== valoracionId) } : p)),
-          })),
+          updateDs(
+            (ds) => ({
+              ...ds,
+              productos: ds.productos.map((p) => (p.id === productoId ? { ...p, valoraciones: p.valoraciones.filter((v) => v.id !== valoracionId) } : p)),
+            }),
+            'Actualización de valor eliminada',
+          ),
+        cambiarTae: (productoId, desde, tae) =>
+          updateDs(
+            (ds) => ({
+              ...ds,
+              productos: ds.productos.map((p) => {
+                if (p.id !== productoId) return p
+                if (desde === null) return { ...p, tae }
+                // Un cambio por fecha: si ya había uno ese día, se sustituye.
+                const otros = (p.cambiosTae ?? []).filter((c) => c.desde !== desde)
+                const cambiosTae = [...otros, { id: uid(), desde, tae, createdAt: nowStamp() }].sort((a, b) => a.desde.localeCompare(b.desde))
+                return { ...p, cambiosTae }
+              }),
+            }),
+            'Interés cambiado',
+          ),
+        removeCambioTae: (productoId, cambioId) =>
+          updateDs(
+            (ds) => ({
+              ...ds,
+              productos: ds.productos.map((p) => {
+                if (p.id !== productoId || !p.cambiosTae?.some((c) => c.id === cambioId)) return p
+                const cambiosTae = p.cambiosTae.filter((c) => c.id !== cambioId)
+                const next: Producto = { ...p, cambiosTae }
+                if (cambiosTae.length === 0) delete next.cambiosTae
+                return next
+              }),
+            }),
+            'Cambio de interés eliminado',
+          ),
+        setFueraDelTotal: (ref, fuera) =>
+          updateDs((ds) => {
+            const marca = <T extends { id: string; fueraDelTotal?: boolean }>(x: T): T => {
+              if (x.id !== ref.id || !!x.fueraDelTotal === fuera) return x
+              const next = { ...x }
+              if (fuera) next.fueraDelTotal = true
+              else delete next.fueraDelTotal
+              return next
+            }
+            if (ref.kind === 'titular') return { ...ds, titulares: ds.titulares.map(marca) }
+            if (ref.kind === 'cuenta') return { ...ds, cuentas: ds.cuentas.map(marca) }
+            return { ...ds, productos: ds.productos.map(marca) }
+          }, fuera ? 'Dejar fuera del TOTAL' : 'Sumar en el TOTAL'),
 
         // ── Movimientos ─────────────────────────────────────────────────────
         addMovimiento: (data) => {
           const id = uid()
           const stamp = nowStamp()
-          updateDs((ds) => ({
+          updateDs(
+            (ds) => ({
             ...ds,
             movimientos: [
               ...ds.movimientos,
@@ -222,11 +412,14 @@ export const useData = create<DataState>()(
                 updatedAt: stamp,
               },
             ],
-          }))
+          }),
+            'Nuevo movimiento',
+          )
           return id
         },
         updateMovimiento: (id, data) =>
-          updateDs((ds) => ({
+          updateDs(
+            (ds) => ({
             ...ds,
             movimientos: ds.movimientos.map(
               (m): Movimiento =>
@@ -245,7 +438,9 @@ export const useData = create<DataState>()(
                     }
                   : m,
             ),
-          })),
+          }),
+            'Movimiento cambiado',
+          ),
         removeMovimiento: (id) =>
           updateDs((ds) => {
             const m = ds.movimientos.find((x) => x.id === id)
@@ -261,23 +456,25 @@ export const useData = create<DataState>()(
                     )
                   : ds.programadas,
             }
-          }),
+          }, 'Movimiento borrado'),
 
         // ── Transferencias mensuales ───────────────────────────────────────
         addProgramada: (data) => {
           const id = uid()
           const stamp = nowStamp()
-          updateDs((ds) =>
-            aplicarProgramadas(
-              {
-                ...ds,
-                programadas: [
-                  ...ds.programadas,
-                  { ...data, id, importe: round2(data.importe), concepto: data.concepto.trim(), excluidos: [], createdAt: stamp, updatedAt: stamp },
-                ],
-              },
-              todayISO(),
-            ),
+          updateDs(
+            (ds) =>
+              aplicarProgramadas(
+                {
+                  ...ds,
+                  programadas: [
+                    ...ds.programadas,
+                    { ...data, id, importe: round2(data.importe), concepto: data.concepto.trim(), excluidos: [], createdAt: stamp, updatedAt: stamp },
+                  ],
+                },
+                todayISO(),
+              ),
+            'Transferencia mensual programada',
           )
           return id
         },
@@ -287,13 +484,16 @@ export const useData = create<DataState>()(
             if (!old) return ds
             const p: Programada = { ...old, ...data, importe: round2(data.importe), concepto: data.concepto.trim(), updatedAt: nowStamp() }
             return sincronizarProgramada({ ...ds, programadas: ds.programadas.map((x) => (x.id === id ? p : x)) }, p, todayISO())
-          }),
+          }, 'Transferencia mensual cambiada'),
         removeProgramada: (id) =>
-          updateDs((ds) => ({
-            ...ds,
-            programadas: ds.programadas.filter((p) => p.id !== id),
-            movimientos: ds.movimientos.filter((m) => m.programadaId !== id),
-          })),
+          updateDs(
+            (ds) => ({
+              ...ds,
+              programadas: ds.programadas.filter((p) => p.id !== id),
+              movimientos: ds.movimientos.filter((m) => m.programadaId !== id),
+            }),
+            'Transferencia mensual eliminada',
+          ),
         aplicarProgramadas: () => {
           const today = todayISO()
           const s = get()
@@ -303,13 +503,30 @@ export const useData = create<DataState>()(
         },
 
         // ── Datos ───────────────────────────────────────────────────────────
-        loadDemo: () => set({ ejemplo: buildDemoDataset(todayISO()), verEjemplo: true }),
+        loadDemo: () => {
+          useHistorial.getState().olvidar('ejemplo')
+          set({ ejemplo: buildDemoDataset(todayISO()), verEjemplo: true })
+        },
         setVerEjemplo: (v) => set((s) => ({ verEjemplo: v && !!s.ejemplo })),
-        removeDemo: () => set({ ejemplo: null, verEjemplo: false }),
+        removeDemo: () => {
+          useHistorial.getState().olvidar('ejemplo')
+          set({ ejemplo: null, verEjemplo: false })
+        },
         // Se empieza de cero, como al instalar: el titular principal vuelve a tener su «MyInvestor».
-        clearData: () => updateDs((ds) => conCuentaPrincipal(emptyDataset(ds.titulares), uid, nowStamp())),
-        resetAll: () => set({ ...initialData() }),
-        importData: (data) => set({ version: DATA_VERSION, datos: data.datos, verEjemplo: false, hideAmounts: data.hideAmounts }),
+        // (Se puede deshacer.)
+        clearData: () => updateDs((ds) => conCuentaPrincipal(emptyDataset(ds.titulares), uid, nowStamp()), 'Datos borrados'),
+        // Borrarlo todo también borra el historial: no queda nada en este dispositivo.
+        resetAll: () => {
+          useHistorial.getState().olvidar()
+          set({ ...initialData() })
+        },
+        importData: (data) => {
+          useHistorial.getState().olvidar('datos')
+          set({ version: DATA_VERSION, datos: data.datos, verEjemplo: false, hideAmounts: data.hideAmounts })
+        },
+
+        deshacer: () => moverHistorial('deshacer'),
+        rehacer: () => moverHistorial('rehacer'),
       }
     },
     {

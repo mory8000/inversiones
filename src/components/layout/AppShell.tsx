@@ -1,9 +1,10 @@
 import { useId, type ReactNode } from 'react'
-import { ArrowLeftRight, Eye, EyeOff, House, Landmark, Plus, Settings, Waypoints, Wallet, type LucideIcon } from 'lucide-react'
+import { ArrowLeftRight, Eye, EyeOff, House, Landmark, Plus, Settings, Undo2, Waypoints, Wallet, type LucideIcon } from 'lucide-react'
 import type { Route } from '../../lib/router'
 import { navigate, paths } from '../../lib/router'
 import { useData } from '../../store/data'
 import { openMovement } from '../../store/ui'
+import { deshacer, useUltimoCambio } from '../../store/deshacer'
 import { cn } from '../../lib/cn'
 import { IconButton } from '../ui/Button'
 import { SidebarTitulares } from '../Titulares'
@@ -73,6 +74,34 @@ function HideToggle({ dark = false }: { dark?: boolean }) {
   )
 }
 
+/**
+ * Botón «Deshacer»: deshace el último cambio (un movimiento apuntado, cambiado o borrado, un %…).
+ * Siempre a la vista, arriba; si no hay nada que deshacer, se ve apagado.
+ */
+function UndoButton({ dark = false }: { dark?: boolean }) {
+  const ultimo = useUltimoCambio()
+  const label = ultimo ? `Deshacer: ${ultimo}` : 'No hay nada que deshacer'
+  return (
+    <button
+      type="button"
+      onClick={deshacer}
+      disabled={!ultimo}
+      title={label}
+      aria-label={label}
+      data-deshacer
+      className={cn(
+        'inline-flex shrink-0 items-center justify-center gap-1.5 rounded-xl font-semibold transition-colors disabled:opacity-40',
+        dark
+          ? 'h-10 w-full bg-white/8 text-sm text-white ring-1 ring-white/15 hover:bg-white/12 disabled:hover:bg-white/8'
+          : 'h-9 px-2.5 text-[13px] text-brand-700 ring-1 ring-brand-200 hover:bg-brand-50 disabled:text-slate-500 disabled:ring-slate-200 disabled:hover:bg-transparent',
+      )}
+    >
+      <Undo2 className="size-[18px]" strokeWidth={2.3} />
+      Deshacer
+    </button>
+  )
+}
+
 function Sidebar({ current }: { current: NavKey }) {
   return (
     <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col overflow-y-auto bg-brand-950 px-4 py-5 text-white lg:flex">
@@ -93,6 +122,9 @@ function Sidebar({ current }: { current: NavKey }) {
       >
         <Plus className="size-5" strokeWidth={2.6} /> Nuevo movimiento
       </button>
+      <div className="mt-2">
+        <UndoButton dark />
+      </div>
       <nav className="mt-6 flex-1 space-y-1" aria-label="Secciones">
         {NAV.map((item) => {
           const active = item.key === current
@@ -126,9 +158,10 @@ function MobileTopBar() {
       <div className="flex h-14 items-center justify-between gap-2 px-3">
         <a href={`#${paths.inicio}`} className="flex min-w-0 items-center gap-2 px-1" aria-label="Mis Inversiones: ir al inicio">
           <Logo className="size-8 shrink-0" />
-          <span className="truncate text-[15px] font-bold text-slate-900">Mis Inversiones</span>
+          <span className="truncate text-[15px] font-bold text-slate-900 max-[359px]:sr-only">Mis Inversiones</span>
         </a>
-        <div className="flex shrink-0 items-center">
+        <div className="flex shrink-0 items-center gap-1">
+          <UndoButton />
           <HideToggle />
           <IconButton icon={Settings} label="Ajustes" onClick={() => navigate(paths.ajustes)} />
         </div>
