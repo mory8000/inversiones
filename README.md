@@ -86,11 +86,18 @@ Abre la web de la app y:
 
 ## Publicar en GitHub Pages
 
-El repositorio incluye el flujo `.github/workflows/deploy.yml`, que comprueba los tipos, pasa los tests,
-construye la app y la publica cada vez que se actualiza la rama `main`.
+La app se publica en **https://mory8000.github.io/inversiones/** con el flujo `.github/workflows/deploy.yml`:
+cada vez que se hace push a la rama `arena/fc3a1d34-inversiones` (o a `main`) comprueba los tipos, pasa los
+tests, construye la app y la publica. No hace falta abrir ningún PR.
 
-Solo hay que activarlo una vez: **Settings → Pages → Build and deployment → Source: GitHub Actions**.
-La app quedará en `https://<usuario>.github.io/inversiones/`.
+Configuración (una sola vez, en *Settings* del repositorio):
+
+1. **Pages → Build and deployment → Source: GitHub Actions**.
+2. **Environments → github-pages → Deployment branches and tags**: añadir la rama
+   `arena/fc3a1d34-inversiones` (por defecto GitHub solo deja publicar desde `main`).
+
+> Con el plan gratuito de GitHub, Pages solo funciona si el repositorio es público. La web es pública
+> (cualquiera con el enlace puede abrirla), pero cada persona solo ve los datos guardados en su propio navegador.
 
 ## Desarrollo
 

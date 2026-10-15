@@ -1,11 +1,20 @@
-# Publica la app en GitHub Pages cada vez que se actualiza la rama main.
-# Requisito (una sola vez): Settings → Pages → Source: "GitHub Actions".
+# Publica la app en GitHub Pages → https://mory8000.github.io/inversiones/
+#
+# Se ejecuta con cada push a la rama de trabajo `arena/fc3a1d34-inversiones`
+# (y también a `main`), así que no hace falta abrir ningún PR para publicar.
+#
+# Requisitos (una sola vez, en Settings del repositorio):
+#   1. Pages → Build and deployment → Source: "GitHub Actions".
+#   2. Environments → github-pages → Deployment branches and tags:
+#      permitir la rama `arena/fc3a1d34-inversiones` (por defecto solo `main`).
 
 name: Publicar en GitHub Pages
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - arena/fc3a1d34-inversiones
   workflow_dispatch:
 
 permissions:
@@ -13,9 +22,11 @@ permissions:
   pages: write
   id-token: write
 
+# Una sola publicación a la vez. No se cancela una que ya está en marcha
+# (recomendación de GitHub para Pages); si llegan varias, se publica la última.
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build:
