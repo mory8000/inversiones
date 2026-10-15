@@ -58,7 +58,7 @@ export type ModalSpec =
 type DistributiveOmit<T, K extends keyof T> = T extends unknown ? Omit<T, K> : never
 export type ModalInput = DistributiveOmit<ModalSpec, 'id'>
 
-/** Botón dentro de un aviso (p. ej. «Deshacer»). */
+/** Botón dentro de un aviso (p. ej. «Rehacer», tras pulsar «Deshacer»). */
 export interface ToastAction {
   label: string
   onClick: () => void
@@ -91,8 +91,9 @@ export const useUI = create<UIState>()((set, get) => ({
   close: (id) => set((s) => ({ modals: s.modals.filter((m) => m.id !== id) })),
   toast: (message, kind = 'success', action) => {
     const id = uid()
-    set((s) => ({ toasts: [...s.toasts.slice(-2), { id, message, kind, ...(action ? { action } : {}) }] }))
-    // Con botón (p. ej. «Deshacer») se deja más tiempo para pulsarlo.
+    // Un solo aviso a la vez: el nuevo sustituye al anterior (no se amontonan).
+    set(() => ({ toasts: [{ id, message, kind, ...(action ? { action } : {}) }] }))
+    // Con botón (p. ej. «Rehacer») se deja más tiempo para pulsarlo.
     window.setTimeout(() => get().dismissToast(id), action ? 7000 : 3200)
   },
   dismissToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),

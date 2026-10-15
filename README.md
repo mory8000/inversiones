@@ -48,10 +48,11 @@ Sustituye al antiguo `Inversiones.xlsx` y mantiene sus mismos conceptos: titular
   momento en su ventanilla y en el patrimonio de su titular. También se puede poner su valor en euros.
 - **Interés variable en los depósitos**: «Cambiar interés» pone la nueva TAE **desde una fecha** (hoy, otra
   fecha o desde el principio para corregirla). Los días de antes se siguen calculando con el interés anterior.
-- **Deshacer**: el botón **«Deshacer»** de arriba (y el de cada aviso) deshace el último cambio: un movimiento
-  apuntado, cambiado o borrado, un %, un interés, una transferencia mensual… Se pueden deshacer varios seguidos
-  y **«Rehacer»**. El historial se guarda en el dispositivo, así que sigue ahí aunque se cierre la app. En el
-  ordenador también vale **Ctrl+Z** (y **Ctrl+Y** para rehacer).
+- **Deshacer**: el botón **«Deshacer»** de arriba deshace el último cambio: un movimiento apuntado, cambiado o
+  borrado, un %, un interés, una transferencia mensual… Se pueden deshacer varios seguidos. Al hacer un cambio
+  solo sale un aviso corto («Movimiento guardado»…), sin botones, que se va solo; al deshacer, el aviso trae
+  **«Rehacer»** por si te arrepientes. El historial se guarda en el dispositivo, así que sigue ahí aunque se
+  cierre la app. En el ordenador también vale **Ctrl+Z** (y **Ctrl+Y** para rehacer).
 - **No se puede aportar más dinero del que hay** en MyInvestor (ni en otra cuenta con saldo): si se intenta,
   sale un aviso con lo que hay disponible, lo que falta y un botón para «Añadir dinero». Se comprueba en la fecha
   del movimiento y después (si luego hay más salidas, tampoco pueden quedarse sin dinero). Al programar una

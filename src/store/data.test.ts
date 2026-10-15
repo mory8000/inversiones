@@ -627,6 +627,27 @@ describe('deshacer y rehacer', () => {
     expect(storage.getItem('mis-inversiones-deshacer')).toBeNull()
   })
 
+  it('al hacer un cambio sale un aviso corto, sin botón «Deshacer» (para eso está el de arriba)', async () => {
+    vi.stubGlobal('window', { setTimeout: () => 0, clearTimeout: () => undefined })
+    const app = await open(new MemoryStorage())
+    const { accion, deshacer, rehacer } = await import('./deshacer')
+    const { useUI } = await import('./ui')
+    const ultimo = () => useUI.getState().toasts.at(-1)
+    accion('Nuevo titular «Tercero»', () => app.useData.getState().addTitular({ codigo: '', nombre: 'Tercero' }), 'Titular creado')
+    expect(ultimo()).toMatchObject({ message: 'Titular creado', kind: 'success' })
+    expect(ultimo()!.action).toBeUndefined()
+    expect(app.useData.getState().datos.titulares).toHaveLength(3)
+    // Se deshace con el botón de arriba; su aviso deja «Rehacer» por si acaso.
+    deshacer()
+    expect(app.useData.getState().datos.titulares).toHaveLength(2)
+    expect(ultimo()).toMatchObject({ message: 'Deshecho: Nuevo titular «Tercero»', action: { label: 'Rehacer' } })
+    rehacer()
+    expect(app.useData.getState().datos.titulares).toHaveLength(3)
+    expect(ultimo()!.message).toBe('Rehecho: Nuevo titular «Tercero»')
+    expect(ultimo()!.action).toBeUndefined()
+    expect(useUI.getState().toasts.some((t) => t.action?.label === 'Deshacer')).toBe(false)
+  })
+
   it('los pasos del antiguo TOTAL de Inicio (que ya no existe) no se deshacen: se saltan', async () => {
     const storage = new MemoryStorage()
     let app = await open(storage)
