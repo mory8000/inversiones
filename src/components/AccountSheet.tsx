@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { ArrowDownLeft, ArrowUpRight, CalendarSync, ChevronRight, Pencil, Plus, TriangleAlert } from 'lucide-react'
+import type { EntityRef } from '../types'
 import { useFinance } from '../store/useFinance'
 import { openAccount, useUI } from '../store/ui'
 import { anadirDinero, invertirDesde, programarMensual, sacarDinero } from '../store/acciones'
@@ -22,7 +23,8 @@ const VISIBLES = 6
 /**
  * Ventana de una cuenta con saldo (la cuenta principal «MyInvestor»): su saldo real, lo que se
  * puede hacer (añadir dinero, invertir, programar la transferencia mensual, sacar dinero), sus
- * transferencias mensuales y sus movimientos, cada uno con «Editar» y «Borrar».
+ * transferencias mensuales (el único sitio donde se cambian, con «Editar») y sus movimientos,
+ * cada uno con «Editar» y «Borrar».
  */
 export function AccountSheet({ modalId, cuentaId }: { modalId: string; cuentaId: string }) {
   const close = useUI((s) => s.close)
@@ -48,7 +50,16 @@ export function AccountSheet({ modalId, cuentaId }: { modalId: string; cuentaId:
   /** Dinero traído desde bancos externos (aportaciones): se puede cambiar o borrar. */
   const traidos = movs.filter((m) => m.destino.kind === 'cuenta' && m.destino.id === c.id && isExterna(lookup, m.origen))
   const otros = movs.filter((m) => !traidos.includes(m))
-  const mensuales = ds.programadas.filter((p) => (p.origen.kind === 'cuenta' && p.origen.id === c.id) || (p.destino.kind === 'cuenta' && p.destino.id === c.id))
+  // Las transferencias mensuales solo se cambian aquí: las que salen o llegan a esta cuenta y, en la
+  // cuenta principal del titular principal, también las que no pasan por ninguna cuenta con saldo
+  // (p. ej. desde una cuenta externa), para que ninguna se quede sin poder cambiarse.
+  const conSaldo = new Set(ds.cuentas.filter((x) => !x.externa).map((x) => x.id))
+  const esLaCuenta = (r: EntityRef) => r.kind === 'cuenta' && r.id === c.id
+  const pasaPorConSaldo = (r: EntityRef) => r.kind === 'cuenta' && conSaldo.has(r.id)
+  const laPrincipal = esPrincipal && c.titularId === ds.titulares[0]?.id
+  const mensuales = ds.programadas.filter(
+    (p) => esLaCuenta(p.origen) || esLaCuenta(p.destino) || (laPrincipal && !pasaPorConSaldo(p.origen) && !pasaPorConSaldo(p.destino)),
+  )
   const done = () => close(modalId)
 
   return (

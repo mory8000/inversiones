@@ -13,7 +13,7 @@ Sustituye al antiguo `Inversiones.xlsx` y mantiene sus mismos conceptos: titular
 ![Inicio en escritorio](docs/captura-inicio.jpg)
 
 <p align="center">
-  <img src="docs/movil-inicio.jpg" width="200" alt="Inicio en el móvil: la tarjeta del titular principal, con su transferencia mensual y el botón Editar">
+  <img src="docs/movil-inicio.jpg" width="200" alt="Inicio en el móvil: la tarjeta del titular principal, con su cuenta MyInvestor y el botón Abrir MyInvestor">
   <img src="docs/movil-myinvestor.jpg" width="200" alt="La ventana de MyInvestor: añadir dinero, invertir, programar la transferencia mensual">
   <img src="docs/movil-ventanillas.jpg" width="200" alt="Una ventanilla por inversión, en el orden que elijas">
   <img src="docs/movil-movimientos.jpg" width="200" alt="Movimientos en el móvil">
@@ -29,12 +29,11 @@ Sustituye al antiguo `Inversiones.xlsx` y mantiene sus mismos conceptos: titular
   - La tarjeta de cada titular (el primero es el principal) con su patrimonio, su rentabilidad, lo invertido, lo
     que tiene sin invertir en su cuenta **MyInvestor** y lo aportado. Las cifras de cada titular van por
     separado: la cifra grande del principal es todo lo suyo, sin el «Fondo ahorro» (que tiene su propia tarjeta).
-  - En la del principal está su cuenta **MyInvestor**, sus **transferencias mensuales** (cada una con su botón
-    **«Editar»**, para cambiar el importe, el día o hasta cuándo, o eliminarla) y el botón **«Abrir MyInvestor»**.
+  - En la del principal está su cuenta **MyInvestor** (con su saldo) y el botón **«Abrir MyInvestor»**.
   - **Ventana de MyInvestor** (al abrirla): su **saldo real** (positivo o negativo), **Añadir dinero** (desde una
     cuenta externa), **Invertir**, **Programar transferencia mensual**, **Sacar dinero**, sus transferencias
-    mensuales (con **Editar**) y el **dinero añadido desde bancos externos**, cada movimiento con sus botones
-    **Editar** y **Borrar**.
+    mensuales (con **Editar**: es el único sitio donde se cambian) y el **dinero añadido desde bancos externos**,
+    cada movimiento con sus botones **Editar** y **Borrar**.
   - **Ventanillas**: al tocar una se abre con su saldo, su **% de rentabilidad** (o su **interés**, en los
     depósitos) con el botón para cambiarlo, y con lo que se puede hacer: **Aportar**, **Retirar** (reembolso),
     **Traspasar**, **Programar transferencia mensual** y ver sus movimientos (con **Editar** y **Borrar**).
@@ -85,9 +84,9 @@ Sustituye al antiguo `Inversiones.xlsx` y mantiene sus mismos conceptos: titular
   cabecera del Excel).
 - **Transferencia mensual**: por ejemplo, de MyInvestor del titular 1 a un fondo o cuenta del titular 2. Se
   programa una vez, **dentro de la ventana de MyInvestor** o de la ventanilla de la inversión (importe, día, desde
-  qué cuenta y a qué producto o cuenta), y la app la apunta sola cada mes. Para cambiarla o eliminarla, su botón
-  **«Editar»** está en la tarjeta del titular, en la ventana de MyInvestor y en *Ajustes → Transferencias
-  mensuales*. Un mes concreto se puede cambiar o borrar sin tocar los demás.
+  qué cuenta y a qué producto o cuenta), y la app la apunta sola cada mes. Para cambiarla (importe, día, hasta
+  cuándo) o eliminarla: **«Abrir MyInvestor» → «Editar»** (es el único sitio; en las tarjetas de Inicio no sale).
+  Un mes concreto se puede cambiar o borrar sin tocar los demás.
 - **El dinero cuenta para quien lo recibe**: si sale de la cuenta del titular 1 y entra en un producto o en una
   cuenta con saldo del titular 2, cuenta solo para el titular 2, no para el titular 1 (en la cuenta del titular 1
   se ve como dinero que ha salido).

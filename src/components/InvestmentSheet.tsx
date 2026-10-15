@@ -15,7 +15,6 @@ import { ActionTile } from './ui/ActionTile'
 import { ProductAvatar } from './ui/icons'
 import { DepositProgress, StatusBadge } from './ProductCard'
 import { MovementMini } from './movements/MovementMini'
-import { ProgramadaItem } from './ProgramadaItem'
 
 function Stat({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -28,7 +27,8 @@ function Stat({ label, children }: { label: string; children: ReactNode }) {
 
 /**
  * Ventanilla de una inversión: se abre al tocarla en Inicio. Enseña cómo va y deja hacer
- * cualquier movimiento (aportar, retirar, traspasar, actualizar su valor…).
+ * cualquier movimiento (aportar, retirar, traspasar, actualizar su valor…). Las transferencias
+ * mensuales que recibe se cambian en la ventana de MyInvestor, no aquí.
  */
 export function InvestmentSheet({ modalId, productId }: { modalId: string; productId: string }) {
   const close = useUI((s) => s.close)
@@ -50,7 +50,6 @@ export function InvestmentSheet({ modalId, productId }: { modalId: string; produ
   const isDeposit = p.tipo === 'deposito'
   const ref = { kind: 'producto' as const, id: p.id }
   const recent = sortMovementsDesc(ws.movimientos.filter((m) => involvesProduct(m, p.id))).slice(0, 4)
-  const mensuales = ds.programadas.filter((x) => x.destino.kind === 'producto' && x.destino.id === p.id)
   const done = () => close(modalId)
 
   return (
@@ -98,18 +97,6 @@ export function InvestmentSheet({ modalId, productId }: { modalId: string; produ
 
         {/* El % que genera (rentabilidad o interés), para cambiarlo */}
         {!closed && <PercentBox p={p} pos={pos} />}
-
-        {/* Transferencias mensuales que recibe */}
-        {mensuales.length > 0 && (
-          <section>
-            <h3 className="mb-2 text-sm font-semibold text-slate-900">{mensuales.length === 1 ? 'Transferencia mensual' : 'Transferencias mensuales'}</h3>
-            <ul className="space-y-2">
-              {mensuales.map((x) => (
-                <ProgramadaItem key={x.id} p={x} fin={fin} />
-              ))}
-            </ul>
-          </section>
-        )}
 
         {/* Movimientos que se pueden hacer */}
         <section>

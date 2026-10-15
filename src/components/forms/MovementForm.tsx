@@ -9,7 +9,7 @@ import { EntityAvatar, MOVEMENT_ICONS } from '../ui/icons'
 import { CROSS_META, MOVEMENT_META, MOVEMENT_TYPES, PRODUCT_META, PRODUCT_TYPES, inferMovementType } from '../../lib/meta'
 import { useData } from '../../store/data'
 import { useFinance } from '../../store/useFinance'
-import { confirmDialog, openAccount, openProduct, openProgramada, toast, useUI, type MovementPreset } from '../../store/ui'
+import { confirmDialog, openAccount, openProduct, toast, useUI, type MovementPreset } from '../../store/ui'
 import { accion } from '../../store/deshacer'
 import { anadirDinero, borrarMovimiento, etiquetaMovimiento } from '../../store/acciones'
 import { fmtDate, fmtEUR, fmtNumberInput, parseNumber } from '../../lib/format'
@@ -17,6 +17,7 @@ import { isValidISODate, minDate, todayISO } from '../../lib/dates'
 import { entityName, isConSaldo, isExterna, parseRefKey, refKey, type Lookup } from '../../lib/movements'
 import { aplicarProgramadas, diaDe, fechasDebidas, movimientosDe, sincronizarProgramada } from '../../lib/programadas'
 import { faltaDinero, saldoMinimoDesde, type FaltaDinero } from '../../lib/saldo'
+import { MYINVESTOR, cuentaPrincipal } from '../../lib/titulares'
 import { cn } from '../../lib/cn'
 
 const NEW = '__new__'
@@ -74,6 +75,11 @@ export function MovementForm({
   const prog = programadaId ? ds.programadas.find((p) => p.id === programadaId) : undefined
   /** Si este movimiento lo apuntó una transferencia mensual. */
   const parent = existing?.programadaId ? ds.programadas.find((p) => p.id === existing.programadaId) : undefined
+  /** La ventana donde se cambia una transferencia mensual: la de su cuenta con saldo o, si no pasa por ninguna, la principal. */
+  const ventanaDeLaMensual = (x: Programada): string => {
+    const ref = [x.origen, x.destino].find((r) => isConSaldo(lookup, r))
+    return ref ? entityName(lookup, ref) : (cuentaPrincipal(ds.cuentas, ds.titulares[0].id)?.nombre ?? MYINVESTOR)
+  }
   const multi = ds.titulares.length > 1
 
   const isNew = !existing && !prog
@@ -432,16 +438,10 @@ export function MovementForm({
                 Lo apuntó sola la <strong>transferencia mensual</strong> ({fmtEUR(parent.importe)} {dayLabel(parent.inicio)} de cada mes). Si lo cambias aquí,
                 solo cambia este mes.
               </p>
-              <button
-                type="button"
-                onClick={() => {
-                  close(modalId)
-                  openProgramada({ programadaId: parent.id })
-                }}
-                className="mt-1.5 font-semibold text-fuchsia-800 underline underline-offset-2 hover:text-fuchsia-950"
-              >
-                Cambiar la transferencia mensual (todos los meses)
-              </button>
+              {/* La transferencia mensual (todos los meses) solo se cambia en la ventana de su cuenta. */}
+              <p className="mt-1.5 text-fuchsia-800">
+                Para cambiarla todos los meses: en Inicio, «Abrir {ventanaDeLaMensual(parent)}» y «Editar».
+              </p>
             </div>
           </div>
         )}

@@ -12,17 +12,16 @@ import {
   Plus,
   Wallet,
 } from 'lucide-react'
-import type { Movimiento, Programada, Titular } from '../types'
+import type { Movimiento, Titular } from '../types'
 import { useFinance, type FinanceData, type TitularFinance } from '../store/useFinance'
 import { currentDataset, useData } from '../store/data'
-import { editMovement, openAccount, openCuenta, openProduct, openProgramada, openTitular } from '../store/ui'
+import { editMovement, openAccount, openCuenta, openProduct, openTitular } from '../store/ui'
 import { accion } from '../store/deshacer'
 import { anadirDinero, programarMensual } from '../store/acciones'
 import { buildTimelineMulti } from '../lib/finance'
 import { buildFlowGraph } from '../lib/flow'
 import { PRODUCT_META, kindMeta } from '../lib/meta'
 import { entityName, movementKind, ownerOf, sortMovementsDesc } from '../lib/movements'
-import { diaDe, proximaFecha } from '../lib/programadas'
 import { MYINVESTOR, cuentaPrincipal, cuentasConSaldo, isDefaultTitularName } from '../lib/titulares'
 import { fmtDate, fmtEUR, fmtPct, maskIban } from '../lib/format'
 import { navigate, paths } from '../lib/router'
@@ -57,52 +56,11 @@ function HeroStat({ label, value, hint }: { label: string; value: number; hint: 
 const GLASS = 'rounded-2xl bg-white/[0.07] p-3 ring-1 ring-white/10 sm:p-3.5'
 
 /**
- * Una transferencia mensual en la tarjeta de quien la envía, con su botón «Editar» a la vista:
- * al tocarla se abre para cambiarla (importe, día, hasta cuándo…) o eliminarla.
+ * Las cuentas con saldo del titular (su «MyInvestor»): su saldo real (positivo o negativo). Al
+ * tocarla se abre su ventana, con todo lo demás (añadir dinero, invertir, la transferencia
+ * mensual, sacar dinero, cambiar o borrar movimientos…). Al principal sin cuenta se le ofrece crearla.
  */
-function MensualLinea({ p, tf, fin, conOrigen = false }: { p: Programada; tf: TitularFinance; fin: FinanceData; conOrigen?: boolean }) {
-  const { lookup, today } = fin
-  const hidden = useHidden()
-  const to = lookup.titulares.get(fin.owner(p.destino) ?? '')
-  const next = proximaFecha(p, today)
-  const importe = hidden ? '•••••• €' : fmtEUR(p.importe)
-  const destino = to && to.id !== tf.titular.id ? to.nombre : `«${entityName(lookup, p.destino)}»`
-  const origen = conOrigen ? ` desde «${entityName(lookup, p.origen)}»` : ''
-  return (
-    <button
-      type="button"
-      onClick={() => openProgramada({ programadaId: p.id })}
-      aria-label={`Editar la transferencia mensual: ${importe} al mes${origen} a ${destino}`}
-      className="group mt-2 flex w-full items-center gap-2.5 rounded-xl bg-white/[0.06] p-2.5 text-left ring-1 ring-white/10 transition-colors hover:bg-white/10"
-      data-mensual={p.id}
-    >
-      <CalendarSync className="size-4 shrink-0 text-fuchsia-300" />
-      <span className="min-w-0 flex-1">
-        <span className="block text-[13px] leading-snug text-white/80">
-          <strong className="font-semibold text-white">{importe} al mes</strong>
-          {origen} a {destino}
-        </span>
-        <span className="block text-xs text-white/55">
-          El día {diaDe(p)}
-          {next ? ` · próxima: ${fmtDate(next)}` : ' · terminada'}
-        </span>
-      </span>
-      <span className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-white px-2.5 py-1.5 text-xs font-bold text-brand-900 shadow-sm group-hover:bg-emerald-100">
-        <Pencil className="size-3.5" strokeWidth={2.5} />
-        Editar
-      </span>
-    </button>
-  )
-}
-
-/**
- * Las cuentas con saldo del titular (su «MyInvestor»): su saldo real (positivo o negativo) y sus
- * transferencias mensuales, cada una con «Editar». Al tocarla se abre su ventana, con todo lo
- * demás (añadir dinero, invertir, programar la transferencia mensual, sacar dinero, cambiar o
- * borrar movimientos…). Al principal sin cuenta se le ofrece crearla.
- */
-function CuentasBox({ tf, fin }: { tf: TitularFinance; fin: FinanceData }) {
-  const { ds } = fin
+function CuentasBox({ tf }: { tf: TitularFinance }) {
   const crearCuentaPrincipal = useData((s) => s.crearCuentaPrincipal)
   const cuentas = cuentasConSaldo(tf.ws.cuentas, tf.titular.id)
   if (cuentas.length === 0) {
@@ -137,7 +95,6 @@ function CuentasBox({ tf, fin }: { tf: TitularFinance; fin: FinanceData }) {
         const s = tf.accounts.get(c.id)
         const saldo = s?.saldo ?? 0
         const negativo = saldo < -0.005
-        const mensuales = ds.programadas.filter((p) => p.origen.kind === 'cuenta' && p.origen.id === c.id)
         return (
           <div key={c.id} className={cn(GLASS, negativo && 'ring-rose-300/40')} data-cuenta={c.nombre}>
             <button
@@ -159,9 +116,6 @@ function CuentasBox({ tf, fin }: { tf: TitularFinance; fin: FinanceData }) {
               </span>
               <ChevronRight className="size-4 shrink-0 text-white/50 group-hover:text-white" />
             </button>
-            {mensuales.map((p) => (
-              <MensualLinea key={p.id} p={p} tf={tf} fin={fin} />
-            ))}
             {negativo && (
               <p className="mt-2 rounded-lg bg-rose-400/15 px-2.5 py-1.5 text-xs text-rose-100">
                 Saldo negativo: han salido <Amount value={-saldo} className="font-semibold" /> más de los que han entrado. Abre «{c.nombre}» y pulsa «Añadir dinero» para
@@ -179,27 +133,9 @@ function CuentasBox({ tf, fin }: { tf: TitularFinance; fin: FinanceData }) {
 }
 
 /**
- * Transferencias mensuales que envía el titular desde algo que no es una de sus cuentas con
- * saldo (p. ej. desde una cuenta externa): también con su «Editar» a la vista.
- */
-function OtrasMensuales({ tf, fin }: { tf: TitularFinance; fin: FinanceData }) {
-  const { ds, owner } = fin
-  const enCuentas = new Set(cuentasConSaldo(tf.ws.cuentas, tf.titular.id).map((c) => c.id))
-  const otras = ds.programadas.filter((p) => owner(p.origen) === tf.titular.id && !(p.origen.kind === 'cuenta' && enCuentas.has(p.origen.id)))
-  if (otras.length === 0) return null
-  return (
-    <div className="mt-2">
-      {otras.map((p) => (
-        <MensualLinea key={p.id} p={p} tf={tf} fin={fin} conOrigen />
-      ))}
-    </div>
-  )
-}
-
-/**
  * Lo que otro titular le ha enviado a una cuenta externa suya (aún no cuenta para él: contará
- * cuando lo invierta). Lo que recibe cada mes no se repite aquí: se ve, con su «Editar», en la
- * tarjeta de quien lo envía.
+ * cuando lo invierta). Las transferencias mensuales no se ven en las tarjetas: se ven y se
+ * cambian solo en la ventana de MyInvestor («Abrir MyInvestor»).
  */
 function CrossLines({ tf }: { tf: TitularFinance }) {
   if (tf.recibidoEnExternas <= 0) return null
@@ -268,8 +204,7 @@ function TitularHero({ tf, fin }: { tf: TitularFinance; fin: FinanceData }) {
             <HeroStat label="Aportado" value={totals.aportadoTotal} hint={tf.recibidoTotal > 0 ? 'Incluye lo recibido' : 'Desde fuera'} />
           </div>
         )}
-        <CuentasBox tf={tf} fin={fin} />
-        <OtrasMensuales tf={tf} fin={fin} />
+        <CuentasBox tf={tf} />
         <CrossLines tf={tf} />
       </div>
     </section>

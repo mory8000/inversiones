@@ -1,7 +1,5 @@
 import { useRef, type ReactNode } from 'react'
 import {
-  ArrowRight,
-  CalendarSync,
   Check,
   Crown,
   Download,
@@ -18,18 +16,16 @@ import {
 } from 'lucide-react'
 import { exportBackup, sanitizeData, useData } from '../store/data'
 import { useFinance, type TitularFinance } from '../store/useFinance'
-import { confirmDialog, openProgramada, openTitular, toast } from '../store/ui'
+import { confirmDialog, openTitular, toast } from '../store/ui'
 import { accion } from '../store/deshacer'
-import { entityName, movementsToCSV } from '../lib/movements'
-import { diaDe, movimientosDe, proximaFecha } from '../lib/programadas'
-import { fmtDate, fmtEUR } from '../lib/format'
+import { movementsToCSV } from '../lib/movements'
 import { downloadFile } from '../lib/download'
 import { isStandalone, useInstallPrompt } from '../lib/install'
 import { cn } from '../lib/cn'
 import { PageHeader } from '../components/layout/AppShell'
 import { Card, CardHeader } from '../components/ui/Card'
 import { Button, IconButton } from '../components/ui/Button'
-import { Amount, useHidden } from '../components/ui/Amount'
+import { Amount } from '../components/ui/Amount'
 import { Switch } from '../components/ui/Switch'
 import { PrincipalBadge, TitularAvatar } from '../components/Titulares'
 
@@ -96,8 +92,7 @@ function TitularRow({ tf }: { tf: TitularFinance }) {
 
 export function Settings() {
   const fin = useFinance()
-  const { ws, ds, lookup, today, owner } = fin
-  const hidden = useHidden()
+  const { ws, lookup, today } = fin
   const hideAmounts = useData((s) => s.hideAmounts)
   const setHideAmounts = useData((s) => s.setHideAmounts)
   const loadDemo = useData((s) => s.loadDemo)
@@ -107,7 +102,6 @@ export function Settings() {
   const clearData = useData((s) => s.clearData)
   const resetAll = useData((s) => s.resetAll)
   const importData = useData((s) => s.importData)
-  const [t1, t2] = ds.titulares
   const install = useInstallPrompt()
   const fileRef = useRef<HTMLInputElement>(null)
 
@@ -186,78 +180,6 @@ export function Settings() {
           <div className="border-t border-slate-100 px-4 py-3 sm:px-5">
             <Button variant="ghost" size="sm" icon={Plus} onClick={() => openTitular()}>
               Añadir otro titular
-            </Button>
-          </div>
-        </Card>
-
-        <Card>
-          <CardHeader
-            title="Transferencias mensuales"
-            subtitle="Movimientos que se repiten cada mes: la app los apunta solos"
-            icon={
-              <span className="inline-flex size-9 items-center justify-center rounded-xl bg-fuchsia-50 text-fuchsia-600">
-                <CalendarSync className="size-[18px]" />
-              </span>
-            }
-          />
-          {ds.programadas.length === 0 ? (
-            <p className="mt-3 border-t border-slate-100 px-4 py-4 text-sm text-slate-500 sm:px-5">
-              Aún no hay ninguna.
-              {t2 ? ` Por ejemplo, la transferencia de cada mes de ${t1.nombre} a ${t2.nombre} (se programa en la tarjeta de ${t1.nombre}, en Inicio): cuenta solo para ${t2.nombre}.` : ''}
-            </p>
-          ) : (
-            <ul className="mt-3 divide-y divide-slate-100 border-t border-slate-100">
-              {ds.programadas.map((p) => {
-                const from = lookup.titulares.get(owner(p.origen) ?? '')
-                const to = lookup.titulares.get(owner(p.destino) ?? '')
-                const n = movimientosDe(ds, p.id).length
-                const next = proximaFecha(p, today)
-                return (
-                  <li key={p.id}>
-                    <button
-                      type="button"
-                      onClick={() => openProgramada({ programadaId: p.id })}
-                      className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors hover:bg-slate-50 sm:px-5"
-                    >
-                      <span className="flex shrink-0 items-center">
-                        {from && <TitularAvatar titular={from} size="sm" />}
-                        {to && from && to.id !== from.id && (
-                          <>
-                            <ArrowRight className="mx-0.5 size-3.5 text-slate-400" />
-                            <TitularAvatar titular={to} size="sm" />
-                          </>
-                        )}
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-semibold text-slate-900">
-                          {hidden ? '•••••• €' : fmtEUR(p.importe)} el día {diaDe(p)} de cada mes
-                        </span>
-                        <span className="block truncate text-[13px] text-slate-500">
-                          {entityName(lookup, p.origen)} → {entityName(lookup, p.destino)}
-                        </span>
-                        <span className="block truncate text-xs text-slate-400">
-                          {n} apuntada{n === 1 ? '' : 's'} · {next ? `próxima: ${fmtDate(next)}` : 'terminada'}
-                        </span>
-                      </span>
-                      <Pencil className="size-4 shrink-0 text-slate-400" />
-                    </button>
-                  </li>
-                )
-              })}
-            </ul>
-          )}
-          <div className="border-t border-slate-100 px-4 py-3 sm:px-5">
-            <Button
-              variant="ghost"
-              size="sm"
-              icon={Plus}
-              onClick={() =>
-                openProgramada({
-                  preset: t2 && ds.programadas.length === 0 ? { origenTitularId: t1.id, destinoTitularId: t2.id, concepto: `Transferencia mensual a ${t2.nombre}` } : undefined,
-                })
-              }
-            >
-              Nueva transferencia mensual
             </Button>
           </div>
         </Card>
