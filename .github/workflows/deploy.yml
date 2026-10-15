@@ -52,6 +52,11 @@ jobs:
       - name: Construir
         run: npm run build
 
+      # Garantía de privacidad: no se publica nada sin la política que impide
+      # a la app conectarse a otros servidores (ver vite.config.ts).
+      - name: Comprobar la política de seguridad (CSP)
+        run: grep -q "connect-src 'self'" dist/index.html
+
       - uses: actions/upload-pages-artifact@v5
         with:
           path: dist

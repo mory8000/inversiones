@@ -74,8 +74,16 @@ resultado final es lo que has recuperado menos lo que invertiste.
 ## Tus datos
 
 Todo se guarda **solo en tu navegador** (localStorage): no hay servidor ni cuentas de usuario y tus datos no
-salen del dispositivo. Por eso conviene descargar de vez en cuando una **copia de seguridad** desde *Ajustes*
-(también sirve para pasar los datos a otro móvil u ordenador).
+salen del dispositivo. Aunque la web sea pública, quien la abra solo ve **sus propios** datos (al principio, la
+app vacía); nunca los tuyos.
+
+Además, la versión publicada incluye una **política de seguridad (CSP)** que solo deja a la app cargar sus
+propios archivos e impide al navegador conectarse a cualquier otro servidor: aunque un código intentara enviar
+tus datos fuera, el navegador lo bloquearía.
+
+Como los datos solo están en el dispositivo, conviene descargar de vez en cuando una **copia de seguridad**
+desde *Ajustes* (también sirve para pasar los datos a otro móvil u ordenador). Guárdala en un sitio privado:
+no la subas a este repositorio.
 
 ## Instalar en el móvil
 

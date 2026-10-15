@@ -1,7 +1,41 @@
-import { defineConfig } from 'vite'
+import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
+
+// Política de seguridad (CSP) de la app publicada: el navegador solo le deja cargar
+// sus propios archivos y le impide conectarse a cualquier otro servidor, así que los
+// datos guardados en el dispositivo no pueden enviarse a ningún sitio.
+// (Solo en el build: el servidor de desarrollo necesita scripts en línea y websockets.)
+const CONTENT_SECURITY_POLICY = [
+  "default-src 'self'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob:",
+  "font-src 'self' data:",
+  "connect-src 'self'",
+  "manifest-src 'self'",
+  "worker-src 'self'",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+].join('; ')
+
+function contentSecurityPolicy(): Plugin {
+  return {
+    name: 'mis-inversiones:csp',
+    apply: 'build',
+    transformIndexHtml(html) {
+      const charset = /<meta charset="[^"]*"\s*\/?>/i
+      if (!charset.test(html)) throw new Error('index.html: falta <meta charset> para colocar la CSP')
+      // Justo después del charset, antes de cualquier script o estilo.
+      return html.replace(
+        charset,
+        (m) => `${m}\n    <meta http-equiv="Content-Security-Policy" content="${CONTENT_SECURITY_POLICY}" />`,
+      )
+    },
+  }
+}
 
 // `base: './'` permite publicar la app en cualquier ruta (p. ej. GitHub Pages
 // en /inversiones/) sin tocar nada. La navegación interna usa rutas con "#".
@@ -10,6 +44,7 @@ export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
+    contentSecurityPolicy(),
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
