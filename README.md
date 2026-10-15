@@ -2,7 +2,7 @@
 
 App para llevar el control de tus **depósitos, fondos, carteras y planes de pensiones**, al estilo de MyInvestor.
 Registra cada movimiento de dinero y la app te enseña, de forma clara, **de dónde viene y a dónde va cada euro**,
-cuánto has invertido, cuánto ha vuelto a tus cuentas, cuánto has ganado y el **TOTAL** de todo.
+cuánto has invertido, cuánto ha vuelto a tus cuentas y cuánto has ganado.
 
 **Abrir la app → https://mory8000.github.io/inversiones/** (funciona en el ordenador y en el móvil, y se puede
 instalar como una app).
@@ -13,7 +13,7 @@ Sustituye al antiguo `Inversiones.xlsx` y mantiene sus mismos conceptos: titular
 ![Inicio en escritorio](docs/captura-inicio.jpg)
 
 <p align="center">
-  <img src="docs/movil-inicio.jpg" width="200" alt="Inicio en el móvil: el TOTAL, sin el Fondo ahorro">
+  <img src="docs/movil-inicio.jpg" width="200" alt="Inicio en el móvil: la tarjeta del titular principal, con su transferencia mensual y el botón Editar">
   <img src="docs/movil-myinvestor.jpg" width="200" alt="La ventana de MyInvestor: añadir dinero, invertir, programar la transferencia mensual">
   <img src="docs/movil-ventanillas.jpg" width="200" alt="Una ventanilla por inversión, en el orden que elijas">
   <img src="docs/movil-movimientos.jpg" width="200" alt="Movimientos en el móvil">
@@ -24,20 +24,18 @@ Sustituye al antiguo `Inversiones.xlsx` y mantiene sus mismos conceptos: titular
 
 ## Qué puedes hacer
 
-- **Inicio**: lo primero que se ve es el **TOTAL** y, debajo, **todos los titulares a la vez** y **una ventanilla
-  por cada inversión** (fondo, cartera, depósito…):
-  - **TOTAL**: todo el dinero (las inversiones de todos los titulares y el saldo de sus cuentas MyInvestor)
-    **menos lo que se deja fuera, como el «Fondo ahorro»**, con su beneficio y el desglose por tipo (depósitos,
-    fondos, carteras… y la cuenta MyInvestor). Con **«Qué suma»** se elige qué entra en el TOTAL (un titular
-    entero, una inversión o una cuenta). Lo que se llama «Fondo ahorro» queda fuera solo.
+- **Inicio**: lo primero que se ve son **todos los titulares a la vez** y **una ventanilla por cada inversión**
+  (fondo, cartera, depósito…):
   - La tarjeta de cada titular (el primero es el principal) con su patrimonio, su rentabilidad, lo invertido, lo
-    que tiene sin invertir en su cuenta **MyInvestor** y lo aportado, y lo que ha enviado o recibido de otro
-    titular. En la del principal está su cuenta **MyInvestor**, con «Añadir dinero», «Invertir» y
-    **«Abrir MyInvestor»**.
+    que tiene sin invertir en su cuenta **MyInvestor** y lo aportado. Las cifras de cada titular van por
+    separado: la cifra grande del principal es todo lo suyo, sin el «Fondo ahorro» (que tiene su propia tarjeta).
+  - En la del principal está su cuenta **MyInvestor**, sus **transferencias mensuales** (cada una con su botón
+    **«Editar»**, para cambiar el importe, el día o hasta cuándo, o eliminarla) y el botón **«Abrir MyInvestor»**.
+    El titular que recibe una transferencia mensual lo indica en su tarjeta («Recibe … cada mes de …»).
   - **Ventana de MyInvestor** (al abrirla): su **saldo real** (positivo o negativo), **Añadir dinero** (desde una
     cuenta externa), **Invertir**, **Programar transferencia mensual**, **Sacar dinero**, sus transferencias
-    mensuales y el **dinero añadido desde bancos externos**, cada movimiento con sus botones **Editar** y
-    **Borrar**.
+    mensuales (con **Editar**) y el **dinero añadido desde bancos externos**, cada movimiento con sus botones
+    **Editar** y **Borrar**.
   - **Ventanillas**: al tocar una se abre con su saldo, su **% de rentabilidad** (o su **interés**, en los
     depósitos) con el botón para cambiarlo, y con lo que se puede hacer: **Aportar**, **Retirar** (reembolso),
     **Traspasar**, **Programar transferencia mensual** y ver sus movimientos (con **Editar** y **Borrar**).
@@ -47,7 +45,7 @@ Sustituye al antiguo `Inversiones.xlsx` y mantiene sus mismos conceptos: titular
     dinero, el resumen por tipo de cada titular (como el Excel), los últimos movimientos y las cuentas.
 - **% de beneficio o pérdida**: en cada fondo, cartera, plan… se pone el % que gana o pierde (**«Gana (sube)» o
   «Pierde (baja)»**): si las acciones suben un 3 %, se pone 3 y su saldo pasa a ser el capital + 3 %. Se ve al
-  momento en su ventanilla y en el TOTAL. También se puede poner su valor en euros.
+  momento en su ventanilla y en el patrimonio de su titular. También se puede poner su valor en euros.
 - **Interés variable en los depósitos**: «Cambiar interés» pone la nueva TAE **desde una fecha** (hoy, otra
   fecha o desde el principio para corregirla). Los días de antes se siguen calculando con el interés anterior.
 - **Deshacer**: el botón **«Deshacer»** de arriba (y el de cada aviso) deshace el último cambio: un movimiento
@@ -82,16 +80,17 @@ Sustituye al antiguo `Inversiones.xlsx` y mantiene sus mismos conceptos: titular
   y lo que ha vuelto.
 - **Varios titulares, vistos a la vez**: la app empieza con «Titular 1» (el principal) y «Titular 2»; ponles
   nombre desde la propia app. Cada cuenta y cada producto es de un titular, cada titular tiene su color y sus
-  cifras van siempre por separado (solo el TOTAL de arriba las junta, sin lo que se deja fuera). Desde
+  cifras van siempre por separado (nunca se suman las de varios titulares). Desde
   *Ajustes → Titulares* se puede añadir otro titular o elegir cuál es el principal (código y nombre, como en la
   cabecera del Excel).
 - **Transferencia mensual**: por ejemplo, de MyInvestor del titular 1 a un fondo o cuenta del titular 2. Se
   programa una vez, **dentro de la ventana de MyInvestor** o de la ventanilla de la inversión (importe, día, desde
-  qué cuenta y a qué producto o cuenta), y la app la apunta sola cada mes. Un mes concreto se puede cambiar o
-  borrar sin tocar los demás.
+  qué cuenta y a qué producto o cuenta), y la app la apunta sola cada mes. Para cambiarla o eliminarla, su botón
+  **«Editar»** está en la tarjeta del titular, en la ventana de MyInvestor y en *Ajustes → Transferencias
+  mensuales*. Un mes concreto se puede cambiar o borrar sin tocar los demás.
 - **El dinero cuenta para quien lo recibe**: si sale de la cuenta del titular 1 y entra en un producto o en una
-  cuenta con saldo del titular 2, cuenta solo para el titular 2, no para el titular 1 (al titular 1 se le enseña
-  como «Enviado a…»).
+  cuenta con saldo del titular 2, cuenta solo para el titular 2, no para el titular 1 (en la cuenta del titular 1
+  se ve como dinero que ha salido).
 - **Ocultar importes** con un toque (icono del ojo).
 - **Copia de seguridad** (descargar / restaurar) y **datos de ejemplo** para probarla sin miedo.
 - **Se instala como una app** en el móvil o el ordenador y funciona **sin conexión**.
@@ -145,16 +144,11 @@ Patrimonio = saldo de sus productos + saldo de sus cuentas con saldo (MyInvestor
 Aportado   = lo que ha entrado desde fuera (cuentas externas u otros titulares)
 ```
 
-Y arriba del todo:
-
-```
-TOTAL = saldo de todas las inversiones + saldo de las cuentas con saldo, de todos los titulares,
-        menos lo que se deja fuera (p. ej. el «Fondo ahorro»)
-```
+Las cifras de varios titulares nunca se suman: cada uno ve solo lo suyo.
 
 Si el saldo de MyInvestor queda en negativo (por ejemplo, al borrar dinero añadido que ya se había invertido, o
-si una transferencia mensual llega sin dinero suficiente), se ve en rojo, resta en el patrimonio y en el TOTAL,
-y la app avisa de que falta apuntar de dónde vino el dinero («Añadir dinero»).
+si una transferencia mensual llega sin dinero suficiente), se ve en rojo, resta en el patrimonio y la app avisa
+de que falta apuntar de dónde vino el dinero («Añadir dinero», dentro de la ventana de MyInvestor).
 
 ## Tus datos
 

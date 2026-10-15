@@ -3,7 +3,7 @@ import { ArrowDownLeft, ArrowUpRight, CalendarSync, ChevronRight, Pencil, Repeat
 import { useFinance } from '../store/useFinance'
 import { openProduct, useUI } from '../store/ui'
 import { aportarA, programarAportacionMensual, retirarDe, traspasarDe } from '../store/acciones'
-import { involvesProduct, sumaEnTotal } from '../lib/finance'
+import { involvesProduct } from '../lib/finance'
 import { sortMovementsDesc } from '../lib/movements'
 import { MOVEMENT_META, PRODUCT_META } from '../lib/meta'
 import { navigate, paths } from '../lib/router'
@@ -95,13 +95,6 @@ export function InvestmentSheet({ modalId, productId }: { modalId: string; produ
             </Stat>
           </dl>
         </div>
-
-        {!sumaEnTotal(p, lookup.titulares) && (
-          <p className="-mt-2 rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-500">
-            No suma en el TOTAL de Inicio
-            {lookup.titulares.get(p.titularId)?.fueraDelTotal ? ` (como todo lo de «${titular?.nombre}»)` : ''}. Sigue contando para su titular.
-          </p>
-        )}
 
         {/* El % que genera (rentabilidad o interés), para cambiarlo */}
         {!closed && <PercentBox p={p} pos={pos} />}

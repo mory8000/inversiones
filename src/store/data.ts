@@ -30,14 +30,12 @@ export interface MovimientoInput {
   concepto: string
 }
 export type ProgramadaInput = Pick<Programada, 'origen' | 'destino' | 'importe' | 'inicio' | 'fin' | 'concepto'>
-/** Algo que puede sumar o no en el TOTAL. */
-export type TotalRef = { kind: 'titular' | 'cuenta' | 'producto'; id: string }
 
 interface Actions {
   setHideAmounts: (v: boolean) => void
 
-  addTitular: (data: { codigo: string; nombre: string; fueraDelTotal?: boolean }) => string
-  updateTitular: (id: string, data: Partial<Pick<Titular, 'codigo' | 'nombre' | 'fueraDelTotal'>>) => void
+  addTitular: (data: { codigo: string; nombre: string }) => string
+  updateTitular: (id: string, data: Partial<Pick<Titular, 'codigo' | 'nombre'>>) => void
   removeTitular: (id: string) => void
   /** Lo pone el primero de la lista (el principal). */
   makePrincipal: (id: string) => void
@@ -61,8 +59,6 @@ interface Actions {
    */
   cambiarTae: (productoId: string, desde: string | null, tae: number) => void
   removeCambioTae: (productoId: string, cambioId: string) => void
-  /** Suma o no en el TOTAL de Inicio (un titular entero, una cuenta o un producto). */
-  setFueraDelTotal: (ref: TotalRef, fuera: boolean) => void
 
   addMovimiento: (data: MovimientoInput) => string
   updateMovimiento: (id: string, data: MovimientoInput) => void
@@ -211,20 +207,14 @@ export const useData = create<DataState>()(
         setHideAmounts: (v) => set({ hideAmounts: v }),
 
         // ── Titulares ───────────────────────────────────────────────────────
-        addTitular: ({ codigo, nombre, fueraDelTotal }) => {
+        addTitular: ({ codigo, nombre }) => {
           const id = uid()
           updateDs(
             (ds) => ({
               ...ds,
               titulares: [
                 ...ds.titulares,
-                {
-                  id,
-                  codigo: codigo.trim(),
-                  nombre: nombre.trim() || defaultTitularName(ds.titulares.length + 1),
-                  ...(fueraDelTotal ? { fueraDelTotal: true } : {}),
-                  createdAt: nowStamp(),
-                },
+                { id, codigo: codigo.trim(), nombre: nombre.trim() || defaultTitularName(ds.titulares.length + 1), createdAt: nowStamp() },
               ],
             }),
             `Nuevo titular «${nombre.trim()}»`,
@@ -241,10 +231,6 @@ export const useData = create<DataState>()(
                   ...t,
                   ...(data.codigo !== undefined ? { codigo: data.codigo.trim() } : {}),
                   ...(data.nombre !== undefined ? { nombre: data.nombre.trim() || t.nombre } : {}),
-                }
-                if (data.fueraDelTotal !== undefined) {
-                  if (data.fueraDelTotal) next.fueraDelTotal = true
-                  else delete next.fueraDelTotal
                 }
                 return JSON.stringify(next) === JSON.stringify(t) ? t : next
               }),
@@ -267,9 +253,8 @@ export const useData = create<DataState>()(
         // ── Cuentas ─────────────────────────────────────────────────────────
         addCuenta: (data) => {
           const id = uid()
-          const { fueraDelTotal, ...rest } = data
           updateDs(
-            (ds) => ({ ...ds, cuentas: [...ds.cuentas, { ...rest, nombre: data.nombre.trim(), ...(fueraDelTotal ? { fueraDelTotal: true } : {}), id, createdAt: nowStamp() }] }),
+            (ds) => ({ ...ds, cuentas: [...ds.cuentas, { ...data, nombre: data.nombre.trim(), id, createdAt: nowStamp() }] }),
             `Nueva cuenta «${data.nombre.trim()}»`,
           )
           return id
@@ -281,7 +266,6 @@ export const useData = create<DataState>()(
               cuentas: ds.cuentas.map((c) => {
                 if (c.id !== id) return c
                 const next: Cuenta = { ...c, ...data }
-                if (!next.fueraDelTotal) delete next.fueraDelTotal
                 return JSON.stringify(next) === JSON.stringify(c) ? c : next
               }),
             }),
@@ -300,14 +284,10 @@ export const useData = create<DataState>()(
         // ── Productos ───────────────────────────────────────────────────────
         addProducto: (data) => {
           const id = uid()
-          const { fueraDelTotal, ...rest } = data
           updateDs(
             (ds) => ({
               ...ds,
-              productos: [
-                ...ds.productos,
-                { ...rest, nombre: data.nombre.trim(), ...(fueraDelTotal ? { fueraDelTotal: true } : {}), id, valoraciones: [], createdAt: nowStamp() },
-              ],
+              productos: [...ds.productos, { ...data, nombre: data.nombre.trim(), id, valoraciones: [], createdAt: nowStamp() }],
             }),
             `Nueva inversión «${data.nombre.trim()}»`,
           )
@@ -320,7 +300,6 @@ export const useData = create<DataState>()(
               productos: ds.productos.map((p) => {
                 if (p.id !== id) return p
                 const next: Producto = { ...p, ...data }
-                if (!next.fueraDelTotal) delete next.fueraDelTotal
                 return JSON.stringify(next) === JSON.stringify(p) ? p : next
               }),
             }),
@@ -377,19 +356,6 @@ export const useData = create<DataState>()(
             }),
             'Cambio de interés eliminado',
           ),
-        setFueraDelTotal: (ref, fuera) =>
-          updateDs((ds) => {
-            const marca = <T extends { id: string; fueraDelTotal?: boolean }>(x: T): T => {
-              if (x.id !== ref.id || !!x.fueraDelTotal === fuera) return x
-              const next = { ...x }
-              if (fuera) next.fueraDelTotal = true
-              else delete next.fueraDelTotal
-              return next
-            }
-            if (ref.kind === 'titular') return { ...ds, titulares: ds.titulares.map(marca) }
-            if (ref.kind === 'cuenta') return { ...ds, cuentas: ds.cuentas.map(marca) }
-            return { ...ds, productos: ds.productos.map(marca) }
-          }, fuera ? 'Dejar fuera del TOTAL' : 'Sumar en el TOTAL'),
 
         // ── Movimientos ─────────────────────────────────────────────────────
         addMovimiento: (data) => {

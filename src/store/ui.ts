@@ -44,8 +44,6 @@ export type ModalSpec =
   | { id: string; type: 'valuation'; productId: string }
   /** Cambiar el interés (TAE) de un depósito. */
   | { id: string; type: 'interes'; productId: string }
-  /** Qué suma en el TOTAL de Inicio. */
-  | { id: string; type: 'total' }
   | { id: string; type: 'titular'; titularId?: string }
   | {
       id: string
@@ -123,6 +121,5 @@ export const openValuation = (productId: string) => useUI.getState().open({ type
 /** Ventana de una cuenta con saldo (p. ej. «MyInvestor»). */
 export const openCuenta = (cuentaId: string) => useUI.getState().open({ type: 'cuenta', cuentaId })
 export const openInteres = (productId: string) => useUI.getState().open({ type: 'interes', productId })
-export const openTotal = () => useUI.getState().open({ type: 'total' })
 export const openTitular = (titularId?: string) => useUI.getState().open({ type: 'titular', titularId })
 export const toast = (message: string, kind?: Toast['kind'], action?: ToastAction) => useUI.getState().toast(message, kind, action)

@@ -12,9 +12,8 @@ import { confirmDialog, openAccount, openInvestment, useUI } from '../../store/u
 import { accion } from '../../store/deshacer'
 import { anadirDinero } from '../../store/acciones'
 import { fmtDate, fmtEUR, fmtNumberInput, parseNumber } from '../../lib/format'
-import { cuentaPrincipal, esFondoAhorro } from '../../lib/titulares'
+import { cuentaPrincipal } from '../../lib/titulares'
 import { saldoMinimoDesde } from '../../lib/saldo'
-import { Switch } from '../ui/Switch'
 import { addMonths, isValidISODate } from '../../lib/dates'
 import { navigate, paths } from '../../lib/router'
 import { cn } from '../../lib/cn'
@@ -57,9 +56,6 @@ export function ProductForm({
   const [vencimiento, setVencimiento] = useState(existing?.vencimiento ?? '')
   const [notas, setNotas] = useState(existing?.notas ?? '')
   const [showMore, setShowMore] = useState(!!(existing?.notas || existing?.isin))
-  /** Si suma en el TOTAL de Inicio. Al crearlo, lo que se llame «Fondo ahorro» empieza fuera. */
-  const [fueraElegido, setFueraElegido] = useState<boolean | null>(null)
-  const fuera = fueraElegido ?? (existing ? !!existing.fueraDelTotal || (esFondoAhorro(nombre) && !esFondoAhorro(existing.nombre)) : esFondoAhorro(nombre))
 
   // Primera aportación (solo al crear desde la lista de productos).
   const offerFirst = !existing && (!onCreated || !!abrirVentanilla)
@@ -125,7 +121,6 @@ export function ProductForm({
       notas: notas.trim(),
       tae: isDeposit ? taeNum : null,
       vencimiento: isDeposit && vencimiento ? vencimiento : null,
-      fueraDelTotal: fuera,
     }
     if (existing) {
       accion(`Cambiar inversión «${data.nombre}»`, () => updateProducto(existing.id, data), 'Inversión actualizada')
@@ -177,10 +172,12 @@ export function ProductForm({
         <div className="flex items-center gap-2">
           {existing && <Button variant="ghost" icon={Trash2} onClick={remove} className="text-rose-600 hover:bg-rose-50" aria-label="Eliminar producto" />}
           <div className="flex-1" />
-          <Button variant="secondary" onClick={() => close(modalId)}>
+          <Button variant="secondary" wrap className="min-w-0" onClick={() => close(modalId)}>
             Cancelar
           </Button>
-          <Button onClick={save}>{existing ? 'Guardar cambios' : 'Crear producto'}</Button>
+          <Button onClick={save} wrap className="min-w-0">
+            {existing ? 'Guardar cambios' : 'Crear producto'}
+          </Button>
         </div>
       }
     >
@@ -366,16 +363,6 @@ export function ProductForm({
             })()}
           </div>
         )}
-
-        <div className="flex items-start justify-between gap-3 rounded-2xl border border-slate-200 p-3.5">
-          <label htmlFor="prod-total" className="min-w-0">
-            <span className="block text-sm font-semibold text-slate-900">Suma en el TOTAL de Inicio</span>
-            <span className="mt-0.5 block text-[13px] text-slate-500">
-              {fuera ? 'No suma en el TOTAL (p. ej. un «Fondo ahorro»). Sigue contando para su titular.' : 'Su saldo suma en el TOTAL de Inicio.'}
-            </span>
-          </label>
-          <Switch id="prod-total" checked={!fuera} onChange={(v) => setFueraElegido(!v)} label="Suma en el TOTAL de Inicio" />
-        </div>
 
         <div>
           <button

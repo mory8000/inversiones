@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Cuenta, Dataset, EntityRef, Movimiento, Producto, Valoracion, Workspace } from '../types'
-import { buildTimeline, computeAccountStats, computeGranTotal, computePositions, computeTotals, evaluateProduct, interesEntre, summarizeByType, taeEn } from './finance'
+import { buildTimeline, computeAccountStats, computePositions, computeTotals, evaluateProduct, interesEntre, summarizeByType, taeEn } from './finance'
+import { titularWorkspace } from './titulares'
 import { faltaDinero, saldoEn, saldoMinimoDesde } from './saldo'
 import { buildFlowGraph } from './flow'
 import { parseNumber, fmtEUR, fmtPct } from './format'
@@ -405,8 +406,8 @@ describe('formato', () => {
   })
 })
 
-describe('TOTAL de todo, menos lo que se deja fuera («Fondo ahorro»)', () => {
-  const cuenta = (id: string, titularId: string, externa: boolean, extra: Partial<Cuenta> = {}): Cuenta => ({
+describe('el principal y el «Fondo ahorro», cada uno por su lado', () => {
+  const cuenta = (id: string, titularId: string, externa: boolean): Cuenta => ({
     id,
     titularId,
     nombre: id,
@@ -416,18 +417,17 @@ describe('TOTAL de todo, menos lo que se deja fuera («Fondo ahorro»)', () => {
     notas: '',
     externa,
     createdAt: '',
-    ...extra,
   })
-  const base = (extra: { t2Fuera?: boolean; productoFuera?: boolean; cuentaFuera?: boolean } = {}): Dataset => ({
+  const base = (): Dataset => ({
     titulares: [
       { id: 'T1', codigo: '', nombre: 'Luis', createdAt: '' },
-      { id: 'T2', codigo: '', nombre: 'Fondo ahorro', createdAt: '', ...(extra.t2Fuera ? { fueraDelTotal: true } : {}) },
+      { id: 'T2', codigo: '', nombre: 'Fondo ahorro', createdAt: '' },
     ],
-    cuentas: [cuenta('MY', 'T1', false), cuenta('BBVA', 'T1', true), cuenta('C2', 'T2', false, extra.cuentaFuera ? { fueraDelTotal: true } : {})],
+    cuentas: [cuenta('MY', 'T1', false), cuenta('BBVA', 'T1', true), cuenta('C2', 'T2', false)],
     productos: [
       prod('F', 'fondo', { titularId: 'T1', valoraciones: [val('2026-09-01', 'porcentaje', 10)] }),
       prod('D', 'deposito', { titularId: 'T1', tae: 0 }),
-      prod('K', 'cartera', { titularId: 'T1', ...(extra.productoFuera ? { fueraDelTotal: true, nombre: 'Fondo ahorro' } : {}) }),
+      prod('K', 'cartera', { titularId: 'T1' }),
       prod('F2', 'fondo', { titularId: 'T2' }),
     ],
     movimientos: [
@@ -440,41 +440,34 @@ describe('TOTAL de todo, menos lo que se deja fuera («Fondo ahorro»)', () => {
     ],
     programadas: [],
   })
-  const total = (ds: Dataset) => computeGranTotal(ds, computePositions(ds, '2026-10-15'), computeAccountStats(ds))
+  /** Las cifras de un titular, solo con lo suyo (como en su tarjeta de Inicio). */
+  const totales = (ds: Dataset) => {
+    const positions = computePositions(ds, '2026-10-15')
+    const accounts = computeAccountStats(ds)
+    const de = (titularId: string) => {
+      const ws = titularWorkspace(ds, titularId)
+      const own = new Map([...positions].filter(([id]) => ws.productos.some((p) => p.id === id)))
+      const ownAccounts = new Map([...accounts].filter(([id]) => ws.cuentas.some((c) => c.id === id)))
+      return computeTotals(ws, own, ownAccounts)
+    }
+    return { luis: de('T1'), ahorro: de('T2') }
+  }
 
-  it('suma todo: inversiones de todos y el saldo real de las cuentas con saldo', () => {
-    const t = total(base())
-    // F 1.100 + D 2.000 + K 500 + F2 300 = 3.900 · MY 1.000 + C2 200 = 1.200
-    expect(t).toMatchObject({ inversiones: 3900, cuentas: 1200, total: 5100, capital: 3800, ganancia: 100 })
-    expect(t.porTipo.map((r) => [r.tipo, r.saldo])).toEqual([
-      ['deposito', 2000],
-      ['fondo', 1400],
-      ['cartera', 500],
-    ])
-    expect(t.fuera).toEqual([])
-  })
-
-  it('el «Fondo ahorro» (titular entero) queda fuera con todo lo suyo', () => {
-    const t = total(base({ t2Fuera: true }))
-    expect(t).toMatchObject({ inversiones: 3600, cuentas: 1000, total: 4600 })
-    expect(t.fuera).toEqual([{ nivel: 'titular', id: 'T2', titularId: 'T2', nombre: 'Fondo ahorro', valor: 500 }])
-  })
-
-  it('o solo un producto o una cuenta', () => {
-    const t = total(base({ productoFuera: true, cuentaFuera: true }))
-    expect(t).toMatchObject({ inversiones: 3400, cuentas: 1000, total: 4400 })
-    expect(t.fuera.map((x) => [x.nivel, x.id, x.valor])).toEqual([
-      ['producto', 'K', 500],
-      ['cuenta', 'C2', 200],
-    ])
+  it('lo enviado al «Fondo ahorro» cuenta solo para él: el principal suma sus inversiones y el saldo real de su MyInvestor', () => {
+    const { luis, ahorro } = totales(base())
+    // Luis: F 1.100 + D 2.000 + K 500 + MyInvestor 1.000 (5.000 − 1.000 − 2.000 − 500 − 300 − 200).
+    expect(luis).toMatchObject({ patrimonio: 4600, efectivo: 1000, capital: 3500, ganancia: 100 })
+    // Fondo ahorro: F2 300 + C2 200.
+    expect(ahorro).toMatchObject({ patrimonio: 500, efectivo: 200 })
   })
 
   it('el saldo de la cuenta principal es real: si es negativo, resta', () => {
     const ds = base()
     ds.movimientos.push(mov('2026-02-01', C('MY'), P('F'), 2000))
-    const t = total(ds)
     expect(computeAccountStats(ds).get('MY')!.saldo).toBe(-1000)
-    expect(t.cuentas).toBe(-800)
-    expect(t.total).toBeCloseTo(3900 + 2200 - 800, 6)
+    const { luis } = totales(ds)
+    expect(luis.efectivo).toBe(-1000)
+    // F 3.300 + D 2.000 + K 500 − 1.000.
+    expect(luis.patrimonio).toBeCloseTo(4800, 6)
   })
 })

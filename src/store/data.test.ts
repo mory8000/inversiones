@@ -290,7 +290,7 @@ describe('transferencia mensual', () => {
 })
 
 describe('datos de ejemplo', () => {
-  it('van aparte de tus datos: Marta envía cada mes al «Fondo ahorro» y cuenta solo para él (que no suma en el TOTAL)', async () => {
+  it('van aparte de tus datos: Marta envía cada mes al «Fondo ahorro» y cuenta solo para él', async () => {
     const { useData, finance } = await open(new MemoryStorage())
     useData.getState().loadDemo()
     let s = useData.getState()
@@ -299,11 +299,6 @@ describe('datos de ejemplo', () => {
     const f = finance()
     const [marta, pablo] = f.titulares
     expect([marta.titular.nombre, pablo.titular.nombre]).toEqual(['Marta', 'Fondo ahorro'])
-    // El TOTAL es todo menos el «Fondo ahorro»: aquí, lo de Marta.
-    expect(pablo.titular.fueraDelTotal).toBe(true)
-    expect(f.granTotal.total).toBeCloseTo(marta.totals.patrimonio, 6)
-    expect(f.granTotal.fuera).toEqual([expect.objectContaining({ nivel: 'titular', nombre: 'Fondo ahorro' })])
-    expect(f.granTotal.fuera[0].valor).toBeCloseTo(pablo.totals.patrimonio, 6)
     expect(pablo.recibidoTotal).toBeGreaterThan(2000)
     expect(pablo.totals.aportado).toBeCloseTo(pablo.recibidoTotal, 2)
     expect(marta.enviadoTotal).toBeCloseTo(pablo.recibidoTotal, 2)
@@ -396,12 +391,6 @@ describe('cuenta principal «MyInvestor» y cuentas externas (versión 4)', () =
     expect(luis().totals).toMatchObject({ efectivo: 400, patrimonio: 400, aportadoTotal: 1000, capital: 0 })
     expect(ahorro().totals.patrimonio).toBe(600)
     expect(saved(storage).version).toBe(5)
-    // «Fondo ahorro» no suma en el TOTAL: el TOTAL es lo de Luis (su MyInvestor).
-    expect(s.datos.titulares.map((t) => [t.nombre, !!t.fueraDelTotal])).toEqual([
-      ['Luis', false],
-      ['Fondo ahorro', true],
-    ])
-    expect(f.granTotal).toMatchObject({ total: 400, cuentas: 400, inversiones: 0 })
     s = useData.getState()
     expect(s.datos.cuentas.map((c) => [c.nombre, c.externa])).toEqual([
       ['MyInvestor', false],
@@ -496,8 +485,8 @@ describe('cuenta principal «MyInvestor» y cuentas externas (versión 4)', () =
   })
 })
 
-describe('versión 5: TOTAL sin el «Fondo ahorro» e interés que cambia', () => {
-  it('lo que se llama «Fondo ahorro» (titular, producto o cuenta) queda fuera del TOTAL; lo demás, dentro', async () => {
+describe('versión 5: interés que cambia', () => {
+  it('se cargan bien los datos que guardó el TOTAL de Inicio (que ya no existe): su marca `fueraDelTotal` se ignora', async () => {
     const storage = new MemoryStorage()
     const fondo = (id: string, titularId: string, nombre: string, extra: object = {}) => ({
       id,
@@ -515,19 +504,19 @@ describe('versión 5: TOTAL sin el «Fondo ahorro» e interés que cambia', () =
     })
     storage.setItem(
       'mis-inversiones',
-      legacy(4, {
+      legacy(5, {
         datos: {
           titulares: [
             { id: 't1', codigo: '', nombre: 'Luis principal', createdAt: '' },
-            { id: 't2', codigo: '', nombre: 'Ana', createdAt: '' },
+            { id: 't2', codigo: '', nombre: 'Fondo ahorro', fueraDelTotal: true, createdAt: '' },
           ],
           cuentas: [
             { id: 'c1', titularId: 't1', nombre: 'MyInvestor', entidad: '', iban: '', color: '#000', notas: '', externa: false, createdAt: '' },
-            { id: 'c2', titularId: 't2', nombre: 'Cuenta Fondo-Ahorro', entidad: '', iban: '', color: '#000', notas: '', externa: false, createdAt: '' },
+            { id: 'c2', titularId: 't2', nombre: 'Cuenta Fondo-Ahorro', entidad: '', iban: '', color: '#000', notas: '', externa: false, fueraDelTotal: true, createdAt: '' },
             { id: 'c3', titularId: 't1', nombre: 'Cuenta ahorro', entidad: '', iban: '', color: '#000', notas: '', externa: true, createdAt: '' },
           ],
           productos: [
-            fondo('p1', 't1', 'Fondo de ahorro'),
+            fondo('p1', 't1', 'Fondo de ahorro', { fueraDelTotal: true }),
             fondo('p2', 't1', 'Vanguard'),
             {
               ...fondo('p3', 't1', 'Depósito'),
@@ -546,25 +535,19 @@ describe('versión 5: TOTAL sin el «Fondo ahorro» e interés que cambia', () =
     )
     const { useData } = await open(storage)
     const d = useData.getState().datos
-    expect(d.titulares.map((t) => !!t.fueraDelTotal)).toEqual([false, false])
-    expect(d.cuentas.map((c) => [c.id, !!c.fueraDelTotal])).toEqual([
-      ['c1', false],
-      ['c2', true],
-      ['c3', false],
-    ])
-    expect(d.productos.map((p) => [p.id, !!p.fueraDelTotal])).toEqual([
-      ['p1', true],
-      ['p2', false],
-      ['p3', false],
-    ])
+    const conMarca = (xs: object[]) => xs.filter((x) => 'fueraDelTotal' in x).length
+    expect([conMarca(d.titulares), conMarca(d.cuentas), conMarca(d.productos)]).toEqual([0, 0, 0])
+    expect(d.titulares.map((t) => t.nombre)).toEqual(['Luis principal', 'Fondo ahorro'])
+    expect(d.productos.map((p) => p.nombre)).toEqual(['Fondo de ahorro', 'Vanguard', 'Depósito'])
     // Solo los cambios de interés válidos.
     expect(d.productos[2].cambiosTae).toEqual([{ id: 'x', desde: '2026-05-01', tae: 1.5, createdAt: '' }])
-    expect(saved(storage).version).toBe(5)
 
-    // Con datos ya de la versión 5, lo que el usuario cambie se respeta (no se vuelve a marcar).
-    useData.getState().setFueraDelTotal({ kind: 'producto', id: 'p1' }, false)
-    const again = await open(storage)
-    expect(again.useData.getState().datos.productos[0].fueraDelTotal).toBeUndefined()
+    // Al guardar el siguiente cambio, la marca ya no se guarda.
+    useData.getState().updateTitular('t1', { nombre: 'Luis' })
+    const guardado = saved(storage).state.datos
+    expect(saved(storage).version).toBe(5)
+    expect(JSON.stringify(guardado)).not.toContain('fueraDelTotal')
+    expect(guardado.titulares.map((t: { nombre: string }) => t.nombre)).toEqual(['Luis', 'Fondo ahorro'])
   })
 
   it('cambiar el interés de un depósito desde una fecha (o corregir el inicial)', async () => {
@@ -644,6 +627,21 @@ describe('deshacer y rehacer', () => {
     expect(storage.getItem('mis-inversiones-deshacer')).toBeNull()
   })
 
+  it('los pasos del antiguo TOTAL de Inicio (que ya no existe) no se deshacen: se saltan', async () => {
+    const storage = new MemoryStorage()
+    let app = await open(storage)
+    app.useData.getState().addTitular({ codigo: '', nombre: 'Tercero' })
+    const h = JSON.parse(storage.getItem('mis-inversiones-deshacer')!)
+    const [paso] = h.pasos
+    const t2 = app.useData.getState().datos.titulares[1]
+    const total = { ...paso, id: 'viejo', etiqueta: 'Dejar «Fondo ahorro» fuera del TOTAL', parche: { titulares: { antes: { [t2.id]: t2 } } } }
+    storage.setItem('mis-inversiones-deshacer', JSON.stringify({ ...h, pasos: [paso, total] }))
+    app = await open(storage)
+    expect(app.useData.getState().deshacer()).toBe('Nuevo titular «Tercero»')
+    expect(app.useData.getState().datos.titulares).toHaveLength(2)
+    expect(app.useData.getState().deshacer()).toBeNull()
+  })
+
   it('un historial de otra versión de la app no se usa; «Borrar todo» lo borra', async () => {
     const storage = new MemoryStorage()
     let app = await open(storage)
@@ -701,10 +699,10 @@ describe('deshacer y rehacer', () => {
 
     st.loadDemo()
     expect(st.deshacer()).toBeNull() // en el ejemplo aún no se ha cambiado nada
-    st.setFueraDelTotal({ kind: 'titular', id: 'demo-t-2' }, false)
-    expect(useData.getState().ejemplo!.titulares[1].fueraDelTotal).toBeUndefined()
-    expect(st.deshacer()).toBe('Sumar en el TOTAL')
-    expect(useData.getState().ejemplo!.titulares[1].fueraDelTotal).toBe(true)
+    st.updateTitular('demo-t-2', { nombre: 'Ahorro' })
+    expect(useData.getState().ejemplo!.titulares[1].nombre).toBe('Ahorro')
+    expect(st.deshacer()).toBe('Cambio en los datos del titular')
+    expect(useData.getState().ejemplo!.titulares[1].nombre).toBe('Fondo ahorro')
     st.setVerEjemplo(false)
     expect(st.deshacer()).toBe('Nueva inversión «C»')
   })

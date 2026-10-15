@@ -8,7 +8,7 @@ import { isValidISODate, todayISO } from '../lib/dates'
 import { buildDemoDataset } from '../lib/demo'
 import { nowStamp, uid } from '../lib/id'
 import { inferMovementType } from '../lib/meta'
-import { conCuentaPrincipal, defaultTitularName, esFondoAhorro } from '../lib/titulares'
+import { conCuentaPrincipal, defaultTitularName } from '../lib/titulares'
 
 /**
  * Versión del formato de datos.
@@ -19,9 +19,8 @@ import { conCuentaPrincipal, defaultTitularName, esFondoAhorro } from '../lib/ti
  * - 4: cuentas con saldo (como «MyInvestor», suman en el patrimonio) y cuentas externas
  *      (de donde viene el dinero). El titular principal tiene su cuenta «MyInvestor».
  *      Los productos se guardan en el orden que elige el usuario.
- * - 5: TOTAL de Inicio: titulares, productos y cuentas pueden quedar fuera (`fueraDelTotal`;
- *      «Fondo ahorro» queda fuera solo). Los depósitos pueden cambiar de interés
- *      (`cambiosTae`).
+ * - 5: los depósitos pueden cambiar de interés (`cambiosTae`). (Durante un tiempo también se
+ *      guardó `fueraDelTotal`, para un TOTAL de Inicio que ya no existe: se ignora).
  */
 export const DATA_VERSION = 5
 
@@ -46,22 +45,12 @@ function sanitizeTitulares(raw: unknown): RawTitular[] {
       id: t.id as string,
       codigo: str(t.codigo),
       nombre: str(t.nombre, 'Titular').trim() || 'Titular',
-      ...fuera(t),
       createdAt: str(t.createdAt, nowStamp()),
       demo: t.demo === true,
     }))
 }
 
-/** `fueraDelTotal` solo se guarda cuando es `true`. */
-const fuera = (x: Record<string, unknown> | { fueraDelTotal?: boolean }): { fueraDelTotal?: true } => (x.fueraDelTotal === true ? { fueraDelTotal: true } : {})
-
-const cleanTitular = ({ id, codigo, nombre, fueraDelTotal, createdAt }: RawTitular | Titular): Titular => ({
-  id,
-  codigo,
-  nombre,
-  ...fuera({ fueraDelTotal }),
-  createdAt,
-})
+const cleanTitular = ({ id, codigo, nombre, createdAt }: RawTitular | Titular): Titular => ({ id, codigo, nombre, createdAt })
 
 function sanitizeCuenta(c: Record<string, unknown>, titularId: string): Cuenta {
   return {
@@ -74,7 +63,6 @@ function sanitizeCuenta(c: Record<string, unknown>, titularId: string): Cuenta {
     notas: str(c.notas),
     // Hasta la versión 3 todas las cuentas eran «de dónde sale el dinero»: externas.
     externa: c.externa !== false,
-    ...fuera(c),
     createdAt: str(c.createdAt, nowStamp()),
   }
 }
@@ -99,7 +87,6 @@ function sanitizeProducto(p: Record<string, unknown>, titularId: string): Produc
       porcentaje: num(v.porcentaje),
       createdAt: str(v.createdAt, nowStamp()),
     })),
-    ...fuera(p),
     createdAt: str(p.createdAt, nowStamp()),
   }
 }
@@ -276,20 +263,11 @@ function upgradeV4(data: Omit<PersistedData, 'version' | 'hideAmounts'>): Omit<P
 }
 
 /**
- * Versión 5: lo que se llame «Fondo ahorro» (un titular, un producto o una cuenta) queda fuera
- * del TOTAL de Inicio. Si es un titular, queda fuera entero (con todo lo suyo).
- * El ejemplo se vuelve a crear (ahora tiene un «Fondo ahorro» y un depósito con cambio de interés).
+ * Versión 5: el ejemplo se vuelve a crear (ahora tiene un «Fondo ahorro» y un depósito con
+ * cambio de interés). Los datos del usuario no cambian.
  */
-export function marcarFondoAhorro(ds: Dataset): Dataset {
-  const titulares = ds.titulares.map((t) => (esFondoAhorro(t.nombre) ? { ...t, fueraDelTotal: true } : t))
-  const fueraEntero = new Set(titulares.filter((t) => t.fueraDelTotal).map((t) => t.id))
-  const marca = <T extends { titularId: string; nombre: string; fueraDelTotal?: boolean }>(x: T): T =>
-    !fueraEntero.has(x.titularId) && esFondoAhorro(x.nombre) ? { ...x, fueraDelTotal: true } : x
-  return { ...ds, titulares, cuentas: ds.cuentas.map(marca), productos: ds.productos.map(marca) }
-}
-
 function upgradeV5(data: Omit<PersistedData, 'version' | 'hideAmounts'>): Omit<PersistedData, 'version' | 'hideAmounts'> {
-  return { ...data, datos: marcarFondoAhorro(data.datos), ejemplo: data.ejemplo ? buildDemoDataset(todayISO()) : null }
+  return { ...data, ejemplo: data.ejemplo ? buildDemoDataset(todayISO()) : null }
 }
 
 /** Resumen de un conjunto de datos (para confirmar antes de restaurar una copia). */

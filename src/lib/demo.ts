@@ -154,14 +154,13 @@ export function buildDemoWorkspace(today: string, titularId = 'demo-t-1'): Works
 /**
  * Ejemplo completo con dos titulares: Marta (la principal) y «Fondo ahorro». Marta envía cada
  * mes 150 € de su cuenta MyInvestor al fondo del «Fondo ahorro», y una vez 2.000 € a su
- * depósito: ese dinero cuenta para el «Fondo ahorro», no para Marta. El «Fondo ahorro» no
- * suma en el TOTAL de Inicio.
+ * depósito: ese dinero cuenta para el «Fondo ahorro», no para Marta.
  */
 export function buildDemoDataset(today: string): Dataset {
   const at = atFor(today)
   const stamp = `${at(25, 1)}T09:00:00.000Z`
   const marta: Titular = { id: 'demo-t-1', codigo: '0001', nombre: 'Marta', createdAt: stamp }
-  const ahorro: Titular = { id: 'demo-t-2', codigo: '0002', nombre: 'Fondo ahorro', fueraDelTotal: true, createdAt: stamp }
+  const ahorro: Titular = { id: 'demo-t-2', codigo: '0002', nombre: 'Fondo ahorro', createdAt: stamp }
   const ws = buildDemoWorkspace(today, marta.id)
   const myinvestor = ws.cuentas[0]
 

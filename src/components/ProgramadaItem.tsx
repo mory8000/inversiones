@@ -1,15 +1,19 @@
-import { CalendarSync, ChevronRight } from 'lucide-react'
+import { CalendarSync, Pencil } from 'lucide-react'
 import type { Programada } from '../types'
 import type { FinanceData } from '../store/useFinance'
 import { openProgramada } from '../store/ui'
 import { countsForOwner, entityName } from '../lib/movements'
 import { diaDe, movimientosDe, proximaFecha } from '../lib/programadas'
-import { fmtDate } from '../lib/format'
-import { Amount } from './ui/Amount'
+import { fmtDate, fmtEUR } from '../lib/format'
+import { Amount, useHidden } from './ui/Amount'
 
-/** Una transferencia mensual, en una ventana: cuánto, cuándo, de dónde a dónde y cuántas van. Al tocarla se cambia. */
+/**
+ * Una transferencia mensual, en una ventana: cuánto, cuándo, de dónde a dónde y cuántas van.
+ * Con su botón «Editar» a la vista: al tocarla se cambia (o se elimina).
+ */
 export function ProgramadaItem({ p, fin }: { p: Programada; fin: FinanceData }) {
   const { ds, lookup, today, owner } = fin
+  const hidden = useHidden()
   const from = lookup.titulares.get(owner(p.origen) ?? '')
   const to = lookup.titulares.get(owner(p.destino) ?? '')
   const cross = !!from && !!to && from.id !== to.id
@@ -21,6 +25,7 @@ export function ProgramadaItem({ p, fin }: { p: Programada; fin: FinanceData }) 
       <button
         type="button"
         onClick={() => openProgramada({ programadaId: p.id })}
+        aria-label={`Editar la transferencia mensual: ${hidden ? '•••••• €' : fmtEUR(p.importe)} al mes a «${entityName(lookup, p.destino)}»`}
         className="group flex w-full items-start gap-3 rounded-2xl border border-fuchsia-200 bg-fuchsia-50/60 p-3 text-left transition-colors hover:bg-fuchsia-50"
         data-programada={p.id}
       >
@@ -43,8 +48,9 @@ export function ProgramadaItem({ p, fin }: { p: Programada; fin: FinanceData }) 
             </span>
           )}
         </span>
-        <span className="mt-0.5 flex shrink-0 items-center text-xs font-semibold text-fuchsia-700 group-hover:text-fuchsia-900">
-          Cambiar <ChevronRight className="size-3.5" />
+        <span className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-fuchsia-600 px-2.5 py-1.5 text-xs font-bold text-white shadow-sm group-hover:bg-fuchsia-700">
+          <Pencil className="size-3.5" strokeWidth={2.5} />
+          Editar
         </span>
       </button>
     </li>

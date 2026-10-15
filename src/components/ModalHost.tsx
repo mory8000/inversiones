@@ -12,7 +12,6 @@ import { TitularForm } from './forms/TitularForm'
 import { InteresForm } from './forms/InteresForm'
 import { InvestmentSheet } from './InvestmentSheet'
 import { AccountSheet } from './AccountSheet'
-import { TotalSheet } from './TotalSheet'
 
 function ConfirmDialog({ spec }: { spec: Extract<ModalSpec, { type: 'confirm' }> }) {
   const close = useUI((s) => s.close)
@@ -81,8 +80,6 @@ export default function ModalHost() {
             return <ValuationForm key={m.id} modalId={m.id} productId={m.productId} />
           case 'interes':
             return <InteresForm key={m.id} modalId={m.id} productId={m.productId} />
-          case 'total':
-            return <TotalSheet key={m.id} modalId={m.id} />
           case 'titular':
             return <TitularForm key={m.id} modalId={m.id} titularId={m.titularId} />
           case 'confirm':

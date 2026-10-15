@@ -3,7 +3,6 @@ import {
   ArrowDownLeft,
   ArrowLeftRight,
   ArrowRight,
-  ArrowUpRight,
   CalendarSync,
   Check,
   ChevronRight,
@@ -13,12 +12,12 @@ import {
   Plus,
   Wallet,
 } from 'lucide-react'
-import type { Movimiento, Titular } from '../types'
+import type { Movimiento, Programada, Titular } from '../types'
 import { useFinance, type FinanceData, type TitularFinance } from '../store/useFinance'
 import { currentDataset, useData } from '../store/data'
-import { editMovement, openAccount, openCuenta, openProduct, openTitular } from '../store/ui'
+import { editMovement, openAccount, openCuenta, openProduct, openProgramada, openTitular } from '../store/ui'
 import { accion } from '../store/deshacer'
-import { anadirDinero, invertirDesde, programarMensual } from '../store/acciones'
+import { anadirDinero, programarMensual } from '../store/acciones'
 import { buildTimelineMulti } from '../lib/finance'
 import { buildFlowGraph } from '../lib/flow'
 import { PRODUCT_META, kindMeta } from '../lib/meta'
@@ -40,7 +39,6 @@ import { movementLabel } from '../components/movements/MovementRow'
 import { SummaryTable } from '../components/SummaryTable'
 import { DemoBanner } from '../components/DemoBanner'
 import { InvestmentTiles } from '../components/InvestmentTiles'
-import { TotalCard } from '../components/TotalCard'
 import { PrincipalBadge, TitularAvatar, TitularTag } from '../components/Titulares'
 
 /** Color del dinero sin invertir (en cuentas con saldo, como MyInvestor). */
@@ -59,14 +57,52 @@ function HeroStat({ label, value, hint }: { label: string; value: number; hint: 
 const GLASS = 'rounded-2xl bg-white/[0.07] p-3 ring-1 ring-white/10 sm:p-3.5'
 
 /**
- * Las cuentas con saldo del titular (su «MyInvestor»): su saldo real (positivo o negativo) y los
- * botones para añadir dinero e invertir. Al tocarla se abre su ventana, con todo lo demás
- * (programar la transferencia mensual, sacar dinero, cambiar o borrar movimientos…).
- * Al principal sin cuenta se le ofrece crearla.
+ * Una transferencia mensual en la tarjeta de quien la envía, con su botón «Editar» a la vista:
+ * al tocarla se abre para cambiarla (importe, día, hasta cuándo…) o eliminarla.
+ */
+function MensualLinea({ p, tf, fin, conOrigen = false }: { p: Programada; tf: TitularFinance; fin: FinanceData; conOrigen?: boolean }) {
+  const { lookup, today } = fin
+  const hidden = useHidden()
+  const to = lookup.titulares.get(fin.owner(p.destino) ?? '')
+  const next = proximaFecha(p, today)
+  const importe = hidden ? '•••••• €' : fmtEUR(p.importe)
+  const destino = to && to.id !== tf.titular.id ? to.nombre : `«${entityName(lookup, p.destino)}»`
+  const origen = conOrigen ? ` desde «${entityName(lookup, p.origen)}»` : ''
+  return (
+    <button
+      type="button"
+      onClick={() => openProgramada({ programadaId: p.id })}
+      aria-label={`Editar la transferencia mensual: ${importe} al mes${origen} a ${destino}`}
+      className="group mt-2 flex w-full items-center gap-2.5 rounded-xl bg-white/[0.06] p-2.5 text-left ring-1 ring-white/10 transition-colors hover:bg-white/10"
+      data-mensual={p.id}
+    >
+      <CalendarSync className="size-4 shrink-0 text-fuchsia-300" />
+      <span className="min-w-0 flex-1">
+        <span className="block text-[13px] leading-snug text-white/80">
+          <strong className="font-semibold text-white">{importe} al mes</strong>
+          {origen} a {destino}
+        </span>
+        <span className="block text-xs text-white/55">
+          El día {diaDe(p)}
+          {next ? ` · próxima: ${fmtDate(next)}` : ' · terminada'}
+        </span>
+      </span>
+      <span className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-white px-2.5 py-1.5 text-xs font-bold text-brand-900 shadow-sm group-hover:bg-emerald-100">
+        <Pencil className="size-3.5" strokeWidth={2.5} />
+        Editar
+      </span>
+    </button>
+  )
+}
+
+/**
+ * Las cuentas con saldo del titular (su «MyInvestor»): su saldo real (positivo o negativo) y sus
+ * transferencias mensuales, cada una con «Editar». Al tocarla se abre su ventana, con todo lo
+ * demás (añadir dinero, invertir, programar la transferencia mensual, sacar dinero, cambiar o
+ * borrar movimientos…). Al principal sin cuenta se le ofrece crearla.
  */
 function CuentasBox({ tf, fin }: { tf: TitularFinance; fin: FinanceData }) {
-  const { ds, lookup, today } = fin
-  const hidden = useHidden()
+  const { ds } = fin
   const crearCuentaPrincipal = useData((s) => s.crearCuentaPrincipal)
   const cuentas = cuentasConSaldo(tf.ws.cuentas, tf.titular.id)
   if (cuentas.length === 0) {
@@ -123,43 +159,18 @@ function CuentasBox({ tf, fin }: { tf: TitularFinance; fin: FinanceData }) {
               </span>
               <ChevronRight className="size-4 shrink-0 text-white/50 group-hover:text-white" />
             </button>
-            {mensuales.map((p) => {
-              const to = lookup.titulares.get(fin.owner(p.destino) ?? '')
-              const next = proximaFecha(p, today)
-              return (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => openCuenta(c.id)}
-                  className="mt-2 flex w-full items-start gap-2 rounded-lg bg-white/[0.06] px-2.5 py-1.5 text-left text-xs text-white/80 hover:bg-white/10"
-                >
-                  <CalendarSync className="mt-px size-3.5 shrink-0 text-fuchsia-300" />
-                  <span className="min-w-0">
-                    <strong className="font-semibold text-white">{hidden ? '•••••• €' : fmtEUR(p.importe)} al mes</strong>
-                    {to && to.id !== tf.titular.id ? ` a ${to.nombre}` : ` a «${entityName(lookup, p.destino)}»`} · el día {diaDe(p)}
-                    {next ? ` · próxima: ${fmtDate(next)}` : ' · terminada'}
-                  </span>
-                </button>
-              )
-            })}
+            {mensuales.map((p) => (
+              <MensualLinea key={p.id} p={p} tf={tf} fin={fin} />
+            ))}
             {negativo && (
               <p className="mt-2 rounded-lg bg-rose-400/15 px-2.5 py-1.5 text-xs text-rose-100">
-                Saldo negativo: han salido <Amount value={-saldo} className="font-semibold" /> más de los que han entrado. Pulsa «Añadir dinero» para apuntar lo que trajiste de
-                tu banco.
+                Saldo negativo: han salido <Amount value={-saldo} className="font-semibold" /> más de los que han entrado. Abre «{c.nombre}» y pulsa «Añadir dinero» para
+                apuntar lo que trajiste de tu banco.
               </p>
             )}
-            <div className="mt-3 grid grid-cols-2 gap-2">
-              <Button size="sm" variant="accent" wrap icon={Plus} onClick={() => anadirDinero(ds, c.id)}>
-                Añadir dinero
-              </Button>
-              <Button size="sm" variant="dark" wrap icon={ArrowUpRight} onClick={() => invertirDesde(ds, c.id)}>
-                Invertir
-              </Button>
-            </div>
-            <Button size="sm" variant="light" wrap iconRight={ChevronRight} className="mt-2 w-full" onClick={() => openCuenta(c.id)}>
+            <Button size="sm" variant="light" wrap iconRight={ChevronRight} className="mt-3 w-full" onClick={() => openCuenta(c.id)}>
               Abrir {c.nombre}
             </Button>
-            <p className="mt-1.5 text-center text-[11px] text-white/50">Dentro: transferencia mensual, sacar dinero y cambiar o borrar movimientos</p>
           </div>
         )
       })}
@@ -167,13 +178,31 @@ function CuentasBox({ tf, fin }: { tf: TitularFinance; fin: FinanceData }) {
   )
 }
 
-/** Lo que un titular ha recibido de otros o enviado a otros (cuenta solo para quien lo recibe). */
+/**
+ * Transferencias mensuales que envía el titular desde algo que no es una de sus cuentas con
+ * saldo (p. ej. desde una cuenta externa): también con su «Editar» a la vista.
+ */
+function OtrasMensuales({ tf, fin }: { tf: TitularFinance; fin: FinanceData }) {
+  const { ds, owner } = fin
+  const enCuentas = new Set(cuentasConSaldo(tf.ws.cuentas, tf.titular.id).map((c) => c.id))
+  const otras = ds.programadas.filter((p) => owner(p.origen) === tf.titular.id && !(p.origen.kind === 'cuenta' && enCuentas.has(p.origen.id)))
+  if (otras.length === 0) return null
+  return (
+    <div className="mt-2">
+      {otras.map((p) => (
+        <MensualLinea key={p.id} p={p} tf={tf} fin={fin} conOrigen />
+      ))}
+    </div>
+  )
+}
+
+/** Lo que un titular recibe de otros cada mes (cuenta solo para él) y lo recibido en sus cuentas externas. */
 function CrossLines({ tf, fin }: { tf: TitularFinance; fin: FinanceData }) {
   const { ds, owner } = fin
   const name = (id: string) => fin.byTitular.get(id)?.titular.nombre ?? 'otro titular'
   // Transferencias mensuales que recibe de otro titular.
   const recibe = ds.programadas.filter((p) => owner(p.destino) === tf.titular.id && owner(p.origen) && owner(p.origen) !== tf.titular.id)
-  if (tf.recibido.length === 0 && tf.enviado.length === 0 && tf.recibidoEnExternas <= 0 && recibe.length === 0) return null
+  if (tf.recibidoEnExternas <= 0 && recibe.length === 0) return null
   return (
     <ul className="mt-4 space-y-1.5 border-t border-white/10 pt-3 text-[13px]">
       {recibe.map((p) => (
@@ -181,15 +210,6 @@ function CrossLines({ tf, fin }: { tf: TitularFinance; fin: FinanceData }) {
           <CalendarSync className="mt-0.5 size-4 shrink-0 text-fuchsia-300" />
           <span className="min-w-0 text-white/80">
             Recibe <Amount value={p.importe} className="font-semibold text-white" /> cada mes de {name(owner(p.origen)!)} (el día {diaDe(p)})
-          </span>
-        </li>
-      ))}
-      {tf.recibido.map((r) => (
-        <li key={`r-${r.titularId}`} className="flex items-start gap-2">
-          <ArrowDownLeft className="mt-0.5 size-4 shrink-0 text-emerald-300" />
-          <span className="min-w-0 text-white/80">
-            Recibido de {name(r.titularId)}: <Amount value={r.importe} className="font-semibold text-white" />
-            <span className="text-white/50"> · cuenta para {tf.titular.nombre}</span>
           </span>
         </li>
       ))}
@@ -202,18 +222,6 @@ function CrossLines({ tf, fin }: { tf: TitularFinance; fin: FinanceData }) {
           </span>
         </li>
       )}
-      {tf.enviado.map((e) => (
-        <li key={`e-${e.titularId}`} className="flex items-start gap-2">
-          <ArrowUpRight className="mt-0.5 size-4 shrink-0 text-fuchsia-300" />
-          <span className="min-w-0 text-white/80">
-            Enviado a {name(e.titularId)}: <Amount value={e.importe} className="font-semibold text-white" />
-            <span className="text-white/50">
-              {' '}
-              · no cuenta para {tf.titular.nombre}, solo para {name(e.titularId)}
-            </span>
-          </span>
-        </li>
-      ))}
     </ul>
   )
 }
@@ -247,7 +255,7 @@ function TitularHero({ tf, fin }: { tf: TitularFinance; fin: FinanceData }) {
           </span>
           <IconButton icon={Pencil} label={`Editar ${titular.nombre}`} variant="dark" onClick={() => openTitular(titular.id)} />
         </div>
-        <div className="mt-2 text-[34px] leading-tight font-bold tracking-tight sm:text-[42px]">
+        <div className="mt-2 text-[34px] leading-tight font-bold tracking-tight sm:text-[42px]" data-patrimonio>
           <Amount value={totals.patrimonio} />
         </div>
         {empty ? (
@@ -273,6 +281,7 @@ function TitularHero({ tf, fin }: { tf: TitularFinance; fin: FinanceData }) {
           </div>
         )}
         <CuentasBox tf={tf} fin={fin} />
+        <OtrasMensuales tf={tf} fin={fin} />
         <CrossLines tf={tf} fin={fin} />
       </div>
     </section>
@@ -460,10 +469,7 @@ export function Dashboard() {
     <div className="space-y-4 lg:space-y-5">
       <DemoBanner />
 
-      {/* El TOTAL de todo (menos lo que se deja fuera, p. ej. «Fondo ahorro») */}
-      <TotalCard fin={fin} />
-
-      {/* Luego, los titulares a la vez (el primero es el principal) y una ventanilla por inversión */}
+      {/* Arriba, los titulares a la vez (el primero es el principal) y una ventanilla por inversión */}
       <div>
         <div className={cn('grid grid-cols-1 items-start gap-4 lg:gap-5', multi && 'lg:grid-cols-2')}>
           {fin.titulares.map((tf) => (

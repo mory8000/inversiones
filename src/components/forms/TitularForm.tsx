@@ -7,8 +7,7 @@ import { useData, useTitulares } from '../../store/data'
 import { confirmDialog, useUI } from '../../store/ui'
 import { accion } from '../../store/deshacer'
 import { initials } from '../../lib/format'
-import { esFondoAhorro, isDefaultTitularName, titularColor } from '../../lib/titulares'
-import { Switch } from '../ui/Switch'
+import { isDefaultTitularName, titularColor } from '../../lib/titulares'
 
 export function TitularForm({ modalId, titularId }: { modalId: string; titularId?: string }) {
   const close = useUI((s) => s.close)
@@ -21,16 +20,13 @@ export function TitularForm({ modalId, titularId }: { modalId: string; titularId
   const [nombre, setNombre] = useState(existing?.nombre ?? '')
   const [codigo, setCodigo] = useState(existing?.codigo ?? '')
   const [submitted, setSubmitted] = useState(false)
-  /** Si lo suyo suma en el TOTAL de Inicio. Si pasa a llamarse «Fondo ahorro», se propone dejarlo fuera. */
-  const [fueraElegido, setFueraElegido] = useState<boolean | null>(null)
-  const fuera = fueraElegido ?? (existing ? !!existing.fueraDelTotal || (esFondoAhorro(nombre) && !esFondoAhorro(existing.nombre)) : esFondoAhorro(nombre))
   const error = !nombre.trim() ? 'Escribe un nombre' : null
 
   const save = () => {
     setSubmitted(true)
     if (error) return
-    if (existing) accion(`Cambiar datos de «${nombre.trim()}»`, () => updateTitular(existing.id, { nombre, codigo, fueraDelTotal: fuera }), 'Datos guardados')
-    else accion(`Nuevo titular «${nombre.trim()}»`, () => addTitular({ nombre, codigo, fueraDelTotal: fuera }), 'Titular creado')
+    if (existing) accion(`Cambiar datos de «${nombre.trim()}»`, () => updateTitular(existing.id, { nombre, codigo }), 'Datos guardados')
+    else accion(`Nuevo titular «${nombre.trim()}»`, () => addTitular({ nombre, codigo }), 'Titular creado')
     close(modalId)
   }
 
@@ -106,15 +102,6 @@ export function TitularForm({ modalId, titularId }: { modalId: string; titularId
         <Field label="Código" htmlFor="tit-codigo" optional hint="Por ejemplo, tu número de cliente">
           <TextInput id="tit-codigo" value={codigo} maxLength={30} placeholder="Ej.: 000123" onChange={(e) => setCodigo(e.target.value)} />
         </Field>
-        <div className="flex items-start justify-between gap-3 rounded-2xl border border-slate-200 p-3.5">
-          <label htmlFor="tit-total" className="min-w-0">
-            <span className="block text-sm font-semibold text-slate-900">Lo suyo suma en el TOTAL de Inicio</span>
-            <span className="mt-0.5 block text-[13px] text-slate-500">
-              {fuera ? 'No suma en el TOTAL (p. ej. «Fondo ahorro»). Su tarjeta sigue con todas sus cifras.' : 'Sus inversiones y cuentas suman en el TOTAL.'}
-            </span>
-          </label>
-          <Switch id="tit-total" checked={!fuera} onChange={(v) => setFueraElegido(!v)} label="Lo suyo suma en el TOTAL de Inicio" />
-        </div>
         <button type="submit" className="hidden" />
       </form>
     </Sheet>

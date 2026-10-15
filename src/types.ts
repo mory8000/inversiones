@@ -13,9 +13,6 @@
 // nunca para quien lo envía.
 //
 // El orden de `productos` es el que elige el usuario para ver sus inversiones.
-//
-// El TOTAL de Inicio suma todo (de todos los titulares) menos lo marcado con
-// `fueraDelTotal` (un titular entero, un producto o una cuenta; p. ej. «Fondo ahorro»).
 // ─────────────────────────────────────────────────────────────────────────────
 
 export type ProductType = 'deposito' | 'fondo' | 'cartera' | 'plan' | 'acciones' | 'otro'
@@ -43,8 +40,6 @@ export interface Titular {
   id: string
   codigo: string
   nombre: string
-  /** No suma en el TOTAL de Inicio (p. ej. «Fondo ahorro»). */
-  fueraDelTotal?: boolean
   createdAt: string
 }
 
@@ -66,8 +61,6 @@ export interface Cuenta {
   notas: string
   /** `true`: cuenta externa (otro banco). `false`: cuenta con saldo (como MyInvestor). */
   externa: boolean
-  /** No suma en el TOTAL de Inicio. */
-  fueraDelTotal?: boolean
   createdAt: string
 }
 
@@ -114,8 +107,6 @@ export interface Producto {
   /** Solo depósitos: fecha de vencimiento AAAA-MM-DD. */
   vencimiento: string | null
   valoraciones: Valoracion[]
-  /** No suma en el TOTAL de Inicio (p. ej. «Fondo ahorro»). */
-  fueraDelTotal?: boolean
   createdAt: string
 }
 

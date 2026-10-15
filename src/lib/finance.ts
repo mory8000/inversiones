@@ -19,7 +19,7 @@
 // dinero: no llevan saldo.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import type { Dataset, Movimiento, Producto, ProductType, Titular, Valoracion, Workspace } from '../types'
+import type { Movimiento, Producto, ProductType, Valoracion, Workspace } from '../types'
 import { addMonths, daysBetween, endOfMonth, maxDate, minDate } from './dates'
 import { PRODUCT_TYPES } from './meta'
 
@@ -671,102 +671,4 @@ export function buildProductTimeline(p: Producto, movimientos: Movimiento[], tod
   if (own.length === 0) return []
   const ws: Workspace = { cuentas: [], productos: [p], movimientos: own }
   return buildTimeline(ws, today, 36)
-}
-
-// ── TOTAL de Inicio: todo, menos lo que se deja fuera (p. ej. «Fondo ahorro») ─
-
-/** Algo que no suma en el TOTAL: un titular entero, un producto o una cuenta con saldo. */
-export interface FueraDelTotal {
-  nivel: 'titular' | 'producto' | 'cuenta'
-  id: string
-  titularId: string
-  nombre: string
-  /** Lo que vale: el patrimonio del titular o el saldo del producto o de la cuenta. */
-  valor: number
-}
-
-export interface GranTotal {
-  /** Inversiones + saldo real de las cuentas con saldo, de lo que suma. */
-  total: number
-  /** Valor de las inversiones que suman. */
-  inversiones: number
-  /** Saldo real de las cuentas con saldo que suman (puede ser negativo). */
-  cuentas: number
-  /** Capital invertido en lo que suma. */
-  capital: number
-  /** Beneficio (o pérdida) de las inversiones que suman. */
-  ganancia: number
-  rentabilidad: number | null
-  /** Valor por tipo de producto (solo los tipos que tienen dinero). */
-  porTipo: { tipo: ProductType; saldo: number; ganancia: number; n: number }[]
-  /** Saldo de cada cuenta con saldo que suma. */
-  porCuenta: { cuentaId: string; saldo: number }[]
-  /** Lo que se deja fuera, con lo que vale. */
-  fuera: FueraDelTotal[]
-}
-
-/** ¿Suma en el TOTAL? No si se ha dejado fuera, o si su titular se ha dejado fuera. */
-export function sumaEnTotal(item: { titularId: string; fueraDelTotal?: boolean }, titulares: Map<string, Titular>): boolean {
-  return !item.fueraDelTotal && !titulares.get(item.titularId)?.fueraDelTotal
-}
-
-export function computeGranTotal(ds: Dataset, positions: Map<string, Position>, accounts: Map<string, AccountStats>): GranTotal {
-  const titulares = new Map(ds.titulares.map((t) => [t.id, t]))
-  const porTipo = new Map<ProductType, { tipo: ProductType; saldo: number; ganancia: number; n: number }>()
-  const porCuenta: { cuentaId: string; saldo: number }[] = []
-  const fuera: FueraDelTotal[] = []
-  const patrimonioDe = new Map<string, number>()
-  const suma = (id: string, v: number) => patrimonioDe.set(id, (patrimonioDe.get(id) ?? 0) + v)
-  let inversiones = 0
-  let cuentas = 0
-  let capital = 0
-  let ganancia = 0
-
-  for (const p of ds.productos) {
-    const pos = positions.get(p.id)
-    if (!pos) continue
-    suma(p.titularId, pos.saldo)
-    if (!sumaEnTotal(p, titulares)) {
-      if (p.fueraDelTotal && !titulares.get(p.titularId)?.fueraDelTotal) fuera.push({ nivel: 'producto', id: p.id, titularId: p.titularId, nombre: p.nombre, valor: pos.saldo })
-      continue
-    }
-    inversiones += pos.saldo
-    capital += pos.capital
-    ganancia += pos.ganancia
-    if (pos.saldo > EPS) {
-      const r = porTipo.get(p.tipo) ?? { tipo: p.tipo, saldo: 0, ganancia: 0, n: 0 }
-      r.saldo += pos.saldo
-      r.ganancia += pos.ganancia
-      r.n++
-      porTipo.set(p.tipo, r)
-    }
-  }
-  for (const c of ds.cuentas) {
-    if (c.externa) continue
-    const saldo = efectivoDe(accounts.get(c.id))
-    suma(c.titularId, saldo)
-    if (!sumaEnTotal(c, titulares)) {
-      if (c.fueraDelTotal && !titulares.get(c.titularId)?.fueraDelTotal) fuera.push({ nivel: 'cuenta', id: c.id, titularId: c.titularId, nombre: c.nombre, valor: saldo })
-      continue
-    }
-    cuentas += saldo
-    porCuenta.push({ cuentaId: c.id, saldo })
-  }
-  for (const t of ds.titulares) {
-    if (t.fueraDelTotal) fuera.unshift({ nivel: 'titular', id: t.id, titularId: t.id, nombre: t.nombre, valor: patrimonioDe.get(t.id) ?? 0 })
-  }
-  // Los titulares primero, en su orden.
-  fuera.sort((a, b) => (a.nivel === 'titular' ? 0 : 1) - (b.nivel === 'titular' ? 0 : 1))
-
-  return {
-    total: inversiones + cuentas,
-    inversiones,
-    cuentas,
-    capital,
-    ganancia,
-    rentabilidad: capital > EPS ? ganancia / capital : null,
-    porTipo: PRODUCT_TYPES.map((t) => porTipo.get(t)).filter((r): r is NonNullable<typeof r> => !!r),
-    porCuenta,
-    fuera,
-  }
 }

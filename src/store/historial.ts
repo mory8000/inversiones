@@ -101,6 +101,12 @@ function juntarParches(viejo: Parche, nuevo: Parche): Parche {
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 
+/**
+ * Pasos de cuando había un TOTAL en Inicio con su «Qué suma» («Dejar «X» fuera del TOTAL»,
+ * «Sumar en el TOTAL»…). Ese TOTAL ya no existe: deshacerlos no cambiaría nada a la vista.
+ */
+const esPasoDelTotal = (p: Paso) => /\bTOTAL\b/.test(p.etiqueta)
+
 /** ¿Lo leído del almacenamiento es un paso válido? */
 function esPaso(p: unknown): p is Paso {
   if (!isObj(p) || typeof p.id !== 'string' || typeof p.etiqueta !== 'string' || typeof p.at !== 'string') return false
@@ -123,7 +129,10 @@ function cargar(): Paso[] {
     const j: unknown = JSON.parse(raw)
     // Si la app ha cambiado el formato de los datos, el historial anterior ya no sirve.
     if (!isObj(j) || j.version !== DATA_VERSION || !Array.isArray(j.pasos)) return []
-    return j.pasos.filter(esPaso).slice(-MAX_PASOS)
+    return j.pasos
+      .filter(esPaso)
+      .filter((p) => !esPasoDelTotal(p))
+      .slice(-MAX_PASOS)
   } catch {
     return []
   }

@@ -378,7 +378,7 @@ export function MovementForm({
     )
   const summary = cross ? CROSS_META : meta
   const title = prog
-    ? 'Transferencia mensual'
+    ? 'Editar transferencia mensual'
     : isNew && preset?.titulo
       ? preset.titulo
       : repetir
@@ -407,10 +407,11 @@ export function MovementForm({
             />
           )}
           <div className="flex-1" />
-          <Button variant="secondary" onClick={() => close(modalId)}>
+          {/* En pantallas muy estrechas el texto pasa a dos líneas en vez de salirse. */}
+          <Button variant="secondary" wrap className="min-w-0" onClick={() => close(modalId)}>
             Cancelar
           </Button>
-          <Button onClick={save} className={bloqueado ? 'opacity-50' : undefined} aria-disabled={bloqueado || undefined}>
+          <Button onClick={save} wrap className={bloqueado ? 'min-w-0 opacity-50' : 'min-w-0'} aria-disabled={bloqueado || undefined}>
             {existing || prog ? 'Guardar cambios' : repetir ? 'Guardar transferencia' : 'Guardar movimiento'}
           </Button>
         </div>

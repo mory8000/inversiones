@@ -1,12 +1,10 @@
 import type { Dataset, EntityRef, Titular, Workspace } from '../types'
 import {
   computeAccountStats,
-  computeGranTotal,
   computePositions,
   computeTotals,
   summarizeByType,
   type AccountStats,
-  type GranTotal,
   type Position,
   type Totals,
   type TypeSummary,
@@ -51,8 +49,6 @@ export interface FinanceData {
   /** Cada titular por separado, en orden (el primero es el principal). */
   titulares: TitularFinance[]
   byTitular: Map<string, TitularFinance>
-  /** TOTAL de Inicio: todo (de todos los titulares), menos lo que se deja fuera (p. ej. «Fondo ahorro»). */
-  granTotal: GranTotal
   /** Titular al que pertenece una cuenta o un producto. */
   owner: (ref: EntityRef) => string | undefined
 }
@@ -122,7 +118,6 @@ export function computeFinance(ds: Dataset, today: string): FinanceData {
     accounts,
     titulares,
     byTitular: new Map(titulares.map((t) => [t.titular.id, t])),
-    granTotal: computeGranTotal(ds, positions, accounts),
     owner,
   }
   cache.set(ds, data)
