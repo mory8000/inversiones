@@ -9,6 +9,7 @@ import { todayISO } from '../lib/dates'
 import { round2 } from '../lib/format'
 import { nowStamp, uid } from '../lib/id'
 import { inferMovementType } from '../lib/meta'
+import { defaultTitularName } from '../lib/titulares'
 import { DATA_VERSION, sanitizeData } from './sanitize'
 
 export { DATA_VERSION, sanitizeData }
@@ -57,13 +58,19 @@ interface Actions {
 
 export type DataState = PersistedData & Actions
 
+/** Datos de partida: dos titulares, cada uno con sus cuentas y movimientos por separado. */
 function initialData(): PersistedData {
-  const id = uid()
+  const a = uid()
+  const b = uid()
+  const stamp = nowStamp()
   return {
     version: DATA_VERSION,
-    titulares: [{ id, codigo: '', nombre: 'Titular principal', createdAt: nowStamp() }],
-    activeTitularId: id,
-    workspaces: { [id]: { cuentas: [], productos: [], movimientos: [] } },
+    titulares: [
+      { id: a, codigo: '', nombre: defaultTitularName(1), createdAt: stamp },
+      { id: b, codigo: '', nombre: defaultTitularName(2), createdAt: stamp },
+    ],
+    activeTitularId: a,
+    workspaces: { [a]: { cuentas: [], productos: [], movimientos: [] }, [b]: { cuentas: [], productos: [], movimientos: [] } },
     hideAmounts: false,
   }
 }
@@ -89,7 +96,15 @@ export const useData = create<DataState>()(
         addTitular: ({ codigo, nombre }) => {
           const id = uid()
           set((s) => ({
-            titulares: [...s.titulares, { id, codigo: codigo.trim(), nombre: nombre.trim() || 'Nuevo titular', createdAt: nowStamp() }],
+            titulares: [
+              ...s.titulares,
+              {
+                id,
+                codigo: codigo.trim(),
+                nombre: nombre.trim() || defaultTitularName(s.titulares.filter((t) => !t.demo).length + 1),
+                createdAt: nowStamp(),
+              },
+            ],
             workspaces: { ...s.workspaces, [id]: { cuentas: [], productos: [], movimientos: [] } },
             activeTitularId: id,
           }))
@@ -251,6 +266,9 @@ export const useData = create<DataState>()(
       name: STORAGE_KEY,
       version: DATA_VERSION,
       storage: createJSONStorage(() => localStorage),
+      // Datos de una versión anterior: se pasan tal cual y `sanitizeData` (en `merge`) los
+      // actualiza según su campo `version`. Sin esta función, zustand los descartaría.
+      migrate: (persisted) => persisted as PersistedData,
       partialize: (s): PersistedData => ({
         version: s.version,
         titulares: s.titulares,

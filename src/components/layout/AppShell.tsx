@@ -2,11 +2,11 @@ import { useId, type ReactNode } from 'react'
 import { ArrowLeftRight, Eye, EyeOff, House, Landmark, Plus, Settings, Waypoints, Wallet, type LucideIcon } from 'lucide-react'
 import type { Route } from '../../lib/router'
 import { navigate, paths } from '../../lib/router'
-import { useActiveTitular, useData } from '../../store/data'
+import { useData } from '../../store/data'
 import { openMovement } from '../../store/ui'
-import { initials } from '../../lib/format'
 import { cn } from '../../lib/cn'
 import { IconButton } from '../ui/Button'
+import { SidebarTitulares, TitularTabs } from './TitularSwitcher'
 
 type NavKey = 'inicio' | 'inversiones' | 'movimientos' | 'flujo' | 'cuentas' | 'ajustes'
 
@@ -60,38 +60,6 @@ export function Logo({ className }: { className?: string }) {
   )
 }
 
-function TitularBadge({ dark = false, compact = false }: { dark?: boolean; compact?: boolean }) {
-  const titular = useActiveTitular()
-  return (
-    <button
-      type="button"
-      onClick={() => navigate(paths.ajustes)}
-      className={cn(
-        'flex min-w-0 items-center gap-2.5 rounded-xl text-left transition-colors',
-        compact ? 'p-1 pr-2' : 'w-full p-2.5',
-        dark ? 'hover:bg-white/10' : 'hover:bg-slate-100',
-      )}
-      title="Titular y ajustes"
-    >
-      <span
-        className={cn(
-          'inline-flex shrink-0 items-center justify-center rounded-full font-bold',
-          compact ? 'size-9 text-[13px]' : 'size-10 text-sm',
-          dark ? 'bg-white/15 text-white' : 'bg-brand-900 text-white',
-        )}
-      >
-        {initials(titular.nombre)}
-      </span>
-      <span className="min-w-0">
-        <span className={cn('block truncate text-sm font-semibold', dark ? 'text-white' : 'text-slate-900')}>{titular.nombre}</span>
-        <span className={cn('block truncate text-xs', dark ? 'text-white/60' : 'text-slate-500')}>
-          {titular.codigo ? `Código ${titular.codigo}` : 'Titular'}
-        </span>
-      </span>
-    </button>
-  )
-}
-
 function HideToggle({ dark = false }: { dark?: boolean }) {
   const hidden = useData((s) => s.hideAmounts)
   const setHidden = useData((s) => s.setHideAmounts)
@@ -107,7 +75,7 @@ function HideToggle({ dark = false }: { dark?: boolean }) {
 
 function Sidebar({ current }: { current: NavKey }) {
   return (
-    <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col bg-brand-950 px-4 py-5 text-white lg:flex">
+    <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col overflow-y-auto bg-brand-950 px-4 py-5 text-white lg:flex">
       <div className="flex items-center gap-2.5 px-2">
         <Logo className="size-9" />
         <div>
@@ -116,7 +84,7 @@ function Sidebar({ current }: { current: NavKey }) {
         </div>
       </div>
       <div className="mt-6">
-        <TitularBadge dark />
+        <SidebarTitulares />
       </div>
       <button
         type="button"
@@ -156,8 +124,10 @@ function MobileTopBar() {
   return (
     <header className="pt-safe sticky top-0 z-30 border-b border-slate-200/70 bg-canvas/85 backdrop-blur-md lg:hidden">
       <div className="flex h-14 items-center justify-between gap-2 px-3">
-        <TitularBadge compact />
-        <div className="flex items-center">
+        <div className="min-w-0 flex-1">
+          <TitularTabs />
+        </div>
+        <div className="flex shrink-0 items-center">
           <HideToggle />
           <IconButton icon={Settings} label="Ajustes" onClick={() => navigate(paths.ajustes)} />
         </div>

@@ -18,12 +18,15 @@ import { useFinance } from '../store/useFinance'
 import { confirmDialog, openTitular, toast } from '../store/ui'
 import { movementsToCSV } from '../lib/movements'
 import { downloadFile } from '../lib/download'
-import { initials } from '../lib/format'
 import { isStandalone, useInstallPrompt } from '../lib/install'
 import { cn } from '../lib/cn'
 import { PageHeader } from '../components/layout/AppShell'
 import { Card, CardHeader } from '../components/ui/Card'
-import { Button } from '../components/ui/Button'
+import { Button, IconButton } from '../components/ui/Button'
+import { Amount } from '../components/ui/Amount'
+import { TitularAvatar, useSwitchTitular, useTitularPatrimonio } from '../components/layout/TitularSwitcher'
+import { orderTitulares } from '../lib/titulares'
+import type { Titular } from '../types'
 
 function Row({ icon, title, text, action, danger }: { icon: ReactNode; title: string; text?: ReactNode; action: ReactNode; danger?: boolean }) {
   return (
@@ -62,11 +65,37 @@ function Switch({ checked, onChange, label }: { checked: boolean; onChange: (v: 
   )
 }
 
+/** Un titular en Ajustes: su código, su patrimonio y botones para ver sus datos o editarlo. */
+function TitularRow({ titular, active }: { titular: Titular; active: boolean }) {
+  const pick = useSwitchTitular()
+  const patrimonio = useTitularPatrimonio(titular.id)
+  return (
+    <li className={cn('flex items-center gap-3 px-4 py-3.5 sm:px-5', active && 'bg-brand-50/70')}>
+      <TitularAvatar titular={titular} size="lg" />
+      <div className="min-w-0 flex-1">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="truncate font-semibold text-slate-900">{titular.nombre}</span>
+          {active && <span className="shrink-0 rounded-md bg-brand-100 px-1.5 py-0.5 text-[11px] font-semibold text-brand-700">Viendo ahora</span>}
+        </div>
+        <div className="text-sm">
+          {patrimonio === null ? <span className="text-slate-500">Sin movimientos</span> : <Amount value={patrimonio} className="font-medium text-slate-700" />}
+        </div>
+        {titular.codigo && <div className="truncate text-xs text-slate-500">Código {titular.codigo}</div>}
+      </div>
+      {!active && (
+        <Button variant="soft" size="sm" onClick={() => pick(titular)}>
+          Ver
+        </Button>
+      )}
+      <IconButton icon={Pencil} label={`Editar ${titular.nombre}`} onClick={() => openTitular(titular.id)} />
+    </li>
+  )
+}
+
 export function Settings() {
   const { ws, lookup, today } = useFinance()
   const titular = useActiveTitular()
   const titulares = useData((s) => s.titulares)
-  const switchTitular = useData((s) => s.switchTitular)
   const hideAmounts = useData((s) => s.hideAmounts)
   const setHideAmounts = useData((s) => s.setHideAmounts)
   const loadDemo = useData((s) => s.loadDemo)
@@ -137,51 +166,16 @@ export function Settings() {
 
   return (
     <div className="mx-auto max-w-3xl">
-      <PageHeader title="Ajustes" subtitle="Titular, preferencias y copias de seguridad" />
+      <PageHeader title="Ajustes" subtitle="Titulares, preferencias y copias de seguridad" />
 
       <div className="space-y-4 lg:space-y-5">
         <Card>
-          <CardHeader title="Titular" subtitle="Como la cabecera del Excel: código y nombre" />
-          <div className="mt-3 flex items-center gap-3 border-t border-slate-100 px-4 py-4 sm:px-5">
-            <span className="inline-flex size-12 shrink-0 items-center justify-center rounded-full bg-brand-900 text-base font-bold text-white">
-              {initials(titular.nombre)}
-            </span>
-            <div className="min-w-0 flex-1">
-              <div className="truncate font-semibold text-slate-900">{titular.nombre}</div>
-              <div className="text-sm text-slate-500">{titular.codigo ? `Código ${titular.codigo}` : 'Sin código'}</div>
-            </div>
-            <Button variant="secondary" size="sm" icon={Pencil} onClick={() => openTitular(titular.id)}>
-              Editar
-            </Button>
-          </div>
-          {titulares.length > 1 && (
-            <ul className="divide-y divide-slate-100 border-t border-slate-100">
-              {titulares
-                .filter((t) => t.id !== titular.id)
-                .map((t) => (
-                  <li key={t.id} className="flex items-center gap-3 px-4 py-3 sm:px-5">
-                    <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-full bg-slate-200 text-[13px] font-bold text-slate-700">
-                      {initials(t.nombre)}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm font-semibold text-slate-800">{t.nombre}</div>
-                      <div className="text-xs text-slate-500">{t.codigo ? `Código ${t.codigo}` : 'Sin código'}</div>
-                    </div>
-                    <Button
-                      variant="soft"
-                      size="sm"
-                      icon={Check}
-                      onClick={() => {
-                        switchTitular(t.id)
-                        toast(`Ahora ves los datos de ${t.nombre}`)
-                      }}
-                    >
-                      Cambiar
-                    </Button>
-                  </li>
-                ))}
-            </ul>
-          )}
+          <CardHeader title="Titulares" subtitle="Cada titular tiene sus propias cuentas, productos y movimientos, por separado" />
+          <ul className="mt-3 divide-y divide-slate-100 border-t border-slate-100">
+            {orderTitulares(titulares).map((t) => (
+              <TitularRow key={t.id} titular={t} active={t.id === titular.id} />
+            ))}
+          </ul>
           <div className="border-t border-slate-100 px-4 py-3 sm:px-5">
             <Button variant="ghost" size="sm" icon={Plus} onClick={() => openTitular()}>
               Añadir otro titular

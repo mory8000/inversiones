@@ -1,8 +1,8 @@
 import { useMemo } from 'react'
-import { ArrowRight, Check, ChevronRight, FlaskConical, Landmark, Plus, Sparkles, Wallet, ArrowLeftRight } from 'lucide-react'
+import { ArrowRight, Check, ChevronRight, FlaskConical, Landmark, Pencil, Plus, Sparkles, Wallet, ArrowLeftRight } from 'lucide-react'
 import { useFinance } from '../store/useFinance'
-import { useData } from '../store/data'
-import { editMovement, openAccount, openMovement, openProduct } from '../store/ui'
+import { useActiveTitular, useData } from '../store/data'
+import { editMovement, openAccount, openMovement, openProduct, openTitular } from '../store/ui'
 import { buildTimeline } from '../lib/finance'
 import { buildFlowGraph } from '../lib/flow'
 import { MOVEMENT_META, PRODUCT_META } from '../lib/meta'
@@ -21,6 +21,8 @@ import { MovementList } from '../components/movements/MovementList'
 import { SummaryTable } from '../components/SummaryTable'
 import { DemoBanner } from '../components/DemoBanner'
 import { Logo } from '../components/layout/AppShell'
+import { TitularAvatar } from '../components/layout/TitularSwitcher'
+import { isDefaultTitularName, shortTitularName } from '../lib/titulares'
 
 function HeroStat({ label, value, hint }: { label: string; value: number; hint: string }) {
   return (
@@ -29,6 +31,36 @@ function HeroStat({ label, value, hint }: { label: string; value: number; hint: 
       <Amount value={value} className="mt-0.5 block truncate text-[15px] font-semibold sm:text-lg" />
       <div className="hidden truncate text-[11px] text-white/40 sm:block">{hint}</div>
     </div>
+  )
+}
+
+/** Deja claro de quién son los datos que se ven y que cada titular va por su lado. */
+function TitularIntro() {
+  const titular = useActiveTitular()
+  const titulares = useData((s) => s.titulares)
+  const otros = titulares.filter((t) => !t.demo && t.id !== titular.id)
+  if (titular.demo || otros.length === 0) return null
+  const sinNombre = isDefaultTitularName(titular.nombre)
+  const nombresOtros = otros.length === 1 ? `«${otros[0].nombre}»` : 'los demás titulares'
+  return (
+    <Card className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:gap-4 sm:p-5">
+      <div className="flex min-w-0 flex-1 items-center gap-3">
+        <TitularAvatar titular={titular} size="lg" />
+        <div className="min-w-0">
+          <h2 className="font-semibold text-slate-900">
+            Estás en el espacio de <span className="break-words">«{titular.nombre}»</span>
+          </h2>
+          <p className="mt-0.5 text-sm text-slate-500">
+            Sus cuentas, productos y movimientos van por separado de los de {nombresOtros}. Para cambiar de titular, toca su nombre{' '}
+            <span className="lg:hidden">arriba del todo</span>
+            <span className="max-lg:hidden">en el menú de la izquierda</span>.
+          </p>
+        </div>
+      </div>
+      <Button variant={sinNombre ? 'primary' : 'secondary'} size="sm" icon={Pencil} onClick={() => openTitular(titular.id)} className="shrink-0 self-start sm:self-center">
+        {sinNombre ? 'Ponerle nombre' : 'Editar titular'}
+      </Button>
+    </Card>
   )
 }
 
@@ -69,6 +101,7 @@ function Welcome() {
   ]
   return (
     <div className="space-y-4">
+      <TitularIntro />
       <section className="relative overflow-hidden rounded-3xl bg-brand-900 px-5 py-8 text-white sm:px-10 sm:py-12">
         <div className="pointer-events-none absolute -top-24 -right-16 size-80 rounded-full bg-brand-500/30 blur-3xl" />
         <div className="pointer-events-none absolute -bottom-28 left-1/4 size-72 rounded-full bg-emerald-400/15 blur-3xl" />
@@ -118,6 +151,7 @@ function Welcome() {
 
 export function Dashboard() {
   const { ws, positions, totals, byType, accounts, lookup, today } = useFinance()
+  const titular = useActiveTitular()
   const hidden = useHidden()
   const isDesktop = useMediaQuery('(min-width: 1024px)')
   const timeline = useMemo(() => buildTimeline(ws, today), [ws, today])
@@ -149,9 +183,12 @@ export function Dashboard() {
         <div className="pointer-events-none absolute -top-24 -right-16 size-80 rounded-full bg-brand-500/35 blur-3xl" />
         <div className="pointer-events-none absolute -bottom-28 left-1/3 size-72 rounded-full bg-emerald-400/15 blur-3xl" />
         <div className="relative">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-sm font-medium text-white/70">Patrimonio total</span>
-            <span className="text-xs text-white/50">a {fmtDate(today)}</span>
+          <div className="flex items-center justify-between gap-3">
+            <span className="flex min-w-0 items-center gap-2 text-sm font-medium text-white/75">
+              <TitularAvatar titular={titular} size="xs" className="ring-2 ring-white/25" />
+              <span className="truncate">Patrimonio de {shortTitularName(titular)}</span>
+            </span>
+            <span className="shrink-0 text-xs text-white/50">a {fmtDate(today)}</span>
           </div>
           <div className="mt-1 text-[40px] leading-tight font-bold tracking-tight sm:text-5xl">
             <Amount value={totals.patrimonio} />

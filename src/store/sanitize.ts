@@ -7,8 +7,17 @@ import type { Cuenta, EntityRef, Movimiento, PersistedData, Producto, Titular, W
 import { todayISO } from '../lib/dates'
 import { nowStamp, uid } from '../lib/id'
 import { inferMovementType } from '../lib/meta'
+import { defaultTitularName } from '../lib/titulares'
 
-export const DATA_VERSION = 1
+/**
+ * Versión del formato de datos.
+ * - 1: un solo titular («Titular principal»).
+ * - 2: la app trabaja con dos titulares, cada uno con sus datos por separado.
+ */
+export const DATA_VERSION = 2
+
+/** Nombre del único titular que creaba la versión 1. */
+const V1_DEFAULT_NAME = 'Titular principal'
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 const str = (v: unknown, fallback = ''): string => (typeof v === 'string' ? v : fallback)
@@ -85,11 +94,31 @@ export function sanitizeData(raw: unknown): PersistedData | null {
   const workspaces: Record<string, Workspace> = {}
   for (const t of titulares) workspaces[t.id] = sanitizeWorkspace(wsRaw[t.id])
   const active = str(raw.activeTitularId)
+  const fromV1 = !(typeof raw.version === 'number' && raw.version >= 2)
   return {
     version: DATA_VERSION,
-    titulares,
+    titulares: fromV1 ? upgradeToTwoTitulares(titulares, workspaces) : titulares,
     activeTitularId: titulares.some((t) => t.id === active) ? active : titulares[0].id,
     workspaces,
     hideAmounts: raw.hideAmounts === true,
   }
+}
+
+/**
+ * Datos de la versión 1 (un solo titular): se completan con un segundo titular vacío,
+ * sin tocar los datos que ya había. El titular por defecto «Titular principal» pasa a
+ * llamarse «Titular 1» para que haga pareja con «Titular 2». Solo se hace una vez: los
+ * datos guardados ya llevan la versión 2, así que si luego se borra un titular no vuelve.
+ */
+function upgradeToTwoTitulares(titulares: Titular[], workspaces: Record<string, Workspace>): Titular[] {
+  const demo = titulares.filter((t) => t.demo)
+  const reales = titulares
+    .filter((t) => !t.demo)
+    .map((t, _, all) => (all.length === 1 && t.nombre === V1_DEFAULT_NAME && !t.codigo ? { ...t, nombre: defaultTitularName(1) } : t))
+  while (reales.length < 2) {
+    const id = uid()
+    reales.push({ id, codigo: '', nombre: defaultTitularName(reales.length + 1), createdAt: nowStamp() })
+    workspaces[id] = { cuentas: [], productos: [], movimientos: [] }
+  }
+  return [...reales, ...demo]
 }

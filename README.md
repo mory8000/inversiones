@@ -36,7 +36,11 @@ Sustituye al antiguo `Inversiones.xlsx` y mantiene sus mismos conceptos: titular
 - **Detalle de cada producto**: el cálculo del saldo paso a paso, de dónde le ha llegado el dinero y a dónde ha
   ido, su evolución y sus movimientos. En los depósitos: TAE, vencimiento, días restantes e intereses.
 - **Detalle de cada cuenta**: cuánto ha salido hacia inversiones, cuánto ha vuelto y a qué productos.
-- **Varios titulares**, cada uno con sus datos (código y nombre, como en la cabecera del Excel).
+- **Dos titulares, cada uno por su lado**: la app empieza con «Titular 1» y «Titular 2» (ponles nombre desde la
+  propia app). Cada uno tiene sus propias cuentas, productos, movimientos y patrimonio: nunca se mezclan ni se
+  suman. Para cambiar de uno a otro, toca su nombre arriba (móvil) o en el menú de la izquierda (ordenador).
+  Cada titular tiene su color, y en cada pantalla se ve de quién son los datos. Se pueden añadir más desde
+  *Ajustes → Titulares* (código y nombre, como en la cabecera del Excel).
 - **Ocultar importes** con un toque (icono del ojo).
 - **Copia de seguridad** (descargar / restaurar) y **datos de ejemplo** para probarla sin miedo.
 - **Se instala como una app** en el móvil o el ordenador y funciona **sin conexión**.
@@ -78,7 +82,7 @@ resultado final es lo que has recuperado menos lo que invertiste.
 
 Todo se guarda **solo en tu navegador** (localStorage): no hay servidor ni cuentas de usuario y tus datos no
 salen del dispositivo. Aunque la web sea pública, quien la abra solo ve **sus propios** datos (al principio, la
-app vacía); nunca los tuyos.
+app vacía); nunca los tuyos. Los nombres de los titulares también se guardan solo ahí: no están en el código.
 
 Además, la versión publicada incluye una **política de seguridad (CSP)** que solo deja a la app cargar sus
 propios archivos e impide al navegador conectarse a cualquier otro servidor: aunque un código intentara enviar

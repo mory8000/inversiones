@@ -6,6 +6,7 @@ import { Button } from '../ui/Button'
 import { useData } from '../../store/data'
 import { confirmDialog, toast, useUI } from '../../store/ui'
 import { initials } from '../../lib/format'
+import { isDefaultTitularName, titularColor } from '../../lib/titulares'
 
 export function TitularForm({ modalId, titularId }: { modalId: string; titularId?: string }) {
   const close = useUI((s) => s.close)
@@ -51,7 +52,7 @@ export function TitularForm({ modalId, titularId }: { modalId: string; titularId
   return (
     <Sheet
       title={existing ? 'Datos del titular' : 'Nuevo titular'}
-      subtitle={existing ? 'Nombre y código, como en la cabecera del Excel' : 'Cada titular tiene sus propias cuentas y movimientos'}
+      subtitle={existing ? 'Nombre y código, como en la cabecera del Excel' : 'Tendrá sus propias cuentas, productos y movimientos, por separado'}
       size="sm"
       onClose={() => close(modalId)}
       footer={
@@ -75,7 +76,10 @@ export function TitularForm({ modalId, titularId }: { modalId: string; titularId
         }}
       >
         <div className="flex items-center gap-3 rounded-2xl bg-slate-50 p-3">
-          <span className="inline-flex size-12 items-center justify-center rounded-full bg-brand-900 text-base font-bold text-white">
+          <span
+            className="inline-flex size-12 shrink-0 items-center justify-center rounded-full text-base font-bold text-white"
+            style={{ backgroundColor: titularColor(titulares, existing?.id) }}
+          >
             {initials(nombre || '?')}
           </span>
           <div className="min-w-0">
@@ -84,7 +88,20 @@ export function TitularForm({ modalId, titularId }: { modalId: string; titularId
           </div>
         </div>
         <Field label="Nombre" htmlFor="tit-nombre" error={submitted ? error : null}>
-          <TextInput id="tit-nombre" data-autofocus value={nombre} maxLength={60} placeholder="Ej.: Ana García" onChange={(e) => setNombre(e.target.value)} />
+          <TextInput
+            id="tit-nombre"
+            data-autofocus
+            value={nombre}
+            maxLength={60}
+            placeholder="Ej.: Ana García"
+            onChange={(e) => setNombre(e.target.value)}
+            onFocus={(e) => {
+              // Con el nombre por defecto («Titular 2») se selecciona entero al tocarlo: basta con escribir.
+              // (Un instante después: en el móvil, el propio toque deshace la selección.)
+              const input = e.currentTarget
+              if (isDefaultTitularName(input.value)) window.setTimeout(() => input.setSelectionRange(0, input.value.length), 0)
+            }}
+          />
         </Field>
         <Field label="Código" htmlFor="tit-codigo" optional hint="Por ejemplo, tu número de cliente">
           <TextInput id="tit-codigo" value={codigo} maxLength={30} placeholder="Ej.: 000123" onChange={(e) => setCodigo(e.target.value)} />
