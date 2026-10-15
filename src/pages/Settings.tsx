@@ -146,7 +146,7 @@ export function Settings() {
     const ok = await confirmDialog({
       title: '¿Borrar cuentas, productos y movimientos?',
       message:
-        'Se eliminarán las cuentas, productos, movimientos y transferencias mensuales de todos los titulares. Los titulares (y sus nombres) se quedan. Te recomendamos descargar antes una copia de seguridad.',
+        'Se eliminarán las cuentas, productos, movimientos y transferencias mensuales de todos los titulares. Los titulares (y sus nombres) se quedan, y el principal vuelve a tener su cuenta «MyInvestor» vacía. Te recomendamos descargar antes una copia de seguridad.',
       confirmLabel: 'Borrar datos',
       danger: true,
     })
@@ -205,7 +205,8 @@ export function Settings() {
           />
           {ds.programadas.length === 0 ? (
             <p className="mt-3 border-t border-slate-100 px-4 py-4 text-sm text-slate-500 sm:px-5">
-              Aún no hay ninguna.{t2 ? ` Por ejemplo, la transferencia de cada mes de ${t1.nombre} a ${t2.nombre}: cuenta como inversión de ${t2.nombre}.` : ''}
+              Aún no hay ninguna.
+              {t2 ? ` Por ejemplo, la transferencia de cada mes de ${t1.nombre} a ${t2.nombre} (se programa en la tarjeta de ${t1.nombre}, en Inicio): cuenta solo para ${t2.nombre}.` : ''}
             </p>
           ) : (
             <ul className="mt-3 divide-y divide-slate-100 border-t border-slate-100">

@@ -23,7 +23,7 @@ export function DemoBanner() {
   }
 
   return (
-    <div className="mb-4 flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-3.5 sm:flex-row sm:items-center sm:justify-between">
+    <div data-demo-banner className="mb-4 flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-3.5 sm:flex-row sm:items-center sm:justify-between">
       <div className="flex items-start gap-2.5 text-sm text-amber-900">
         <FlaskConical className="mt-0.5 size-4 shrink-0" />
         <span>

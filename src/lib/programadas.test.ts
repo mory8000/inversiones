@@ -28,7 +28,7 @@ describe('apuntar las transferencias mensuales', () => {
       { id: 'T1', codigo: '', nombre: 'Ana', createdAt: '' },
       { id: 'T2', codigo: '', nombre: 'Luis', createdAt: '' },
     ],
-    cuentas: [{ id: 'C1', titularId: 'T1', nombre: 'Nómina', entidad: '', iban: '', color: '#000', notas: '', createdAt: '' }],
+    cuentas: [{ id: 'C1', titularId: 'T1', nombre: 'Nómina', entidad: '', iban: '', color: '#000', notas: '', externa: true, createdAt: '' }],
     productos: [{ id: 'F2', titularId: 'T2', tipo: 'fondo', nombre: 'Fondo', entidad: '', isin: '', notas: '', tae: null, vencimiento: null, valoraciones: [], createdAt: '' }],
     movimientos: [],
     programadas: [

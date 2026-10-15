@@ -5,9 +5,10 @@
 
 import type { Cuenta, Dataset, EntityRef, Movimiento, PersistedData, Producto, Programada, Titular, Workspace } from '../types'
 import { isValidISODate, todayISO } from '../lib/dates'
+import { buildDemoDataset } from '../lib/demo'
 import { nowStamp, uid } from '../lib/id'
 import { inferMovementType } from '../lib/meta'
-import { defaultTitularName } from '../lib/titulares'
+import { conCuentaPrincipal, defaultTitularName } from '../lib/titulares'
 
 /**
  * Versión del formato de datos.
@@ -15,8 +16,11 @@ import { defaultTitularName } from '../lib/titulares'
  * - 2: dos titulares, cada uno en su propio espacio (se elegía cuál ver).
  * - 3: todos los titulares a la vez; cada cuenta y producto tiene su dueño, puede haber
  *      movimientos entre titulares y transferencias mensuales. El ejemplo va aparte.
+ * - 4: cuentas con saldo (como «MyInvestor», suman en el patrimonio) y cuentas externas
+ *      (de donde viene el dinero). El titular principal tiene su cuenta «MyInvestor».
+ *      Los productos se guardan en el orden que elige el usuario.
  */
-export const DATA_VERSION = 3
+export const DATA_VERSION = 4
 
 /** Nombre del único titular que creaba la versión 1. */
 const V1_DEFAULT_NAME = 'Titular principal'
@@ -55,6 +59,8 @@ function sanitizeCuenta(c: Record<string, unknown>, titularId: string): Cuenta {
     iban: str(c.iban),
     color: str(c.color, '#0EA5E9'),
     notas: str(c.notas),
+    // Hasta la versión 3 todas las cuentas eran «de dónde sale el dinero»: externas.
+    externa: c.externa !== false,
     createdAt: str(c.createdAt, nowStamp()),
   }
 }
@@ -216,14 +222,32 @@ function fromLegacy(raw: Record<string, unknown>): Omit<PersistedData, 'version'
 export function sanitizeData(raw: unknown): PersistedData | null {
   if (!isObj(raw)) return null
   const hideAmounts = raw.hideAmounts === true
+  let data: Omit<PersistedData, 'version' | 'hideAmounts'> | null = null
   if (isObj(raw.datos)) {
     const datos = sanitizeDataset(raw.datos)
     if (!datos) return null
     const ejemplo = sanitizeDataset(raw.ejemplo)
-    return { version: DATA_VERSION, datos, ejemplo, verEjemplo: !!ejemplo && raw.verEjemplo === true, hideAmounts }
+    data = { datos, ejemplo, verEjemplo: !!ejemplo && raw.verEjemplo === true }
+  } else {
+    data = fromLegacy(raw)
   }
-  const legacy = fromLegacy(raw)
-  return legacy ? { version: DATA_VERSION, ...legacy, hideAmounts } : null
+  if (!data) return null
+  const version = typeof raw.version === 'number' ? raw.version : 0
+  if (version < 4) data = upgradeV4(data)
+  return { version: DATA_VERSION, ...data, hideAmounts }
+}
+
+/**
+ * Versión 4: el titular principal pasa a tener su cuenta principal con saldo («MyInvestor»)
+ * y el ejemplo se vuelve a crear con las cuentas nuevas (es ficticio).
+ */
+function upgradeV4(data: Omit<PersistedData, 'version' | 'hideAmounts'>): Omit<PersistedData, 'version' | 'hideAmounts'> {
+  const stamp = nowStamp()
+  return {
+    ...data,
+    datos: conCuentaPrincipal(data.datos, uid, stamp),
+    ejemplo: data.ejemplo ? buildDemoDataset(todayISO()) : null,
+  }
 }
 
 /** Resumen de un conjunto de datos (para confirmar antes de restaurar una copia). */

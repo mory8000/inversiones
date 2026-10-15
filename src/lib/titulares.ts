@@ -1,7 +1,7 @@
 // Utilidades de titulares: nombres por defecto, el principal y el color de cada uno.
 // Todos se ven a la vez; el primero de la lista es el principal.
 
-import type { Dataset, EntityRef, Titular, Workspace } from '../types'
+import type { Cuenta, Dataset, EntityRef, Titular, Workspace } from '../types'
 
 /** Nombre que la app da a un titular hasta que el usuario le pone el suyo: «Titular 1», «Titular 2»… */
 export const defaultTitularName = (n: number): string => `Titular ${n}`
@@ -38,3 +38,81 @@ export function titularWorkspace(ds: Workspace, titularId: string): Workspace {
 }
 
 export const emptyDataset = (titulares: Titular[]): Dataset => ({ titulares, cuentas: [], productos: [], movimientos: [], programadas: [] })
+
+// ── Cuenta principal («MyInvestor») ─────────────────────────────────────────
+
+/** Nombre de la cuenta principal que la app crea al titular principal. */
+export const MYINVESTOR = 'MyInvestor'
+export const MYINVESTOR_COLOR = '#6366F1'
+
+const simple = (s: string) =>
+  s
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]/g, '')
+
+/** Cuentas con saldo de un titular (la primera es su cuenta principal). */
+export const cuentasConSaldo = (cuentas: Cuenta[], titularId: string): Cuenta[] => cuentas.filter((c) => c.titularId === titularId && !c.externa)
+
+/** Cuenta principal de un titular: su primera cuenta con saldo (p. ej. «MyInvestor»). */
+export function cuentaPrincipal(cuentas: Cuenta[], titularId: string): Cuenta | undefined {
+  return cuentas.find((c) => c.titularId === titularId && !c.externa)
+}
+
+/** Cuentas externas de un titular (de donde trae el dinero). */
+export const cuentasExternas = (cuentas: Cuenta[], titularId: string): Cuenta[] => cuentas.filter((c) => c.titularId === titularId && c.externa)
+
+/** Cuenta «MyInvestor» nueva (con saldo) para un titular. */
+export function nuevaCuentaMyInvestor(titularId: string, id: string, createdAt: string): Cuenta {
+  return { id, titularId, nombre: MYINVESTOR, entidad: MYINVESTOR, iban: '', color: MYINVESTOR_COLOR, notas: '', externa: false, createdAt }
+}
+
+/**
+ * Se asegura de que el titular principal tenga cuenta principal con saldo («MyInvestor»):
+ *  1. si ya tiene una cuenta con saldo, no cambia nada;
+ *  2. si tiene una cuenta que se llama «MyInvestor», pasa a ser su cuenta con saldo;
+ *  3. si tiene una que se llama «… principal» (p. ej. «Cuenta principal»), pasa a llamarse
+ *     «MyInvestor» y a llevar saldo;
+ *  4. si no, se crea una cuenta «MyInvestor» nueva (la primera de la lista).
+ */
+export function conCuentaPrincipal(ds: Dataset, newId: () => string, stamp: string): Dataset {
+  const t = ds.titulares[0]
+  if (!t || cuentaPrincipal(ds.cuentas, t.id)) return ds
+  const propias = ds.cuentas.filter((c) => c.titularId === t.id)
+  const porNombre = propias.find((c) => simple(c.nombre) === simple(MYINVESTOR))
+  if (porNombre) return { ...ds, cuentas: ds.cuentas.map((c) => (c.id === porNombre.id ? { ...c, externa: false } : c)) }
+  const principal = propias.find((c) => /principal/.test(simple(c.nombre)))
+  if (principal) {
+    return {
+      ...ds,
+      cuentas: ds.cuentas.map((c) => (c.id === principal.id ? { ...c, nombre: MYINVESTOR, entidad: c.entidad || MYINVESTOR, externa: false } : c)),
+    }
+  }
+  return { ...ds, cuentas: [nuevaCuentaMyInvestor(t.id, newId(), stamp), ...ds.cuentas] }
+}
+
+// ── Orden de las inversiones ────────────────────────────────────────────────
+
+/**
+ * Coloca los elementos de `ids` en ese orden, en los huecos que ocupan dentro de `items`.
+ * Los que no están en `ids` (p. ej. los productos cerrados, que no se ven) no se mueven.
+ */
+export function applyOrder<T extends { id: string }>(items: T[], ids: string[]): T[] {
+  const wanted = new Set(ids)
+  const byId = new Map(items.map((x) => [x.id, x]))
+  const queue = ids.filter((id, i) => byId.has(id) && ids.indexOf(id) === i).map((id) => byId.get(id)!)
+  if (queue.length === 0) return items
+  let k = 0
+  return items.map((x) => (wanted.has(x.id) && k < queue.length ? queue[k++] : x))
+}
+
+/** Mueve `id` una posición (−1 arriba, +1 abajo) dentro de la lista `ids`. */
+export function moveInList(ids: string[], id: string, dir: -1 | 1): string[] {
+  const i = ids.indexOf(id)
+  const j = i + dir
+  if (i < 0 || j < 0 || j >= ids.length) return ids
+  const out = [...ids]
+  ;[out[i], out[j]] = [out[j], out[i]]
+  return out
+}

@@ -8,8 +8,9 @@ import { PRODUCT_ICONS } from '../ui/icons'
 import { PRODUCT_META, PRODUCT_TYPES } from '../../lib/meta'
 import { useData } from '../../store/data'
 import { useFinance } from '../../store/useFinance'
-import { confirmDialog, openAccount, toast, useUI } from '../../store/ui'
-import { fmtNumberInput, parseNumber } from '../../lib/format'
+import { confirmDialog, openAccount, openInvestment, toast, useUI } from '../../store/ui'
+import { fmtEUR, fmtNumberInput, parseNumber } from '../../lib/format'
+import { cuentaPrincipal } from '../../lib/titulares'
 import { addMonths, isValidISODate } from '../../lib/dates'
 import { navigate, paths } from '../../lib/router'
 import { cn } from '../../lib/cn'
@@ -24,15 +25,19 @@ export function ProductForm({
   presetTipo,
   presetTitularId,
   onCreated,
+  abrirVentanilla,
 }: {
   modalId: string
   productId?: string
   presetTipo?: ProductType
   presetTitularId?: string
   onCreated?: (id: string) => void
+  /** Al crearlo, quedarse en Inicio y abrir su ventanilla (en vez de ir a su página). */
+  abrirVentanilla?: boolean
 }) {
   const close = useUI((s) => s.close)
-  const { ws, ds, positions, today } = useFinance()
+  const { ws, ds, positions, accounts, today } = useFinance()
+  const hidden = useData((s) => s.hideAmounts)
   const addProducto = useData((s) => s.addProducto)
   const updateProducto = useData((s) => s.updateProducto)
   const removeProducto = useData((s) => s.removeProducto)
@@ -40,7 +45,7 @@ export function ProductForm({
   const existing = productId ? ws.productos.find((p) => p.id === productId) : undefined
 
   const [tipo, setTipo] = useState<ProductType>(existing?.tipo ?? presetTipo ?? 'fondo')
-  const [titularId, setTitularId] = useState(existing?.titularId ?? presetTitularId ?? ds.titulares[0].id)
+  const [titularId, setTitularIdRaw] = useState(existing?.titularId ?? presetTitularId ?? ds.titulares[0].id)
   const [nombre, setNombre] = useState(existing?.nombre ?? '')
   const [entidad, setEntidad] = useState(existing?.entidad ?? '')
   const [isin, setIsin] = useState(existing?.isin ?? '')
@@ -50,11 +55,22 @@ export function ProductForm({
   const [showMore, setShowMore] = useState(!!(existing?.notas || existing?.isin))
 
   // Primera aportación (solo al crear desde la lista de productos).
-  const offerFirst = !existing && !onCreated
-  const [cuenta, setCuenta] = useState(() => {
-    const own = ws.cuentas.filter((c) => c.titularId === (presetTitularId ?? ds.titulares[0].id))
-    return own.length === 1 ? own[0].id : ws.cuentas.length === 1 ? ws.cuentas[0].id : ''
-  })
+  const offerFirst = !existing && (!onCreated || !!abrirVentanilla)
+  /** Cuenta propuesta para la primera aportación: la principal del titular (su MyInvestor). */
+  const cuentaPropuesta = (tid: string) => {
+    const own = ws.cuentas.filter((c) => c.titularId === tid)
+    return cuentaPrincipal(ws.cuentas, tid)?.id ?? (own.length === 1 ? own[0].id : ws.cuentas.length === 1 ? ws.cuentas[0].id : '')
+  }
+  const [cuenta, setCuentaRaw] = useState(() => cuentaPropuesta(presetTitularId ?? ds.titulares[0].id))
+  const [cuentaElegida, setCuentaElegida] = useState(false)
+  const setCuenta = (id: string) => {
+    setCuentaRaw(id)
+    setCuentaElegida(true)
+  }
+  const setTitularId = (id: string) => {
+    setTitularIdRaw(id)
+    if (!cuentaElegida) setCuentaRaw(cuentaPropuesta(id))
+  }
   const [importe, setImporte] = useState('')
   const [fecha, setFecha] = useState(today)
   const [submitted, setSubmitted] = useState(false)
@@ -110,6 +126,7 @@ export function ProductForm({
     toast(`${PRODUCT_META[tipo].label} creado`)
     close(modalId)
     if (onCreated) onCreated(id)
+    else if (abrirVentanilla) openInvestment(id)
     else navigate(paths.producto(id))
   }
 
@@ -273,14 +290,17 @@ export function ProductForm({
               >
                 <option value="">Elige una cuenta…</option>
                 {ds.titulares.map((t) => {
-                  const list = ws.cuentas.filter((c) => c.titularId === t.id)
+                  const list = [...ws.cuentas.filter((c) => c.titularId === t.id && !c.externa), ...ws.cuentas.filter((c) => c.titularId === t.id && c.externa)]
                   if (!list.length) return null
-                  const options = list.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.nombre}
-                      {c.entidad ? ` · ${c.entidad}` : ''}
-                    </option>
-                  ))
+                  const options = list.map((c) => {
+                    const st = accounts.get(c.id)
+                    return (
+                      <option key={c.id} value={c.id}>
+                        {c.nombre}
+                        {c.externa ? ` · ${c.entidad ? `${c.entidad} · ` : ''}externa` : st && !hidden ? ` (saldo ${fmtEUR(st.saldo)})` : ''}
+                      </option>
+                    )
+                  })
                   return ds.titulares.length > 1 ? (
                     <optgroup key={t.id} label={`Cuentas de ${t.nombre}`}>
                       {options}

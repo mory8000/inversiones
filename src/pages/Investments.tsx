@@ -51,11 +51,11 @@ export function Investments({ tab, tipo }: { tab: 'productos' | 'cuentas'; tipo:
         subtitle={
           tab === 'productos'
             ? multi
-              ? 'Los depósitos, fondos, carteras y demás productos de cada titular'
-              : 'Tus depósitos, fondos, carteras y demás productos'
+              ? 'Los depósitos, fondos, carteras y demás productos de cada titular, en el orden que elijas en Inicio'
+              : 'Tus depósitos, fondos, carteras y demás productos, en el orden que elijas en Inicio'
             : multi
-              ? 'Las cuentas de cada titular: de donde sale el dinero y a donde vuelve'
-              : 'Las cuentas de donde sale el dinero y a donde vuelve'
+              ? 'Las cuentas de cada titular: las que llevan saldo (como MyInvestor) y las externas, de donde viene el dinero'
+              : 'Tus cuentas: las que llevan saldo (como MyInvestor) y las externas, de donde viene el dinero'
         }
         actions={
           tab === 'productos' ? (
@@ -119,7 +119,7 @@ export function Investments({ tab, tipo }: { tab: 'productos' | 'cuentas'; tipo:
                         total={
                           tf.ws.productos.length > 0 ? (
                             <div className="flex flex-wrap items-center gap-2 text-sm">
-                              <Amount value={tf.totals.patrimonio} className="font-semibold text-slate-700" />
+                              <Amount value={tf.totals.invertidoValor} className="font-semibold text-slate-700" />
                               <GainBadge size="sm" ganancia={tf.totals.ganancia} rentabilidad={tf.totals.rentabilidad} />
                             </div>
                           ) : (
@@ -147,8 +147,8 @@ export function Investments({ tab, tipo }: { tab: 'productos' | 'cuentas'; tipo:
                         {groups.map((r) => {
                           const list = tf.ws.productos
                             .filter((p) => p.tipo === r.tipo)
+                            // En el orden que el usuario ha elegido en Inicio («Ordenar»).
                             .filter((p) => showClosed || positions.get(p.id)?.estado !== 'cerrado')
-                            .sort((a, b) => (positions.get(b.id)?.saldo ?? 0) - (positions.get(a.id)?.saldo ?? 0))
                           const hiddenClosed = r.numProductos - list.length
                           return (
                             <section key={r.tipo} aria-label={`${PRODUCT_META[r.tipo].plural} de ${tf.titular.nombre}`}>
@@ -198,7 +198,7 @@ export function Investments({ tab, tipo }: { tab: 'productos' | 'cuentas'; tipo:
           <EmptyState
             icon={<Landmark className="size-6" />}
             title="Aún no hay cuentas"
-            description="Añade la cuenta bancaria de donde sale el dinero que se invierte (y a donde vuelven los reembolsos)."
+            description="Añade tu cuenta con saldo (como MyInvestor) y las cuentas externas de donde traes el dinero."
             action={
               <Button icon={Plus} onClick={() => openAccount()}>
                 Nueva cuenta
@@ -213,7 +213,23 @@ export function Investments({ tab, tipo }: { tab: 'productos' | 'cuentas'; tipo:
               {multi && (
                 <TitularHeader
                   tf={tf}
-                  total={<div className="text-sm text-slate-500">{tf.ws.cuentas.length === 0 ? 'Sin cuentas' : `${tf.ws.cuentas.length} cuenta${tf.ws.cuentas.length === 1 ? '' : 's'}`}</div>}
+                  total={
+                    <div className="text-sm text-slate-500">
+                      {tf.ws.cuentas.length === 0 ? (
+                        'Sin cuentas'
+                      ) : (
+                        <>
+                          {tf.ws.cuentas.length} cuenta{tf.ws.cuentas.length === 1 ? '' : 's'}
+                          {tf.ws.cuentas.some((c) => !c.externa) && (
+                            <>
+                              {' · '}
+                              <Amount value={tf.totals.efectivo} className="font-semibold text-slate-700" /> sin invertir
+                            </>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  }
                   action={
                     <Button variant="soft" size="sm" icon={Plus} onClick={() => openAccount({ presetTitularId: tf.titular.id })}>
                       Cuenta
@@ -223,7 +239,7 @@ export function Investments({ tab, tipo }: { tab: 'productos' | 'cuentas'; tipo:
               )}
               {tf.ws.cuentas.length > 0 ? (
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                  {tf.ws.cuentas.map((c) => (
+                  {[...tf.ws.cuentas.filter((c) => !c.externa), ...tf.ws.cuentas.filter((c) => c.externa)].map((c) => (
                     <AccountCard key={c.id} c={c} s={tf.accounts.get(c.id)!} />
                   ))}
                 </div>

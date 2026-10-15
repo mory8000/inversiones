@@ -11,6 +11,10 @@
 // Además se admite indicar directamente el "valor actual" en € (lo que ves en
 // la app del banco) y, para depósitos, se calcula el interés con la TAE y las
 // fechas de apertura y vencimiento.
+//
+// Las cuentas con saldo (como «MyInvestor») llevan su saldo: lo que entra menos
+// lo que sale. Ese dinero, aún sin invertir, suma en el patrimonio del titular.
+// Las cuentas externas solo dicen de dónde viene el dinero: no llevan saldo.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { Movimiento, Producto, ProductType, Valoracion, Workspace } from '../types'
@@ -66,6 +70,19 @@ export interface Position {
 
 export interface AccountStats {
   cuentaId: string
+  /** Cuenta externa (otro banco): no lleva saldo ni suma en el patrimonio. */
+  externa: boolean
+  /** Todo lo que ha entrado en la cuenta. */
+  entradas: number
+  /** Todo lo que ha salido de la cuenta. */
+  salidas: number
+  /**
+   * Entradas − salidas. Solo cuenta en las cuentas con saldo. Si es negativo es que falta
+   * apuntar de dónde vino parte del dinero (p. ej. una aportación desde una cuenta externa).
+   */
+  saldo: number
+  /** Lo que ha entrado desde cuentas externas (aportaciones). */
+  aportaciones: number
   /** Enviado desde la cuenta a productos (inversiones) del mismo titular. */
   enviado: number
   /** Recibido en la cuenta desde productos (reembolsos) del mismo titular. */
@@ -86,12 +103,27 @@ export interface AccountStats {
 }
 
 export interface Totals {
+  /** Valor de los productos + dinero en las cuentas con saldo. */
   patrimonio: number
+  /** Dinero sin invertir en las cuentas con saldo (p. ej. MyInvestor). */
+  efectivo: number
+  /** Valor actual de los productos. */
+  invertidoValor: number
+  /** Capital invertido en productos (aportado − reembolsado). */
   capital: number
   ganancia: number
   rentabilidad: number | null
+  /** Aportado a productos desde cuentas (suma de la columna «Invertido» sin traspasos). */
   aportado: number
+  /** Reembolsado de productos a cuentas. */
   reembolsado: number
+  /**
+   * Dinero que ha entrado desde fuera a sus productos y cuentas con saldo: desde cuentas
+   * externas o desde otros titulares. Lo que se mueve entre sus cosas no cuenta dos veces.
+   */
+  aportadoTotal: number
+  /** Dinero que ha salido de sus productos y cuentas con saldo a sus cuentas externas. */
+  retiradoTotal: number
   productosActivos: number
   numMovimientos: number
 }
@@ -315,6 +347,11 @@ export function computeAccountStats(ws: Workspace): Map<string, AccountStats> {
   for (const c of ws.cuentas) {
     map.set(c.id, {
       cuentaId: c.id,
+      externa: c.externa,
+      entradas: 0,
+      salidas: 0,
+      saldo: 0,
+      aportaciones: 0,
       enviado: 0,
       recibido: 0,
       transferenciasEnviadas: 0,
@@ -339,8 +376,21 @@ export function computeAccountStats(ws: Workspace): Map<string, AccountStats> {
     return s
   }
 
+  const externas = new Set(ws.cuentas.filter((c) => c.externa).map((c) => c.id))
   for (const m of ws.movimientos) {
     const cross = isBetweenTitulares(m, owner)
+    // Saldo: lo que entra menos lo que sale.
+    if (m.origen.kind === 'cuenta') {
+      const s = map.get(m.origen.id)
+      if (s) s.salidas += m.importe
+    }
+    if (m.destino.kind === 'cuenta') {
+      const s = map.get(m.destino.id)
+      if (s) {
+        s.entradas += m.importe
+        if (m.origen.kind === 'cuenta' && externas.has(m.origen.id) && m.origen.id !== m.destino.id) s.aportaciones += m.importe
+      }
+    }
     if (m.origen.kind === 'cuenta') {
       const s = touch(m.origen.id, m.fecha)
       if (s) {
@@ -378,6 +428,8 @@ export function computeAccountStats(ws: Workspace): Map<string, AccountStats> {
   }
 
   for (const [id, s] of map) {
+    s.saldo = s.entradas - s.salidas
+    if (Math.abs(s.saldo) < EPS) s.saldo = 0
     s.netoInvertido = s.enviado - s.recibido
     s.porProducto = [...(perProduct.get(id) ?? new Map()).entries()]
       .map(([productoId, v]) => ({ productoId, ...v }))
@@ -388,7 +440,10 @@ export function computeAccountStats(ws: Workspace): Map<string, AccountStats> {
 
 // ── Totales y resumen por tipo ──────────────────────────────────────────────
 
-export function computeTotals(ws: Workspace, positions: Map<string, Position>): Totals {
+/** Dinero en una cuenta con saldo que suma en el patrimonio (nunca menos de 0). */
+export const efectivoDe = (s: AccountStats | undefined): number => (s && !s.externa ? Math.max(0, s.saldo) : 0)
+
+export function computeTotals(ws: Workspace, positions: Map<string, Position>, accounts?: Map<string, AccountStats>): Totals {
   let patrimonio = 0
   let capital = 0
   let ganancia = 0
@@ -407,13 +462,36 @@ export function computeTotals(ws: Workspace, positions: Map<string, Position>): 
     aportado += pos.aportado
     reembolsado += pos.reembolsado
   }
+  // El dinero que hay en las cuentas con saldo (p. ej. MyInvestor) también es del titular.
+  let efectivo = 0
+  if (accounts) for (const c of ws.cuentas) if (!c.externa) efectivo += efectivoDe(accounts.get(c.id))
+  const invertidoValor = patrimonio
+  patrimonio += efectivo
+
+  // Lo que entra «desde fuera» y lo que sale «a fuera» (sin contar lo que se mueve entre sus cosas).
+  const suyo = new Set<string>()
+  for (const p of ws.productos) suyo.add(`producto:${p.id}`)
+  for (const c of ws.cuentas) if (!c.externa) suyo.add(`cuenta:${c.id}`)
+  const susExternas = new Set(ws.cuentas.filter((c) => c.externa).map((c) => `cuenta:${c.id}`))
+  let aportadoTotal = 0
+  let retiradoTotal = 0
+  for (const m of ws.movimientos) {
+    const o = `${m.origen.kind}:${m.origen.id}`
+    const d = `${m.destino.kind}:${m.destino.id}`
+    if (suyo.has(d) && !suyo.has(o)) aportadoTotal += m.importe
+    if (suyo.has(o) && susExternas.has(d)) retiradoTotal += m.importe
+  }
   return {
     patrimonio,
+    efectivo,
+    invertidoValor,
     capital,
     ganancia,
     rentabilidad: capital > EPS ? ganancia / capital : aportado > EPS ? ganancia / aportado : null,
     aportado,
     reembolsado,
+    aportadoTotal,
+    retiradoTotal,
     productosActivos,
     numMovimientos: ws.movimientos.length,
   }
@@ -491,7 +569,10 @@ export function timelineDates(movimientos: Movimiento[], today: string, maxPoint
   return [...new Set(dates)].sort()
 }
 
-/** Capital y patrimonio de un conjunto de productos en una fecha del histórico. */
+/**
+ * Capital y patrimonio en una fecha del histórico: productos y dinero de las cuentas con saldo
+ * (que suma en los dos, porque es dinero puesto que aún no se ha invertido).
+ */
 function valueAt(ws: Workspace, fecha: string): { capital: number; patrimonio: number } {
   let capital = 0
   let patrimonio = 0
@@ -499,6 +580,18 @@ function valueAt(ws: Workspace, fecha: string): { capital: number; patrimonio: n
     const pos = evaluateProduct(p, ws.movimientos, { asOf: fecha, mode: 'historico' })
     capital += pos.capital
     patrimonio += pos.saldo
+  }
+  for (const c of ws.cuentas) {
+    if (c.externa) continue
+    let saldo = 0
+    for (const m of ws.movimientos) {
+      if (m.fecha > fecha) continue
+      if (m.destino.kind === 'cuenta' && m.destino.id === c.id) saldo += m.importe
+      if (m.origen.kind === 'cuenta' && m.origen.id === c.id) saldo -= m.importe
+    }
+    const efectivo = Math.max(0, saldo)
+    capital += efectivo
+    patrimonio += efectivo
   }
   return { capital, patrimonio }
 }

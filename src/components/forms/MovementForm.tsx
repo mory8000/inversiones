@@ -12,23 +12,37 @@ import { useFinance } from '../../store/useFinance'
 import { confirmDialog, openAccount, openProduct, openProgramada, toast, useUI, type MovementPreset } from '../../store/ui'
 import { fmtDate, fmtEUR, fmtNumberInput, parseNumber } from '../../lib/format'
 import { isValidISODate, todayISO } from '../../lib/dates'
-import { entityName, parseRefKey, refKey } from '../../lib/movements'
+import { entityName, isConSaldo, isExterna, parseRefKey, refKey, type Lookup } from '../../lib/movements'
 import { diaDe, fechasDebidas, movimientosDe } from '../../lib/programadas'
 import { cn } from '../../lib/cn'
 
 const NEW = '__new__'
+/** «Cuenta externa (nueva)»: se crea al guardar (para «Añadir dinero» sin cuentas externas). */
+const NEW_EXTERNA = '__new_externa__'
+const NOMBRE_EXTERNA = 'Cuenta externa'
 
-const EXPLAIN: Record<MovementType, (o: string, d: string) => string> = {
-  inversion: (o, d) => `Sale dinero de «${o}» y se invierte en «${d}».`,
-  reembolso: (o, d) => `Recuperas dinero de «${o}» y vuelve a «${d}».`,
-  traspaso: (o, d) => `Mueves dinero de «${o}» a «${d}» sin pasar por tu cuenta.`,
-  transferencia: (o, d) => `Mueves dinero entre tus cuentas: de «${o}» a «${d}».`,
+/** Explicación de lo que pasa con el dinero (dentro de un mismo titular). */
+function explain(tipo: MovementType, o: string, d: string, oExterna: boolean, dExterna: boolean): string {
+  switch (tipo) {
+    case 'inversion':
+      return oExterna ? `Sale dinero de «${o}» (cuenta externa) y se invierte en «${d}».` : `Sale dinero de «${o}» (baja su saldo) y se invierte en «${d}».`
+    case 'reembolso':
+      return dExterna ? `Recuperas dinero de «${o}» y va a «${d}» (cuenta externa).` : `Recuperas dinero de «${o}» y vuelve a «${d}» (sube su saldo).`
+    case 'traspaso':
+      return `Mueves dinero de «${o}» a «${d}» sin pasar por tu cuenta.`
+    case 'transferencia':
+      if (oExterna && !dExterna) return `Aportación: entra dinero de «${o}» (cuenta externa) en «${d}». Suma en el saldo de «${d}».`
+      if (!oExterna && dExterna) return `Sacas dinero de «${o}» a «${d}» (cuenta externa). Baja el saldo de «${o}».`
+      if (oExterna && dExterna) return `Mueves dinero entre cuentas externas: no cambia tu patrimonio.`
+      return `Mueves dinero entre tus cuentas: de «${o}» a «${d}».`
+  }
 }
 
 /** Explicación cuando el dinero va de un titular a otro. */
-function explainCross(o: string, d: string, from: Titular, to: Titular, destino: EntityKind): string {
-  if (destino === 'producto') return `Sale dinero de «${o}» (de ${from.nombre}) y se invierte en «${d}» (de ${to.nombre}). Cuenta como inversión de ${to.nombre}, no de ${from.nombre}.`
-  return `Pasa dinero de «${o}» (de ${from.nombre}) a «${d}» (de ${to.nombre}). No cuenta como inversión de ${from.nombre}; para ${to.nombre} lo será cuando lo invierta.`
+function explainCross(o: string, d: string, from: Titular, to: Titular, destino: EntityRef, lookup: Lookup): string {
+  if (destino.kind === 'producto') return `Sale dinero de «${o}» (de ${from.nombre}) y se invierte en «${d}» (de ${to.nombre}). Cuenta solo para ${to.nombre}, no para ${from.nombre}.`
+  if (isConSaldo(lookup, destino)) return `Pasa dinero de «${o}» (de ${from.nombre}) a «${d}» (de ${to.nombre}). Cuenta solo para ${to.nombre}, no para ${from.nombre}.`
+  return `Pasa dinero de «${o}» (de ${from.nombre}) a «${d}» (de ${to.nombre}, cuenta externa). No cuenta para ${from.nombre}; para ${to.nombre} contará cuando lo invierta.`
 }
 
 const dayLabel = (iso: string) => (isValidISODate(iso) ? `el día ${diaDe({ inicio: iso })}` : 'el mismo día')
@@ -45,8 +59,9 @@ export function MovementForm({
   preset?: MovementPreset
 }) {
   const close = useUI((s) => s.close)
-  const { ws, ds, positions, lookup, today, owner } = useFinance()
+  const { ws, ds, positions, accounts, lookup, today, owner } = useFinance()
   const hidden = useData((s) => s.hideAmounts)
+  const addCuenta = useData((s) => s.addCuenta)
   const addMovimiento = useData((s) => s.addMovimiento)
   const updateMovimiento = useData((s) => s.updateMovimiento)
   const removeMovimiento = useData((s) => s.removeMovimiento)
@@ -59,13 +74,19 @@ export function MovementForm({
   const parent = existing?.programadaId ? ds.programadas.find((p) => p.id === existing.programadaId) : undefined
   const multi = ds.titulares.length > 1
 
-  const startOrigen = existing?.origen ?? prog?.origen ?? preset?.origen
+  const isNew = !existing && !prog
+  /** «Añadir dinero»: titular para el que se ofrece crear su primera cuenta externa. */
+  const externaNuevaT = isNew ? preset?.externaNueva : undefined
+  const susExternas = externaNuevaT ? ws.cuentas.filter((c) => c.titularId === externaNuevaT && c.externa) : []
+  const ofrecerExternaNueva = !!externaNuevaT && susExternas.length === 0
+
+  const startOrigen = existing?.origen ?? prog?.origen ?? preset?.origen ?? (susExternas[0] ? { kind: 'cuenta' as const, id: susExternas[0].id } : undefined)
   const startDestino = existing?.destino ?? prog?.destino ?? preset?.destino
   const initialTipo: MovementType =
     existing?.tipo ?? (startOrigen && startDestino ? inferMovementType(startOrigen.kind, startDestino.kind) : (preset?.tipo ?? 'inversion'))
 
   const [tipo, setTipo] = useState<MovementType>(initialTipo)
-  const [origen, setOrigen] = useState(startOrigen ? refKey(startOrigen) : '')
+  const [origen, setOrigen] = useState(startOrigen ? refKey(startOrigen) : ofrecerExternaNueva ? NEW_EXTERNA : '')
   const [destino, setDestino] = useState(startDestino ? refKey(startDestino) : '')
   const startImporte = existing?.importe ?? prog?.importe
   const [importe, setImporte] = useState(startImporte ? fmtNumberInput(startImporte, 'fixed') : '')
@@ -76,10 +97,11 @@ export function MovementForm({
   const [submitted, setSubmitted] = useState(false)
 
   const meta = MOVEMENT_META[tipo]
+  const nuevaExterna = origen === NEW_EXTERNA && !!externaNuevaT
   const origenRef = parseRefKey(origen)
   const destinoRef = parseRefKey(destino)
   const amount = parseNumber(importe)
-  const fromT = origenRef ? lookup.titulares.get(owner(origenRef) ?? '') : undefined
+  const fromT = nuevaExterna ? lookup.titulares.get(externaNuevaT) : origenRef ? lookup.titulares.get(owner(origenRef) ?? '') : undefined
   const toT = destinoRef ? lookup.titulares.get(owner(destinoRef) ?? '') : undefined
   const cross = !!fromT && !!toT && fromT.id !== toT.id
 
@@ -96,7 +118,7 @@ export function MovementForm({
   }
 
   const errors = {
-    origen: !origenRef ? 'Elige de dónde sale el dinero' : null,
+    origen: !origenRef && !nuevaExterna ? 'Elige de dónde sale el dinero' : null,
     destino: !destinoRef ? 'Elige a dónde va el dinero' : origen === destino ? 'El origen y el destino no pueden ser el mismo' : null,
     importe: amount === null ? 'Escribe el importe' : amount <= 0 ? 'El importe tiene que ser mayor que 0' : null,
     fecha: !isValidISODate(fecha) ? 'Escribe una fecha válida' : null,
@@ -105,16 +127,18 @@ export function MovementForm({
   const hasErrors = Object.values(errors).some(Boolean)
   const err = (k: keyof typeof errors) => (submitted ? errors[k] : null)
 
-  // Aviso si se saca más dinero del que hay en el producto.
+  // Aviso si se saca más dinero del que hay en el producto o en la cuenta con saldo.
   let saldoOrigen: number | null = null
   if (origenRef?.kind === 'producto') {
     const pos = positions.get(origenRef.id)
-    if (pos) {
-      saldoOrigen = pos.saldo
-      if (existing && existing.origen.kind === 'producto' && existing.origen.id === origenRef.id) saldoOrigen += existing.importe
-    }
+    if (pos) saldoOrigen = pos.saldo
+  } else if (origenRef && isConSaldo(lookup, origenRef)) {
+    const st = accounts.get(origenRef.id)
+    if (st) saldoOrigen = st.saldo
   }
-  const exceeds = !repetir && saldoOrigen !== null && amount !== null && amount > saldoOrigen + 0.005
+  if (saldoOrigen !== null && existing && origenRef && existing.origen.kind === origenRef.kind && existing.origen.id === origenRef.id) saldoOrigen += existing.importe
+  const origenConSaldo = !!origenRef && isConSaldo(lookup, origenRef)
+  const exceeds = !repetir && saldoOrigen !== null && amount !== null && amount > Math.max(0, saldoOrigen) + 0.005
 
   // Transferencia mensual: cuántas se apuntan ya (desde la primera fecha hasta hoy).
   const debidas = repetir && isValidISODate(fecha) ? fechasDebidas({ inicio: fecha, fin: fin && isValidISODate(fin) ? fin : null }, today) : []
@@ -122,9 +146,16 @@ export function MovementForm({
 
   const save = () => {
     setSubmitted(true)
-    if (hasErrors || !origenRef || !destinoRef || amount === null) return
+    if (hasErrors || (!origenRef && !nuevaExterna) || !destinoRef || amount === null) return
+    let from = origenRef
+    if (nuevaExterna && externaNuevaT) {
+      const id = addCuenta({ titularId: externaNuevaT, nombre: NOMBRE_EXTERNA, entidad: '', iban: '', color: '#64748B', notas: '', externa: true })
+      from = { kind: 'cuenta', id }
+    }
+    if (!from) return
+    const origenRef2 = from
     if (repetir) {
-      const data = { origen: origenRef, destino: destinoRef, importe: amount, inicio: fecha, fin: fin || null, concepto }
+      const data = { origen: origenRef2, destino: destinoRef, importe: amount, inicio: fecha, fin: fin || null, concepto }
       if (prog) {
         updateProgramada(prog.id, data)
         toast('Transferencia mensual actualizada')
@@ -133,7 +164,7 @@ export function MovementForm({
         toast(debidas.length ? `Transferencia mensual guardada: ${debidas.length} apuntada${debidas.length === 1 ? '' : 's'} hasta hoy` : 'Transferencia mensual guardada')
       }
     } else {
-      const data = { fecha, origen: origenRef, destino: destinoRef, importe: amount, concepto }
+      const data = { fecha, origen: origenRef2, destino: destinoRef, importe: amount, concepto }
       if (existing) {
         updateMovimiento(existing.id, data)
         toast('Movimiento actualizado')
@@ -191,26 +222,44 @@ export function MovementForm({
   const onSelect = (kind: EntityKind, side: 'origen' | 'destino', value: string, set: (v: string) => void) => {
     if (value !== NEW) return set(value)
     const presetTitularId = defaultTitular(side)
-    if (kind === 'cuenta') openAccount({ presetTitularId, onCreated: (id) => set(refKey({ kind: 'cuenta', id })) })
+    // Tipo de cuenta que se propone al crearla: de dónde viene una aportación → externa;
+    // a dónde llega el dinero de otro titular → con saldo (para que cuente para él).
+    const other = side === 'origen' ? destinoRef : origenRef
+    const otherOwner = other ? owner(other) : undefined
+    let presetExterna: boolean | undefined
+    if (side === 'origen' && tipo === 'transferencia' && destinoRef && isConSaldo(lookup, destinoRef)) presetExterna = true
+    else if (side === 'destino' && otherOwner && otherOwner !== presetTitularId) presetExterna = false
+    if (kind === 'cuenta') openAccount({ presetTitularId, presetExterna, onCreated: (id) => set(refKey({ kind: 'cuenta', id })) })
     else openProduct({ presetTitularId, onCreated: (id) => set(refKey({ kind: 'producto', id })) })
   }
 
-  const options = (kind: EntityKind, exclude: string) => {
+  const options = (kind: EntityKind, exclude: string, side: 'origen' | 'destino') => {
     if (kind === 'cuenta') {
       return (
         <>
           {ds.titulares.map((t) => {
-            const list = ws.cuentas.filter((c) => c.titularId === t.id)
-            if (!list.length) return null
+            // Primero las cuentas con saldo (MyInvestor), luego las externas.
+            const list = [...ws.cuentas.filter((c) => c.titularId === t.id && !c.externa), ...ws.cuentas.filter((c) => c.titularId === t.id && c.externa)]
+            const conNueva = side === 'origen' && ofrecerExternaNueva && t.id === externaNuevaT
+            if (!list.length && !conNueva) return null
             const opts = list.map((c) => {
               const k = refKey({ kind: 'cuenta', id: c.id })
+              const st = accounts.get(c.id)
+              const extra = c.externa ? ` · ${c.entidad ? `${c.entidad} · ` : ''}externa` : st && !hidden ? ` (saldo ${fmtEUR(st.saldo)})` : ''
               return (
                 <option key={c.id} value={k} disabled={k === exclude}>
                   {c.nombre}
-                  {c.entidad ? ` · ${c.entidad}` : ''}
+                  {extra}
                 </option>
               )
             })
+            if (conNueva) {
+              opts.push(
+                <option key={NEW_EXTERNA} value={NEW_EXTERNA}>
+                  {NOMBRE_EXTERNA} (nueva)
+                </option>,
+              )
+            }
             return multi ? (
               <optgroup key={t.id} label={`Cuentas de ${t.nombre}`}>
                 {opts}
@@ -252,7 +301,7 @@ export function MovementForm({
   }
 
   const placeholder = (kind: EntityKind) => (kind === 'cuenta' ? 'Elige una cuenta…' : 'Elige un producto…')
-  const oName = origenRef ? entityName(lookup, origenRef) : null
+  const oName = nuevaExterna ? NOMBRE_EXTERNA : origenRef ? entityName(lookup, origenRef) : null
   const dName = destinoRef ? entityName(lookup, destinoRef) : null
   const avatarFor = (ref: EntityRef | null) =>
     ref ? (
@@ -265,7 +314,18 @@ export function MovementForm({
       <span className="size-8 shrink-0 rounded-lg border-2 border-dashed border-slate-200" />
     )
   const summary = cross ? CROSS_META : meta
-  const title = prog ? 'Transferencia mensual' : repetir ? 'Nueva transferencia mensual' : existing ? 'Editar movimiento' : 'Nuevo movimiento'
+  const title = prog
+    ? 'Transferencia mensual'
+    : isNew && preset?.titulo
+      ? preset.titulo
+      : repetir
+        ? 'Nueva transferencia mensual'
+        : existing
+          ? 'Editar movimiento'
+          : 'Nuevo movimiento'
+  const oExterna = nuevaExterna || (!!origenRef && isExterna(lookup, origenRef))
+  const dExterna = !!destinoRef && isExterna(lookup, destinoRef)
+  const showTipo = !(isNew && preset?.fijo)
 
   return (
     <Sheet
@@ -321,6 +381,7 @@ export function MovementForm({
         )}
 
         {/* Tipo */}
+        {showTipo && (
         <fieldset>
           <legend className="mb-2 text-sm font-medium text-slate-700">¿Qué quieres registrar?</legend>
           <div className="grid grid-cols-2 gap-2">
@@ -354,6 +415,7 @@ export function MovementForm({
             })}
           </div>
         </fieldset>
+        )}
 
         {/* De → A */}
         <div className="rounded-2xl bg-slate-50 p-3.5 sm:p-4">
@@ -367,7 +429,11 @@ export function MovementForm({
             htmlFor="mov-origen"
             error={err('origen')}
             hint={
-              [multi && fromT ? `De ${fromT.nombre}` : null, saldoOrigen !== null && !hidden ? `Saldo actual: ${fmtEUR(saldoOrigen)}` : null]
+              [
+                multi && fromT ? `De ${fromT.nombre}` : null,
+                saldoOrigen !== null && !hidden ? `Saldo actual: ${fmtEUR(saldoOrigen)}` : null,
+                nuevaExterna ? `Se creará la cuenta «${NOMBRE_EXTERNA}» (luego puedes cambiarle el nombre en Cuentas)` : null,
+              ]
                 .filter(Boolean)
                 .join(' · ') || undefined
             }
@@ -382,7 +448,7 @@ export function MovementForm({
               <option value="" disabled>
                 {placeholder(meta.from)}
               </option>
-              {options(meta.from, destino)}
+              {options(meta.from, destino, 'origen')}
             </SelectInput>
           </Field>
 
@@ -412,7 +478,7 @@ export function MovementForm({
               <option value="" disabled>
                 {placeholder(meta.to)}
               </option>
-              {options(meta.to, origen)}
+              {options(meta.to, origen, 'destino')}
             </SelectInput>
           </Field>
         </div>
@@ -491,10 +557,17 @@ export function MovementForm({
         {exceeds && saldoOrigen !== null && (
           <div className="flex gap-2.5 rounded-xl bg-amber-50 p-3 text-sm text-amber-800">
             <TriangleAlert className="mt-0.5 size-4 shrink-0" />
-            <span>
-              El importe supera el saldo actual de «{oName}» ({hidden ? 'oculto' : fmtEUR(saldoOrigen)}). Puede ser correcto si incluye
-              ganancias o intereses.
-            </span>
+            {origenConSaldo ? (
+              <span>
+                En «{oName}» hay {hidden ? '•••••• €' : fmtEUR(Math.max(0, saldoOrigen))}. Si el dinero vino de fuera, apunta también la aportación desde tu
+                cuenta externa (botón «Añadir dinero» de «{oName}»).
+              </span>
+            ) : (
+              <span>
+                El importe supera el saldo actual de «{oName}» ({hidden ? 'oculto' : fmtEUR(saldoOrigen)}). Puede ser correcto si incluye
+                ganancias o intereses.
+              </span>
+            )}
           </div>
         )}
         {!repetir && fecha > todayISO() && isValidISODate(fecha) && (
@@ -528,7 +601,7 @@ export function MovementForm({
           </div>
           {oName && dName && (
             <p className="mt-3 text-[13px] text-slate-600">
-              {cross && destinoRef ? explainCross(oName, dName, fromT!, toT!, destinoRef.kind) : EXPLAIN[tipo](oName, dName)}
+              {cross && destinoRef ? explainCross(oName, dName, fromT!, toT!, destinoRef, lookup) : explain(tipo, oName, dName, oExterna, dExterna)}
             </p>
           )}
         </div>

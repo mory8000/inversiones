@@ -15,12 +15,30 @@ export interface MovementPreset {
   origenTitularId?: string
   destinoTitularId?: string
   concepto?: string
+  /** Título de la ventana (p. ej. «Añadir dinero a MyInvestor»). */
+  titulo?: string
+  /** No enseñar la elección del tipo de movimiento (ya viene dado por el botón que se pulsó). */
+  fijo?: boolean
+  /**
+   * Para «Añadir dinero»: si este titular no tiene cuentas externas, se ofrece «Cuenta externa
+   * (nueva)» como origen y se crea al guardar.
+   */
+  externaNueva?: string
 }
 
 export type ModalSpec =
   | { id: string; type: 'movement'; movementId?: string; programadaId?: string; preset?: MovementPreset }
-  | { id: string; type: 'product'; productId?: string; presetTipo?: ProductType; presetTitularId?: string; onCreated?: (id: string) => void }
-  | { id: string; type: 'account'; accountId?: string; presetTitularId?: string; onCreated?: (id: string) => void }
+  | {
+      id: string
+      type: 'product'
+      productId?: string
+      presetTipo?: ProductType
+      presetTitularId?: string
+      onCreated?: (id: string) => void
+      abrirVentanilla?: boolean
+    }
+  | { id: string; type: 'account'; accountId?: string; presetTitularId?: string; presetExterna?: boolean; onCreated?: (id: string) => void }
+  | { id: string; type: 'investment'; productId: string }
   | { id: string; type: 'valuation'; productId: string }
   | { id: string; type: 'titular'; titularId?: string }
   | {
@@ -80,10 +98,13 @@ export const editMovement = (movementId: string) => useUI.getState().open({ type
 /** Nueva transferencia mensual (o editar una, con `programadaId`). */
 export const openProgramada = (opts: { programadaId?: string; preset?: MovementPreset } = {}) =>
   useUI.getState().open({ type: 'movement', programadaId: opts.programadaId, preset: { ...opts.preset, repetir: true } })
-export const openProduct = (opts: { productId?: string; presetTipo?: ProductType; presetTitularId?: string; onCreated?: (id: string) => void } = {}) =>
-  useUI.getState().open({ type: 'product', ...opts })
-export const openAccount = (opts: { accountId?: string; presetTitularId?: string; onCreated?: (id: string) => void } = {}) =>
+export const openProduct = (
+  opts: { productId?: string; presetTipo?: ProductType; presetTitularId?: string; onCreated?: (id: string) => void; abrirVentanilla?: boolean } = {},
+) => useUI.getState().open({ type: 'product', ...opts })
+export const openAccount = (opts: { accountId?: string; presetTitularId?: string; presetExterna?: boolean; onCreated?: (id: string) => void } = {}) =>
   useUI.getState().open({ type: 'account', ...opts })
+/** Ventanilla de una inversión: su resumen y los movimientos que se pueden hacer. */
+export const openInvestment = (productId: string) => useUI.getState().open({ type: 'investment', productId })
 export const openValuation = (productId: string) => useUI.getState().open({ type: 'valuation', productId })
 export const openTitular = (titularId?: string) => useUI.getState().open({ type: 'titular', titularId })
 export const toast = (message: string, kind?: Toast['kind']) => useUI.getState().toast(message, kind)

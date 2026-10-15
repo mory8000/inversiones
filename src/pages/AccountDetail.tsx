@@ -1,7 +1,9 @@
 import { useMemo } from 'react'
-import { ArrowDownLeft, ArrowRightLeft, ArrowUpRight, Pencil, SearchX } from 'lucide-react'
+import { ArrowDownLeft, ArrowRightLeft, ArrowUpRight, Pencil, Plus, SearchX, TriangleAlert } from 'lucide-react'
 import { useFinance } from '../store/useFinance'
 import { openAccount, openMovement } from '../store/ui'
+import { anadirDinero, invertirDesde } from '../store/acciones'
+import { cuentaPrincipal } from '../lib/titulares'
 import { involvesAccount } from '../lib/finance'
 import { counterparts } from '../lib/movements'
 import { PRODUCT_META } from '../lib/meta'
@@ -17,7 +19,7 @@ import { BackLink } from './ProductDetail'
 import { TitularTag } from '../components/Titulares'
 
 export function AccountDetail({ id }: { id: string }) {
-  const { ws, accounts, lookup, positions } = useFinance()
+  const { ws, ds, accounts, lookup, positions } = useFinance()
   const c = ws.cuentas.find((x) => x.id === id)
   const movs = useMemo(() => ws.movimientos.filter((m) => involvesAccount(m, id)), [ws.movimientos, id])
 
@@ -36,6 +38,7 @@ export function AccountDetail({ id }: { id: string }) {
 
   const s = accounts.get(c.id)!
   const ref = { kind: 'cuenta' as const, id: c.id }
+  const principal = c.externa ? cuentaPrincipal(ds.cuentas, c.titularId) : undefined
   const titular = lookup.titulares.get(c.titularId)
   const multi = lookup.titulares.size > 1
   /** « · Luis» si el producto es de otro titular. */
@@ -61,7 +64,7 @@ export function AccountDetail({ id }: { id: string }) {
             <AccountAvatar color={c.color} size="lg" />
             <div className="min-w-0 flex-1">
               <span className="flex flex-wrap items-center gap-x-1.5 text-xs font-semibold tracking-wide text-slate-500 uppercase">
-                Cuenta
+                {c.externa ? 'Cuenta externa' : 'Cuenta con saldo'}
                 {multi && titular && (
                   <>
                     <span aria-hidden>·</span>
@@ -78,25 +81,72 @@ export function AccountDetail({ id }: { id: string }) {
             </Button>
           </div>
 
-          <dl className="mt-5 grid grid-cols-3 gap-3 rounded-2xl bg-slate-50 p-4">
-            <div className="min-w-0">
-              <dt className="text-xs text-slate-500">Enviado a inversiones</dt>
-              <dd>
-                <Amount value={s.enviado} className="text-base font-bold text-slate-900 sm:text-lg" />
-              </dd>
+          {!c.externa && (
+            <div className="mt-5">
+              <div className="text-sm text-slate-500">Saldo (sin invertir)</div>
+              <Amount value={s.saldo} className={`text-3xl font-bold tracking-tight sm:text-4xl ${s.saldo < -0.005 ? 'text-amber-700' : 'text-slate-900'}`} />
+              <p className="mt-1 text-[13px] text-slate-500">Es dinero de {titular?.nombre ?? 'este titular'}: suma en su patrimonio.</p>
+              {s.saldo < -0.005 && (
+                <p className="mt-3 flex gap-2 rounded-xl bg-amber-50 p-3 text-sm text-amber-800">
+                  <TriangleAlert className="mt-0.5 size-4 shrink-0" />
+                  <span>
+                    Han salido <Amount value={-s.saldo} className="font-semibold" /> más de los que han entrado. Apunta de dónde vino ese dinero con «Añadir dinero»
+                    (una aportación desde tu cuenta externa).
+                  </span>
+                </p>
+              )}
             </div>
-            <div className="min-w-0">
-              <dt className="text-xs text-slate-500">Recibido de inversiones</dt>
-              <dd>
-                <Amount value={s.recibido} className="text-base font-bold text-slate-900 sm:text-lg" />
-              </dd>
-            </div>
-            <div className="min-w-0">
-              <dt className="text-xs text-slate-500">Neto invertido</dt>
-              <dd>
-                <Amount value={s.netoInvertido} className="text-base font-bold text-brand-700 sm:text-lg" />
-              </dd>
-            </div>
+          )}
+          {c.externa && (
+            <p className="mt-4 rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
+              Cuenta externa: solo dice de dónde viene el dinero (aportaciones) o a dónde va. No lleva saldo ni suma en el patrimonio.
+            </p>
+          )}
+
+          <dl className="mt-4 grid grid-cols-3 gap-3 rounded-2xl bg-slate-50 p-4">
+            {c.externa ? (
+              <>
+                <div className="min-w-0">
+                  <dt className="text-xs text-slate-500">Ha salido</dt>
+                  <dd>
+                    <Amount value={s.salidas} className="text-base font-bold text-slate-900 sm:text-lg" />
+                  </dd>
+                </div>
+                <div className="min-w-0">
+                  <dt className="text-xs text-slate-500">Ha vuelto</dt>
+                  <dd>
+                    <Amount value={s.entradas} className="text-base font-bold text-slate-900 sm:text-lg" />
+                  </dd>
+                </div>
+                <div className="min-w-0">
+                  <dt className="text-xs text-slate-500">Aportado (neto)</dt>
+                  <dd>
+                    <Amount value={s.salidas - s.entradas} className="text-base font-bold text-brand-700 sm:text-lg" />
+                  </dd>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="min-w-0">
+                  <dt className="text-xs text-slate-500">Ha entrado</dt>
+                  <dd>
+                    <Amount value={s.entradas} className="text-base font-bold text-slate-900 sm:text-lg" />
+                  </dd>
+                </div>
+                <div className="min-w-0">
+                  <dt className="text-xs text-slate-500">Ha salido</dt>
+                  <dd>
+                    <Amount value={s.salidas} className="text-base font-bold text-slate-900 sm:text-lg" />
+                  </dd>
+                </div>
+                <div className="min-w-0">
+                  <dt className="text-xs text-slate-500">Aportado desde cuentas externas</dt>
+                  <dd>
+                    <Amount value={s.aportaciones} className="text-base font-bold text-brand-700 sm:text-lg" />
+                  </dd>
+                </div>
+              </>
+            )}
           </dl>
 
           {(s.enviadoOtros > 0 || s.recibidoOtros > 0) && (
@@ -116,7 +166,29 @@ export function AccountDetail({ id }: { id: string }) {
           )}
 
           <div className="mt-4 grid grid-cols-1 gap-2 sm:flex sm:flex-wrap">
-            <Button variant="soft" icon={ArrowUpRight} onClick={() => openMovement({ tipo: 'inversion', origen: ref })}>
+            {!c.externa && (
+              <Button icon={Plus} onClick={() => anadirDinero(ds, c.id)}>
+                Añadir dinero (desde cuenta externa)
+              </Button>
+            )}
+            {c.externa && principal && (
+              <Button
+                icon={ArrowRightLeft}
+                onClick={() =>
+                  openMovement({
+                    tipo: 'transferencia',
+                    origen: ref,
+                    destino: { kind: 'cuenta', id: principal.id },
+                    titulo: `Aportar a «${principal.nombre}»`,
+                    concepto: 'Aportación',
+                    fijo: true,
+                  })
+                }
+              >
+                Aportar a «{principal.nombre}»
+              </Button>
+            )}
+            <Button variant="soft" icon={ArrowUpRight} onClick={() => invertirDesde(ds, c.id)}>
               Invertir desde esta cuenta
             </Button>
             <Button variant="soft" icon={ArrowDownLeft} onClick={() => openMovement({ tipo: 'reembolso', destino: ref })}>

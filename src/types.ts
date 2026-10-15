@@ -8,8 +8,11 @@
 //       Saldo = (Invertido − Reembolso − Traspaso) × (1 + %)
 //
 // Varios titulares, vistos a la vez: cada cuenta y cada producto tiene un dueño
-// (`titularId`). Un movimiento puede ir de un titular a otro; lo invertido cuenta
-// siempre para el dueño del producto que recibe el dinero.
+// (`titularId`). Un movimiento puede ir de un titular a otro; el dinero cuenta
+// siempre para el dueño de lo que lo recibe (un producto o una cuenta con saldo),
+// nunca para quien lo envía.
+//
+// El orden de `productos` es el que elige el usuario para ver sus inversiones.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export type ProductType = 'deposito' | 'fondo' | 'cartera' | 'plan' | 'acciones' | 'otro'
@@ -40,7 +43,13 @@ export interface Titular {
   createdAt: string
 }
 
-/** Cuenta bancaria: de dónde sale el dinero y a dónde vuelve. */
+/**
+ * Cuenta bancaria: de dónde sale el dinero y a dónde vuelve. Hay dos clases:
+ *  - Con saldo (`externa: false`), como «MyInvestor»: el dinero que hay en ella es del
+ *    titular y suma en su patrimonio. La app calcula el saldo con lo que entra y sale.
+ *  - Externa (`externa: true`), p. ej. la cuenta nómina de otro banco: solo indica de dónde
+ *    viene el dinero (aportaciones) o a dónde va. No lleva saldo ni suma en el patrimonio.
+ */
 export interface Cuenta {
   id: string
   /** Titular al que pertenece. */
@@ -50,6 +59,8 @@ export interface Cuenta {
   iban: string
   color: string
   notas: string
+  /** `true`: cuenta externa (otro banco). `false`: cuenta con saldo (como MyInvestor). */
+  externa: boolean
   createdAt: string
 }
 

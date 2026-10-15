@@ -83,6 +83,14 @@ export function ProductCard({ p, pos }: { p: Producto; pos: Position }) {
 
 export function AccountCard({ c, s }: { c: Cuenta; s: AccountStats }) {
   const hasTransfers = s.transferenciasEnviadas > 0 || s.transferenciasRecibidas > 0
+  const cell = (label: string, value: number, strong = false, warn = false) => (
+    <div className="min-w-0">
+      <dt className="truncate text-[11px] font-medium text-slate-500">{label}</dt>
+      <dd>
+        <Amount value={value} decimals={0} className={warn ? 'text-sm font-bold text-amber-700' : strong ? 'text-sm font-bold text-slate-900' : 'text-sm font-semibold text-slate-800'} />
+      </dd>
+    </div>
+  )
   return (
     <button
       type="button"
@@ -95,32 +103,36 @@ export function AccountCard({ c, s }: { c: Cuenta; s: AccountStats }) {
           <div className="truncate font-semibold text-slate-900">{c.nombre}</div>
           <div className="truncate text-xs text-slate-500">{[c.entidad, c.iban && maskIban(c.iban)].filter(Boolean).join(' · ') || 'Cuenta'}</div>
         </div>
+        <span
+          className={
+            c.externa
+              ? 'shrink-0 rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold text-slate-500 uppercase'
+              : 'shrink-0 rounded-md bg-indigo-50 px-1.5 py-0.5 text-[11px] font-semibold text-indigo-700 uppercase'
+          }
+        >
+          {c.externa ? 'Externa' : 'Con saldo'}
+        </span>
       </div>
       <dl className="mt-4 grid grid-cols-3 gap-2">
-        <div className="min-w-0">
-          <dt className="truncate text-[11px] font-medium text-slate-500">Enviado</dt>
-          <dd>
-            <Amount value={s.enviado} decimals={0} className="text-sm font-semibold text-slate-800" />
-          </dd>
-        </div>
-        <div className="min-w-0">
-          <dt className="truncate text-[11px] font-medium text-slate-500">Recibido</dt>
-          <dd>
-            <Amount value={s.recibido} decimals={0} className="text-sm font-semibold text-slate-800" />
-          </dd>
-        </div>
-        <div className="min-w-0">
-          <dt className="truncate text-[11px] font-medium text-slate-500">Neto invertido</dt>
-          <dd>
-            <Amount value={s.netoInvertido} decimals={0} className="text-sm font-bold text-slate-900" />
-          </dd>
-        </div>
+        {c.externa ? (
+          <>
+            {cell('Ha salido', s.salidas)}
+            {cell('Ha vuelto', s.entradas)}
+            {cell('Aportado (neto)', s.salidas - s.entradas, true)}
+          </>
+        ) : (
+          <>
+            {cell('Entradas', s.entradas)}
+            {cell('Salidas', s.salidas)}
+            {cell('Saldo', s.saldo, true, s.saldo < -0.005)}
+          </>
+        )}
       </dl>
       <div className="mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-slate-100 pt-3 text-xs text-slate-500">
         <span>
           {s.numMovimientos} movimiento{s.numMovimientos === 1 ? '' : 's'}
         </span>
-        {hasTransfers && (
+        {hasTransfers && c.externa && (
           <span className="truncate">
             Transferencias: <Amount value={s.transferenciasRecibidas - s.transferenciasEnviadas} sign decimals={0} className="font-semibold text-slate-700" />
           </span>

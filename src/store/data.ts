@@ -10,7 +10,7 @@ import { round2 } from '../lib/format'
 import { nowStamp, uid } from '../lib/id'
 import { inferMovementType } from '../lib/meta'
 import { aplicarProgramadas, sincronizarProgramada } from '../lib/programadas'
-import { defaultTitularName, emptyDataset } from '../lib/titulares'
+import { applyOrder, conCuentaPrincipal, cuentaPrincipal, defaultTitularName, emptyDataset, nuevaCuentaMyInvestor } from '../lib/titulares'
 import { DATA_VERSION, sanitizeData } from './sanitize'
 
 export { DATA_VERSION, sanitizeData }
@@ -40,10 +40,14 @@ interface Actions {
   addCuenta: (data: CuentaInput) => string
   updateCuenta: (id: string, data: Partial<CuentaInput>) => void
   removeCuenta: (id: string) => void
+  /** Crea la cuenta principal con saldo («MyInvestor») de un titular, si no tiene. Devuelve su id. */
+  crearCuentaPrincipal: (titularId: string) => string
 
   addProducto: (data: ProductoInput) => string
   updateProducto: (id: string, data: Partial<ProductoInput>) => void
   removeProducto: (id: string) => void
+  /** Pone los productos en este orden (los que no estén en la lista se quedan donde estaban). */
+  reorderProductos: (ids: string[]) => void
   addValoracion: (productoId: string, data: ValoracionInput) => void
   removeValoracion: (productoId: string, valoracionId: string) => void
 
@@ -69,13 +73,17 @@ interface Actions {
 
 export type DataState = PersistedData & Actions
 
-/** Datos de partida: dos titulares, «Titular 1» (el principal) y «Titular 2». */
+/**
+ * Datos de partida: dos titulares, «Titular 1» (el principal, con su cuenta principal
+ * «MyInvestor») y «Titular 2».
+ */
 function initialDataset(): Dataset {
   const stamp = nowStamp()
-  return emptyDataset([
+  const ds = emptyDataset([
     { id: uid(), codigo: '', nombre: defaultTitularName(1), createdAt: stamp },
     { id: uid(), codigo: '', nombre: defaultTitularName(2), createdAt: stamp },
   ])
+  return conCuentaPrincipal(ds, uid, stamp)
 }
 
 function initialData(): PersistedData {
@@ -158,6 +166,14 @@ export const useData = create<DataState>()(
         },
         updateCuenta: (id, data) => updateDs((ds) => ({ ...ds, cuentas: ds.cuentas.map((c) => (c.id === id ? { ...c, ...data } : c)) })),
         removeCuenta: (id) => updateDs((ds) => removeEntities(ds, new Set([id]), new Set())),
+        crearCuentaPrincipal: (titularId) => {
+          const ds = currentDataset(get())
+          const existing = cuentaPrincipal(ds.cuentas, titularId)
+          if (existing) return existing.id
+          const id = uid()
+          updateDs((d) => ({ ...d, cuentas: [nuevaCuentaMyInvestor(titularId, id, nowStamp()), ...d.cuentas] }))
+          return id
+        },
 
         // ── Productos ───────────────────────────────────────────────────────
         addProducto: (data) => {
@@ -170,6 +186,7 @@ export const useData = create<DataState>()(
         },
         updateProducto: (id, data) => updateDs((ds) => ({ ...ds, productos: ds.productos.map((p) => (p.id === id ? { ...p, ...data } : p)) })),
         removeProducto: (id) => updateDs((ds) => removeEntities(ds, new Set(), new Set([id]))),
+        reorderProductos: (ids) => updateDs((ds) => ({ ...ds, productos: applyOrder(ds.productos, ids) })),
         addValoracion: (productoId, data) =>
           updateDs((ds) => ({
             ...ds,
@@ -289,7 +306,8 @@ export const useData = create<DataState>()(
         loadDemo: () => set({ ejemplo: buildDemoDataset(todayISO()), verEjemplo: true }),
         setVerEjemplo: (v) => set((s) => ({ verEjemplo: v && !!s.ejemplo })),
         removeDemo: () => set({ ejemplo: null, verEjemplo: false }),
-        clearData: () => updateDs((ds) => emptyDataset(ds.titulares)),
+        // Se empieza de cero, como al instalar: el titular principal vuelve a tener su «MyInvestor».
+        clearData: () => updateDs((ds) => conCuentaPrincipal(emptyDataset(ds.titulares), uid, nowStamp())),
         resetAll: () => set({ ...initialData() }),
         importData: (data) => set({ version: DATA_VERSION, datos: data.datos, verEjemplo: false, hideAmounts: data.hideAmounts }),
       }

@@ -1,6 +1,6 @@
 import { ArrowRight, CalendarSync, ChevronRight } from 'lucide-react'
 import type { EntityRef, Movimiento } from '../../types'
-import { entityName, isCross, movementKind, ownerId, ownerOf, sameRef, type Lookup } from '../../lib/movements'
+import { entityName, isConSaldo, isCross, isExterna, movementKind, ownerId, ownerOf, sameRef, type Lookup } from '../../lib/movements'
 import { MOVEMENT_META, PRODUCT_META, kindMeta } from '../../lib/meta'
 import { fmtDate } from '../../lib/format'
 import { cn } from '../../lib/cn'
@@ -22,6 +22,11 @@ export function movementLabel(m: Movimiento, lookup: Lookup, perspective?: Entit
     if (incoming) return m.destino.kind === 'producto' ? `Aportación de ${from.nombre}` : `Recibido de ${from.nombre}`
     if (outgoing) return `Enviado a ${to.nombre}`
     return `De ${from.nombre} a ${to.nombre}`
+  }
+  // De una cuenta externa a una cuenta con saldo (MyInvestor): una aportación; al revés, una retirada.
+  if (m.tipo === 'transferencia') {
+    if (isExterna(lookup, m.origen) && isConSaldo(lookup, m.destino)) return 'Aportación'
+    if (isConSaldo(lookup, m.origen) && isExterna(lookup, m.destino)) return 'Retirada'
   }
   if (!perspective) return MOVEMENT_META[m.tipo].label
   const incoming = sameRef(m.destino, perspective)

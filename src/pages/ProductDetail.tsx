@@ -1,7 +1,8 @@
 import { useMemo } from 'react'
 import { ArrowDownLeft, ArrowLeft, ArrowUpRight, Pencil, RefreshCw, Repeat, SearchX } from 'lucide-react'
 import { useFinance } from '../store/useFinance'
-import { openMovement, openProduct, openValuation } from '../store/ui'
+import { openProduct, openValuation } from '../store/ui'
+import { aportarA, retirarDe, traspasarDe } from '../store/acciones'
 import { buildProductTimeline, involvesProduct, type Position } from '../lib/finance'
 import { counterparts, ownerId } from '../lib/movements'
 import { PRODUCT_META } from '../lib/meta'
@@ -61,7 +62,7 @@ function methodText(p: Producto, pos: Position): string {
 }
 
 export function ProductDetail({ id }: { id: string }) {
-  const { ws, positions, lookup, today } = useFinance()
+  const { ws, ds, positions, lookup, today } = useFinance()
   const p = ws.productos.find((x) => x.id === id)
   const movs = useMemo(() => ws.movimientos.filter((m) => involvesProduct(m, id)), [ws.movimientos, id])
   const timeline = useMemo(() => (p ? buildProductTimeline(p, ws.movimientos, today) : []), [p, ws.movimientos, today])
@@ -142,13 +143,13 @@ export function ProductDetail({ id }: { id: string }) {
           )}
 
           <div className="mt-5 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
-            <Button variant="soft" icon={ArrowUpRight} onClick={() => openMovement({ tipo: 'inversion', destino: ref })}>
-              Invertir
+            <Button variant="soft" icon={ArrowUpRight} onClick={() => aportarA(ds, p)}>
+              Aportar
             </Button>
-            <Button variant="soft" icon={ArrowDownLeft} onClick={() => openMovement({ tipo: 'reembolso', origen: ref })}>
+            <Button variant="soft" icon={ArrowDownLeft} onClick={() => retirarDe(ds, p)}>
               Reembolsar
             </Button>
-            <Button variant="soft" icon={Repeat} onClick={() => openMovement({ tipo: 'traspaso', origen: ref })}>
+            <Button variant="soft" icon={Repeat} onClick={() => traspasarDe(p)}>
               Traspasar
             </Button>
             {isDeposit ? (
@@ -219,8 +220,8 @@ export function ProductDetail({ id }: { id: string }) {
                   title="Sin movimientos"
                   description="Registra el dinero que has metido en este producto."
                   action={
-                    <Button icon={ArrowUpRight} onClick={() => openMovement({ tipo: 'inversion', destino: ref })}>
-                      Invertir
+                    <Button icon={ArrowUpRight} onClick={() => aportarA(ds, p)}>
+                      Aportar
                     </Button>
                   }
                 />

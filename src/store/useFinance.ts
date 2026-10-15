@@ -9,7 +9,7 @@ import {
   type Totals,
   type TypeSummary,
 } from '../lib/finance'
-import { buildLookup, type Lookup } from '../lib/movements'
+import { buildLookup, countsForOwner, type Lookup } from '../lib/movements'
 import { todayISO } from '../lib/dates'
 import { titularColor, titularWorkspace } from '../lib/titulares'
 import { useDataset } from './data'
@@ -28,12 +28,14 @@ export interface TitularFinance {
   accounts: Map<string, AccountStats>
   totals: Totals
   byType: TypeSummary[]
-  /** Dinero recibido de cada uno de los otros titulares. */
+  /** Dinero recibido de cada uno de los otros titulares en sus productos o cuentas con saldo (cuenta para él). */
   recibido: { titularId: string; importe: number }[]
-  /** Dinero enviado a cada uno de los otros titulares. */
+  /** Dinero enviado a cada uno de los otros titulares (no cuenta para él, sino para quien lo recibe). */
   enviado: { titularId: string; importe: number }[]
   recibidoTotal: number
   enviadoTotal: number
+  /** Recibido de otros titulares en sus cuentas externas: no suma hasta que lo invierta. */
+  recibidoEnExternas: number
 }
 
 export interface FinanceData {
@@ -76,28 +78,34 @@ export function computeFinance(ds: Dataset, today: string): FinanceData {
     const own = pick(positions, ws.productos.map((p) => p.id))
     const recibido = new Map<string, number>()
     const enviado = new Map<string, number>()
+    let recibidoEnExternas = 0
     for (const m of ws.movimientos) {
       const o = owner(m.origen)
       const d = owner(m.destino)
       if (!o || !d || o === d) continue
-      if (d === titular.id) recibido.set(o, (recibido.get(o) ?? 0) + m.importe)
+      if (d === titular.id) {
+        if (countsForOwner(lookup, m.destino)) recibido.set(o, (recibido.get(o) ?? 0) + m.importe)
+        else recibidoEnExternas += m.importe
+      }
       if (o === titular.id) enviado.set(d, (enviado.get(d) ?? 0) + m.importe)
     }
     const list = (map: Map<string, number>) => [...map.entries()].map(([titularId, importe]) => ({ titularId, importe }))
     const sum = (map: Map<string, number>) => [...map.values()].reduce((a, b) => a + b, 0)
+    const ownAccounts = pick(accounts, ws.cuentas.map((c) => c.id))
     return {
       titular,
       index,
       color: titularColor(ds.titulares, titular.id),
       ws,
       positions: own,
-      accounts: pick(accounts, ws.cuentas.map((c) => c.id)),
-      totals: computeTotals(ws, own),
+      accounts: ownAccounts,
+      totals: computeTotals(ws, own, ownAccounts),
       byType: summarizeByType(ws, own),
       recibido: list(recibido),
       enviado: list(enviado),
       recibidoTotal: sum(recibido),
       enviadoTotal: sum(enviado),
+      recibidoEnExternas,
     }
   })
 

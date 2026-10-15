@@ -41,14 +41,26 @@ export function touchesTitular(lookup: Lookup, m: Movimiento, titularId: string)
 
 export type { MovementKind }
 
+/** ¿Una cuenta es externa (otro banco)? */
+export const isExterna = (lookup: Lookup, ref: EntityRef): boolean => ref.kind === 'cuenta' && lookup.cuentas.get(ref.id)?.externa === true
+
+/** ¿Una cuenta lleva saldo (como MyInvestor)? */
+export const isConSaldo = (lookup: Lookup, ref: EntityRef): boolean => ref.kind === 'cuenta' && lookup.cuentas.get(ref.id)?.externa === false
+
+/**
+ * ¿El dinero que llega aquí cuenta para su dueño? Sí si llega a un producto o a una cuenta
+ * con saldo (como MyInvestor); no si llega a una cuenta externa (sale de lo que lleva la app).
+ */
+export const countsForOwner = (lookup: Lookup, ref: EntityRef): boolean => ref.kind === 'producto' || isConSaldo(lookup, ref)
+
 /**
  * Cómo se ve un movimiento desde un titular (o desde todos, sin `titularId`):
  * un movimiento de un titular a otro es «entre titulares», salvo para quien lo recibe
- * en un producto, para quien es una inversión suya (una aportación).
+ * en un producto o en una cuenta con saldo, para quien es dinero suyo (una aportación).
  */
 export function movementKind(lookup: Lookup, m: Movimiento, titularId?: string): MovementKind {
   if (!isCross(lookup, m)) return m.tipo
-  if (titularId && ownerId(lookup, m.destino) === titularId && m.destino.kind === 'producto') return m.tipo
+  if (titularId && ownerId(lookup, m.destino) === titularId && countsForOwner(lookup, m.destino)) return m.tipo
   return 'entreTitulares'
 }
 

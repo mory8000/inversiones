@@ -30,12 +30,17 @@ function valoraciones(today: string, points: [number, number][]): Valoracion[] {
     .filter((v) => v.fecha <= today)
 }
 
-/** Cuentas, productos y movimientos de ejemplo de un titular. */
+/**
+ * Cuentas, productos y movimientos de ejemplo de un titular. Tiene su cuenta principal
+ * «MyInvestor» (con saldo), a la que trae dinero cada mes desde su cuenta nómina (externa);
+ * desde MyInvestor invierte en fondos, cartera y depósitos. Algunas aportaciones van
+ * directamente desde cuentas externas.
+ */
 export function buildDemoWorkspace(today: string, titularId = 'demo-t-1'): Workspace {
   seq = 0
   const at = atFor(today)
 
-  const cuenta = (nombre: string, entidad: string, iban: string, color: string): Cuenta => ({
+  const cuenta = (nombre: string, entidad: string, iban: string, color: string, externa: boolean): Cuenta => ({
     id: demoId('c'),
     titularId,
     nombre,
@@ -43,12 +48,13 @@ export function buildDemoWorkspace(today: string, titularId = 'demo-t-1'): Works
     iban,
     color,
     notas: '',
+    externa,
     createdAt: `${at(25, 1)}T09:00:00.000Z`,
   })
 
-  const nomina = cuenta('Cuenta nómina', 'BBVA', 'ES21 0182 2370 4102 0154 4521', '#0EA5E9')
-  const remunerada = cuenta('Cuenta remunerada', 'MyInvestor', 'ES76 1544 7889 0100 2233 8890', '#6366F1')
-  const ahorro = cuenta('Cuenta ahorro', 'ING', 'ES12 1465 0100 9917 2201 3307', '#F97316')
+  const myinvestor = cuenta('MyInvestor', 'MyInvestor', 'ES76 1544 7889 0100 2233 8890', '#6366F1', false)
+  const nomina = cuenta('Cuenta nómina', 'BBVA', 'ES21 0182 2370 4102 0154 4521', '#0EA5E9', true)
+  const ahorro = cuenta('Cuenta ahorro', 'ING', 'ES12 1465 0100 9917 2201 3307', '#F97316', true)
 
   const producto = (p: Partial<Producto> & Pick<Producto, 'tipo' | 'nombre'>): Producto => ({
     id: demoId('p'),
@@ -96,26 +102,27 @@ export function buildDemoWorkspace(today: string, titularId = 'demo-t-1'): Works
   const C = (c: Cuenta): EntityRef => ({ kind: 'cuenta', id: c.id })
   const P = (p: Producto): EntityRef => ({ kind: 'producto', id: p.id })
 
-  // Ahorro inicial que se mueve a la cuenta remunerada.
-  mov(at(24, 3), C(nomina), C(remunerada), 5000, 'Ahorro para invertir')
-  // Fondo indexado con aportación inicial desde la cuenta de ahorro.
+  // Aportaciones a MyInvestor desde la cuenta nómina (externa): una inicial y una cada mes.
+  for (let i = 24; i >= 0; i--) mov(at(i, 1), C(nomina), C(myinvestor), 400, 'Aportación mensual a MyInvestor')
+  mov(at(24, 3), C(nomina), C(myinvestor), 15000, 'Ahorro para invertir')
+  // Fondo indexado con aportación inicial directa desde la cuenta de ahorro (externa).
   mov(at(24, 5), C(ahorro), P(fidelity), 6000, 'Aportación inicial')
-  // Aportación mensual automática al fondo Vanguard.
-  for (let i = 23; i >= 0; i--) mov(at(i, 2), C(nomina), P(vanguard), 200, 'Aportación mensual')
+  // Aportación mensual al fondo Vanguard desde MyInvestor.
+  for (let i = 23; i >= 0; i--) mov(at(i, 2), C(myinvestor), P(vanguard), 200, 'Aportación mensual')
   // Cartera indexada (roboadvisor).
-  mov(at(18, 10), C(remunerada), P(metal), 3000, 'Apertura de la cartera')
-  for (let i = 17; i >= 6; i--) mov(at(i, 10), C(remunerada), P(metal), 100, 'Aportación periódica')
-  // Depósito a 6 meses que vence y vuelve a la cuenta con intereses.
-  mov(dep6Inicio, C(remunerada), P(dep6), 10000, 'Contratación depósito')
+  mov(at(18, 10), C(myinvestor), P(metal), 3000, 'Apertura de la cartera')
+  for (let i = 17; i >= 6; i--) mov(at(i, 10), C(myinvestor), P(metal), 100, 'Aportación periódica')
+  // Depósito a 6 meses que vence y vuelve a MyInvestor con intereses.
+  mov(dep6Inicio, C(myinvestor), P(dep6), 10000, 'Contratación depósito')
   const intereses6 = 10000 * 0.03 * (daysBetween(dep6Inicio, dep6Fin) / 365)
-  mov(dep6Fin, P(dep6), C(remunerada), 10000 + intereses6, 'Vencimiento: capital + intereses')
+  mov(dep6Fin, P(dep6), C(myinvestor), 10000 + intereses6, 'Vencimiento: capital + intereses')
   // Se renueva a 12 meses.
-  mov(dep12Inicio, C(remunerada), P(dep12), 10000, 'Renovación: depósito a 12 meses')
+  mov(dep12Inicio, C(myinvestor), P(dep12), 10000, 'Renovación: depósito a 12 meses')
   // Traspaso entre fondos (sin pasar por la cuenta).
   mov(at(10, 20), P(fidelity), P(emergentes), 2000, 'Diversificar en emergentes')
   // Reembolso parcial de la cartera.
-  mov(at(3, 18), P(metal), C(remunerada), 1000, 'Para vacaciones')
-  // Plan de pensiones.
+  mov(at(3, 18), P(metal), C(myinvestor), 1000, 'Para vacaciones')
+  // Plan de pensiones, directamente desde la cuenta nómina.
   mov(at(22, 27), C(nomina), P(plan), 1500, 'Aportación anual')
   mov(at(10, 27), C(nomina), P(plan), 1500, 'Aportación anual')
 
@@ -130,7 +137,7 @@ export function buildDemoWorkspace(today: string, titularId = 'demo-t-1'): Works
   val(plan, [[18, 2.5], [12, 5.0], [6, 7.2], [0, 9.1]])
 
   return {
-    cuentas: [nomina, remunerada, ahorro],
+    cuentas: [myinvestor, nomina, ahorro],
     productos: [vanguard, fidelity, emergentes, metal, dep12, dep6, plan],
     movimientos,
   }
@@ -138,8 +145,8 @@ export function buildDemoWorkspace(today: string, titularId = 'demo-t-1'): Works
 
 /**
  * Ejemplo completo con dos titulares: Marta (la principal) y Pablo. Marta envía cada mes
- * 150 € de su cuenta nómina al fondo de Pablo, y una vez 2.000 € a un depósito de Pablo:
- * ese dinero cuenta como inversión de Pablo, no de Marta.
+ * 150 € de su cuenta MyInvestor al fondo de Pablo, y una vez 2.000 € a un depósito de Pablo:
+ * ese dinero cuenta para Pablo, no para Marta.
  */
 export function buildDemoDataset(today: string): Dataset {
   const at = atFor(today)
@@ -147,8 +154,7 @@ export function buildDemoDataset(today: string): Dataset {
   const marta: Titular = { id: 'demo-t-1', codigo: '0001', nombre: 'Marta', createdAt: stamp }
   const pablo: Titular = { id: 'demo-t-2', codigo: '0002', nombre: 'Pablo', createdAt: stamp }
   const ws = buildDemoWorkspace(today, marta.id)
-  const nomina = ws.cuentas[0]
-  const remunerada = ws.cuentas[1]
+  const myinvestor = ws.cuentas[0]
 
   const productoDePablo = (p: Partial<Producto> & Pick<Producto, 'tipo' | 'nombre'>): Producto => ({
     id: demoId('p'),
@@ -176,7 +182,7 @@ export function buildDemoDataset(today: string): Dataset {
     id: demoId('m'),
     tipo: 'inversion',
     fecha: depInicio,
-    origen: { kind: 'cuenta', id: remunerada.id },
+    origen: { kind: 'cuenta', id: myinvestor.id },
     destino: { kind: 'producto', id: depositoPablo.id },
     importe: 2000,
     concepto: 'Regalo de cumpleaños para Pablo',
@@ -192,7 +198,7 @@ export function buildDemoDataset(today: string): Dataset {
     programadas: [
       {
         id: 'demo-prog-1',
-        origen: { kind: 'cuenta', id: nomina.id },
+        origen: { kind: 'cuenta', id: myinvestor.id },
         destino: { kind: 'producto', id: fondoPablo.id },
         importe: 150,
         inicio: at(14, 5),

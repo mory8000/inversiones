@@ -116,8 +116,8 @@ describe('depósitos', () => {
 describe('cuentas, totales y resumen', () => {
   const ws: Workspace = {
     cuentas: [
-      { id: 'A', titularId: 'T', nombre: 'A', entidad: '', iban: '', color: '#000', notas: '', createdAt: '' },
-      { id: 'B', titularId: 'T', nombre: 'B', entidad: '', iban: '', color: '#000', notas: '', createdAt: '' },
+      { id: 'A', titularId: 'T', nombre: 'A', entidad: '', iban: '', color: '#000', notas: '', externa: true, createdAt: '' },
+      { id: 'B', titularId: 'T', nombre: 'B', entidad: '', iban: '', color: '#000', notas: '', externa: true, createdAt: '' },
     ],
     productos: [prod('F1', 'fondo', { valoraciones: [val('2025-12-01', 'porcentaje', 10)] }), prod('F2', 'fondo'), prod('K', 'cartera')],
     movimientos: [
@@ -182,12 +182,14 @@ describe('evolución', () => {
     const today = '2026-10-15'
     const ws = buildDemoWorkspace(today)
     const positions = computePositions(ws, today)
-    const totals = computeTotals(ws, positions)
+    const totals = computeTotals(ws, positions, computeAccountStats(ws))
     const tl = buildTimeline(ws, today)
     const last = tl[tl.length - 1]
     expect(last.fecha).toBe(today)
+    expect(totals.efectivo).toBeGreaterThan(0)
     expect(last.patrimonio).toBeCloseTo(totals.patrimonio, 4)
-    expect(last.capital).toBeCloseTo(totals.capital, 4)
+    // La línea del dinero puesto incluye lo que hay sin invertir en MyInvestor.
+    expect(last.capital).toBeCloseTo(totals.capital + totals.efectivo, 4)
     expect(tl.length).toBeGreaterThan(10)
   })
 })
@@ -227,8 +229,8 @@ describe('entre titulares', () => {
   // T1 envía 1.000 € de su cuenta al fondo de T2: cuenta como inversión de T2, no de T1.
   const ws: Workspace = {
     cuentas: [
-      { id: 'C1', titularId: 'T1', nombre: 'Cuenta de T1', entidad: '', iban: '', color: '#000', notas: '', createdAt: '' },
-      { id: 'C2', titularId: 'T2', nombre: 'Cuenta de T2', entidad: '', iban: '', color: '#000', notas: '', createdAt: '' },
+      { id: 'C1', titularId: 'T1', nombre: 'Cuenta de T1', entidad: '', iban: '', color: '#000', notas: '', externa: true, createdAt: '' },
+      { id: 'C2', titularId: 'T2', nombre: 'Cuenta de T2', entidad: '', iban: '', color: '#000', notas: '', externa: true, createdAt: '' },
     ],
     productos: [prod('F1', 'fondo', { titularId: 'T1' }), prod('F2', 'fondo', { titularId: 'T2' })],
     movimientos: [

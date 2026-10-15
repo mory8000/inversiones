@@ -12,8 +12,84 @@ import { SelectInput } from '../components/ui/Field'
 import { Amount } from '../components/ui/Amount'
 import { ProductAvatar } from '../components/ui/icons'
 import { Sankey } from '../components/charts/Sankey'
-import { MovementList } from '../components/movements/MovementList'
 import { DemoBanner } from '../components/DemoBanner'
+import { AccountAvatar } from '../components/ui/icons'
+import { TitularTag } from '../components/Titulares'
+import type { Movimiento } from '../types'
+import { entityName, isConSaldo, isExterna, ownerOf, refKey } from '../lib/movements'
+
+/**
+ * Aportaciones (de una cuenta externa a MyInvestor) y demás movimientos entre cuentas, resumidos
+ * por «de dónde → a dónde» para que se vea claro aunque haya muchos.
+ */
+function TransfersCard({ transfers }: { transfers: Movimiento[] }) {
+  const { lookup } = useFinance()
+  const multi = lookup.titulares.size > 1
+  const pairs = new Map<string, { m: Movimiento; total: number; count: number }>()
+  for (const m of transfers) {
+    const k = `${refKey(m.origen)}>${refKey(m.destino)}`
+    const p = pairs.get(k)
+    if (p) {
+      p.total += m.importe
+      p.count++
+    } else pairs.set(k, { m, total: m.importe, count: 1 })
+  }
+  const list = [...pairs.values()].sort((a, b) => b.total - a.total)
+  const end = (ref: Movimiento['origen']) => {
+    const c = lookup.cuentas.get(ref.id)
+    const t = multi ? ownerOf(lookup, ref) : undefined
+    return (
+      <span className="flex min-w-0 items-center gap-2">
+        <AccountAvatar color={c?.color ?? '#94A3B8'} size="xs" />
+        <span className="min-w-0">
+          <span className="block truncate text-sm font-medium text-slate-800">{entityName(lookup, ref)}</span>
+          <span className="flex min-w-0 items-center gap-1 text-[11px] text-slate-400">
+            <span className="shrink-0">{c?.externa ? 'Externa' : 'Con saldo'}</span>
+            {t && (
+              <>
+                <span aria-hidden>·</span>
+                <TitularTag titular={t} />
+              </>
+            )}
+          </span>
+        </span>
+      </span>
+    )
+  }
+  return (
+    <Card>
+      <CardHeader
+        title="Aportaciones y transferencias entre cuentas"
+        subtitle="Lo que entra en tus cuentas con saldo (como MyInvestor) desde cuentas externas, y lo que se mueve entre cuentas"
+      />
+      <ul className="mt-3 divide-y divide-slate-100 border-t border-slate-100">
+        {list.map(({ m, total, count }) => {
+          const aportacion = isExterna(lookup, m.origen) && isConSaldo(lookup, m.destino)
+          return (
+            <li key={`${refKey(m.origen)}>${refKey(m.destino)}`} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 px-4 py-3 sm:px-5">
+              <span className="flex min-w-0 items-center gap-2">
+                {end(m.origen)}
+                <ArrowRight className="size-4 shrink-0 text-slate-300" aria-hidden />
+                {end(m.destino)}
+              </span>
+              <span className="text-right">
+                <Amount value={total} className="block font-semibold text-slate-900" />
+                <span className="block text-[11px] text-slate-400">
+                  {aportacion ? 'Aportación' : 'Transferencia'} · {count} movimiento{count === 1 ? '' : 's'}
+                </span>
+              </span>
+            </li>
+          )
+        })}
+      </ul>
+      <div className="border-t border-slate-100 px-4 py-3 sm:px-5">
+        <Button variant="soft" size="sm" iconRight={ArrowRight} onClick={() => navigate(paths.movimientos({ tipo: 'transferencia' }))}>
+          Ver cada una en Movimientos
+        </Button>
+      </div>
+    </Card>
+  )
+}
 
 function NodeDetail({ graph, node, onClose }: { graph: FlowGraph; node: FlowNode; onClose: () => void }) {
   const label = (id: string) => graph.nodes.find((n) => n.id === id)?.label ?? '—'
@@ -72,7 +148,7 @@ function NodeDetail({ graph, node, onClose }: { graph: FlowGraph; node: FlowNode
 }
 
 export function Flow() {
-  const { ws, ds, positions, lookup, today } = useFinance()
+  const { ws, ds, positions, today } = useFinance()
   const multi = ds.titulares.length > 1
   const [periodKey, setPeriodKey] = useState('all')
   const [selected, setSelected] = useState<string | null>(null)
@@ -229,17 +305,7 @@ export function Flow() {
             </Card>
           )}
 
-          {graph.transfers.length > 0 && (
-            <Card>
-              <CardHeader
-                title={multi ? 'Transferencias entre cuentas' : 'Transferencias entre tus cuentas'}
-                subtitle="Dinero que se ha movido entre cuentas sin pasar por ningún producto"
-              />
-              <div className="mt-3 border-t border-slate-100">
-                <MovementList movements={graph.transfers} lookup={lookup} grouped={false} />
-              </div>
-            </Card>
-          )}
+          {graph.transfers.length > 0 && <TransfersCard transfers={graph.transfers} />}
         </div>
       )}
     </div>

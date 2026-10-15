@@ -7,6 +7,7 @@ import { ProductForm } from './forms/ProductForm'
 import { AccountForm } from './forms/AccountForm'
 import { ValuationForm } from './forms/ValuationForm'
 import { TitularForm } from './forms/TitularForm'
+import { InvestmentSheet } from './InvestmentSheet'
 
 function ConfirmDialog({ spec }: { spec: Extract<ModalSpec, { type: 'confirm' }> }) {
   const close = useUI((s) => s.close)
@@ -53,10 +54,22 @@ export function Modals() {
                 presetTipo={m.presetTipo}
                 presetTitularId={m.presetTitularId}
                 onCreated={m.onCreated}
+                abrirVentanilla={m.abrirVentanilla}
               />
             )
           case 'account':
-            return <AccountForm key={m.id} modalId={m.id} accountId={m.accountId} presetTitularId={m.presetTitularId} onCreated={m.onCreated} />
+            return (
+              <AccountForm
+                key={m.id}
+                modalId={m.id}
+                accountId={m.accountId}
+                presetTitularId={m.presetTitularId}
+                presetExterna={m.presetExterna}
+                onCreated={m.onCreated}
+              />
+            )
+          case 'investment':
+            return <InvestmentSheet key={m.id} modalId={m.id} productId={m.productId} />
           case 'valuation':
             return <ValuationForm key={m.id} modalId={m.id} productId={m.productId} />
           case 'titular':

@@ -88,7 +88,7 @@ export function SummaryTable({ rows, totals }: { rows: TypeSummary[]; totals: To
                 <Amount value={totals.ganancia} sign tone />
               </td>
               <td className="py-3 pr-5 pl-3 text-right">
-                <Amount value={totals.patrimonio} />
+                <Amount value={totals.invertidoValor} />
               </td>
             </tr>
           </tfoot>
@@ -142,7 +142,7 @@ export function SummaryTable({ rows, totals }: { rows: TypeSummary[]; totals: To
         <div className="flex items-center justify-between rounded-xl bg-slate-900 px-3 py-3 text-white">
           <span className="font-semibold">Total</span>
           <div className="text-right">
-            <Amount value={totals.patrimonio} className="font-bold" />
+            <Amount value={totals.invertidoValor} className="font-bold" />
             <div className="text-xs">
               <Amount value={totals.ganancia} sign className={totals.ganancia >= 0 ? 'text-emerald-300' : 'text-rose-300'} />
             </div>
@@ -150,6 +150,12 @@ export function SummaryTable({ rows, totals }: { rows: TypeSummary[]; totals: To
         </div>
       </div>
 
+      {totals.efectivo > 0.005 && (
+        <p className="mx-4 mt-3 rounded-xl bg-indigo-50 px-3 py-2 text-[13px] text-indigo-900 sm:mx-5">
+          Además hay <Amount value={totals.efectivo} className="font-semibold" /> sin invertir en cuentas con saldo (como MyInvestor). Patrimonio total:{' '}
+          <Amount value={totals.patrimonio} className="font-semibold" />.
+        </p>
+      )}
       <p className="px-4 pt-3 pb-4 text-xs text-slate-500 sm:px-5">
         <span className="font-semibold text-slate-600">Cómo se calcula:</span> Capital = Invertido − Reembolsado ± Traspasos · Saldo = Capital ×
         (1 + %) · Rentabilidad € = Saldo − Capital.
