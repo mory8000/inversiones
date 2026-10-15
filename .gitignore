@@ -1,0 +1,16 @@
+# Dependencias y compilación
+node_modules/
+dist/
+dev-dist/
+*.local
+
+# Utilidades locales de pruebas (capturas, navegador headless)
+.tools/
+screenshots/
+
+# Sistema / editores
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log

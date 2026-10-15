@@ -1,0 +1,133 @@
+// Datos de ejemplo (ficticios) para ver cómo funciona la app.
+// Las fechas se calculan respecto a hoy para que siempre parezcan recientes.
+
+import type { Cuenta, EntityRef, Movimiento, Producto, Valoracion, Workspace } from '../types'
+import { addMonths, daysBetween, daysInMonth, splitISO } from './dates'
+import { round2 } from './format'
+import { inferMovementType } from './meta'
+
+let seq = 0
+const demoId = (prefix: string) => `demo-${prefix}-${++seq}`
+
+export function buildDemoWorkspace(today: string): Workspace {
+  seq = 0
+
+  /** Fecha de hace `monthsAgo` meses, en el día `day` (sin pasarse de hoy). */
+  const at = (monthsAgo: number, day: number): string => {
+    const base = addMonths(today, -monthsAgo)
+    const [y, m] = splitISO(base)
+    const d = Math.min(day, daysInMonth(y, m))
+    const iso = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+    return iso > today ? today : iso
+  }
+
+  const cuenta = (nombre: string, entidad: string, iban: string, color: string): Cuenta => ({
+    id: demoId('c'),
+    nombre,
+    entidad,
+    iban,
+    color,
+    notas: '',
+    createdAt: `${at(25, 1)}T09:00:00.000Z`,
+  })
+
+  const nomina = cuenta('Cuenta nómina', 'BBVA', 'ES21 0182 2370 4102 0154 4521', '#0EA5E9')
+  const remunerada = cuenta('Cuenta remunerada', 'MyInvestor', 'ES76 1544 7889 0100 2233 8890', '#6366F1')
+  const ahorro = cuenta('Cuenta ahorro', 'ING', 'ES12 1465 0100 9917 2201 3307', '#F97316')
+
+  const producto = (p: Partial<Producto> & Pick<Producto, 'tipo' | 'nombre'>): Producto => ({
+    id: demoId('p'),
+    entidad: 'MyInvestor',
+    isin: '',
+    notas: '',
+    tae: null,
+    vencimiento: null,
+    valoraciones: [],
+    createdAt: `${at(25, 1)}T09:00:00.000Z`,
+    ...p,
+  })
+
+  const vanguard = producto({ tipo: 'fondo', nombre: 'Vanguard Global Stock Index', isin: 'IE00B03HD191' })
+  const fidelity = producto({ tipo: 'fondo', nombre: 'Fidelity MSCI World Index', isin: 'IE00BYX5NX33' })
+  const emergentes = producto({ tipo: 'fondo', nombre: 'Vanguard Emerging Markets Stock Index', isin: 'IE0031786696' })
+  const metal = producto({ tipo: 'cartera', nombre: 'Cartera indexada Metal', notas: 'Roboadvisor 100 % renta variable' })
+  const dep6Inicio = at(15, 12)
+  const dep6Fin = addMonths(dep6Inicio, 6)
+  const dep6 = producto({ tipo: 'deposito', nombre: 'Depósito 6 meses', tae: 3, vencimiento: dep6Fin })
+  // Al vencer el de 6 meses, se renueva el mismo día en uno de 12 meses.
+  const dep12Inicio = dep6Fin
+  const dep12 = producto({ tipo: 'deposito', nombre: 'Depósito 12 meses', tae: 2.5, vencimiento: addMonths(dep12Inicio, 12) })
+  const plan = producto({ tipo: 'plan', nombre: 'Plan de pensiones indexado global' })
+
+  const movimientos: Movimiento[] = []
+  let tick = 0
+  const mov = (fecha: string, origen: EntityRef, destino: EntityRef, importe: number, concepto: string) => {
+    if (fecha > today) return
+    tick++
+    const stamp = `${fecha}T10:${String(tick % 60).padStart(2, '0')}:00.000Z`
+    movimientos.push({
+      id: demoId('m'),
+      tipo: inferMovementType(origen.kind, destino.kind),
+      fecha,
+      origen,
+      destino,
+      importe: round2(importe),
+      concepto,
+      createdAt: stamp,
+      updatedAt: stamp,
+    })
+  }
+  const C = (c: Cuenta): EntityRef => ({ kind: 'cuenta', id: c.id })
+  const P = (p: Producto): EntityRef => ({ kind: 'producto', id: p.id })
+
+  // Ahorro inicial que se mueve a la cuenta remunerada.
+  mov(at(24, 3), C(nomina), C(remunerada), 5000, 'Ahorro para invertir')
+  // Fondo indexado con aportación inicial desde la cuenta de ahorro.
+  mov(at(24, 5), C(ahorro), P(fidelity), 6000, 'Aportación inicial')
+  // Aportación mensual automática al fondo Vanguard.
+  for (let i = 23; i >= 0; i--) mov(at(i, 2), C(nomina), P(vanguard), 200, 'Aportación mensual')
+  // Cartera indexada (roboadvisor).
+  mov(at(18, 10), C(remunerada), P(metal), 3000, 'Apertura de la cartera')
+  for (let i = 17; i >= 6; i--) mov(at(i, 10), C(remunerada), P(metal), 100, 'Aportación periódica')
+  // Depósito a 6 meses que vence y vuelve a la cuenta con intereses.
+  mov(dep6Inicio, C(remunerada), P(dep6), 10000, 'Contratación depósito')
+  const intereses6 = 10000 * 0.03 * (daysBetween(dep6Inicio, dep6Fin) / 365)
+  mov(dep6Fin, P(dep6), C(remunerada), 10000 + intereses6, 'Vencimiento: capital + intereses')
+  // Se renueva a 12 meses.
+  mov(dep12Inicio, C(remunerada), P(dep12), 10000, 'Renovación: depósito a 12 meses')
+  // Traspaso entre fondos (sin pasar por la cuenta).
+  mov(at(10, 20), P(fidelity), P(emergentes), 2000, 'Diversificar en emergentes')
+  // Reembolso parcial de la cartera.
+  mov(at(3, 18), P(metal), C(remunerada), 1000, 'Para vacaciones')
+  // Plan de pensiones.
+  mov(at(22, 27), C(nomina), P(plan), 1500, 'Aportación anual')
+  mov(at(10, 27), C(nomina), P(plan), 1500, 'Aportación anual')
+
+  // Valoraciones (rentabilidad en % en distintas fechas).
+  const val = (p: Producto, points: [number, number][]) => {
+    p.valoraciones = points
+      .map(([monthsAgo, pct]): Valoracion => {
+        const fecha = monthsAgo === 0 ? today : at(monthsAgo, 28)
+        return {
+          id: demoId('v'),
+          fecha,
+          modo: 'porcentaje',
+          valor: 0,
+          porcentaje: pct,
+          createdAt: `${fecha}T20:00:00.000Z`,
+        }
+      })
+      .filter((v) => v.fecha <= today)
+  }
+  val(vanguard, [[21, 3.1], [18, 6.4], [15, 4.2], [12, 9.8], [9, 12.5], [6, 10.1], [3, 15.2], [0, 17.8]])
+  val(fidelity, [[20, 2.0], [16, 5.5], [12, 8.9], [8, 11.0], [4, 13.6], [0, 14.2]])
+  val(emergentes, [[7, -1.5], [4, 2.2], [0, -3.4]])
+  val(metal, [[15, 1.8], [12, 4.9], [9, 7.3], [6, 5.6], [3, 9.4], [0, 11.8]])
+  val(plan, [[18, 2.5], [12, 5.0], [6, 7.2], [0, 9.1]])
+
+  return {
+    cuentas: [nomina, remunerada, ahorro],
+    productos: [vanguard, fidelity, emergentes, metal, dep12, dep6, plan],
+    movimientos,
+  }
+}
