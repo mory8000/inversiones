@@ -196,33 +196,21 @@ function OtrasMensuales({ tf, fin }: { tf: TitularFinance; fin: FinanceData }) {
   )
 }
 
-/** Lo que un titular recibe de otros cada mes (cuenta solo para él) y lo recibido en sus cuentas externas. */
-function CrossLines({ tf, fin }: { tf: TitularFinance; fin: FinanceData }) {
-  const { ds, owner } = fin
-  const name = (id: string) => fin.byTitular.get(id)?.titular.nombre ?? 'otro titular'
-  // Transferencias mensuales que recibe de otro titular.
-  const recibe = ds.programadas.filter((p) => owner(p.destino) === tf.titular.id && owner(p.origen) && owner(p.origen) !== tf.titular.id)
-  if (tf.recibidoEnExternas <= 0 && recibe.length === 0) return null
+/**
+ * Lo que otro titular le ha enviado a una cuenta externa suya (aún no cuenta para él: contará
+ * cuando lo invierta). Lo que recibe cada mes no se repite aquí: se ve, con su «Editar», en la
+ * tarjeta de quien lo envía.
+ */
+function CrossLines({ tf }: { tf: TitularFinance }) {
+  if (tf.recibidoEnExternas <= 0) return null
   return (
-    <ul className="mt-4 space-y-1.5 border-t border-white/10 pt-3 text-[13px]">
-      {recibe.map((p) => (
-        <li key={`p-${p.id}`} className="flex items-start gap-2">
-          <CalendarSync className="mt-0.5 size-4 shrink-0 text-fuchsia-300" />
-          <span className="min-w-0 text-white/80">
-            Recibe <Amount value={p.importe} className="font-semibold text-white" /> cada mes de {name(owner(p.origen)!)} (el día {diaDe(p)})
-          </span>
-        </li>
-      ))}
-      {tf.recibidoEnExternas > 0 && (
-        <li className="flex items-start gap-2">
-          <ArrowDownLeft className="mt-0.5 size-4 shrink-0 text-white/50" />
-          <span className="min-w-0 text-white/80">
-            Recibido en cuentas externas: <Amount value={tf.recibidoEnExternas} className="font-semibold text-white" />
-            <span className="text-white/50"> · contará cuando lo invierta</span>
-          </span>
-        </li>
-      )}
-    </ul>
+    <p className="mt-4 flex items-start gap-2 border-t border-white/10 pt-3 text-[13px]">
+      <ArrowDownLeft className="mt-0.5 size-4 shrink-0 text-white/50" />
+      <span className="min-w-0 text-white/80">
+        Recibido en cuentas externas: <Amount value={tf.recibidoEnExternas} className="font-semibold text-white" />
+        <span className="text-white/50"> · contará cuando lo invierta</span>
+      </span>
+    </p>
   )
 }
 
@@ -282,7 +270,7 @@ function TitularHero({ tf, fin }: { tf: TitularFinance; fin: FinanceData }) {
         )}
         <CuentasBox tf={tf} fin={fin} />
         <OtrasMensuales tf={tf} fin={fin} />
-        <CrossLines tf={tf} fin={fin} />
+        <CrossLines tf={tf} />
       </div>
     </section>
   )

@@ -31,7 +31,6 @@ Sustituye al antiguo `Inversiones.xlsx` y mantiene sus mismos conceptos: titular
     separado: la cifra grande del principal es todo lo suyo, sin el «Fondo ahorro» (que tiene su propia tarjeta).
   - En la del principal está su cuenta **MyInvestor**, sus **transferencias mensuales** (cada una con su botón
     **«Editar»**, para cambiar el importe, el día o hasta cuándo, o eliminarla) y el botón **«Abrir MyInvestor»**.
-    El titular que recibe una transferencia mensual lo indica en su tarjeta («Recibe … cada mes de …»).
   - **Ventana de MyInvestor** (al abrirla): su **saldo real** (positivo o negativo), **Añadir dinero** (desde una
     cuenta externa), **Invertir**, **Programar transferencia mensual**, **Sacar dinero**, sus transferencias
     mensuales (con **Editar**) y el **dinero añadido desde bancos externos**, cada movimiento con sus botones
