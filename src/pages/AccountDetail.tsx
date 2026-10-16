@@ -20,7 +20,7 @@ import { TitularTag } from '../components/Titulares'
 export function AccountDetail({ id }: { id: string }) {
   const { ws, ds, accounts, lookup, positions } = useFinance()
   const c = ws.cuentas.find((x) => x.id === id)
-  // Sin lo que pasa «de paso» por la cuenta camino de otro titular: aquí no deja constancia.
+  // Sin lo que pasa «de paso» por la cuenta camino de otro titular: no figura aquí (su saldo sí lo nota).
   const movs = useMemo(() => ws.movimientos.filter((m) => seVeEn(lookup, m, { kind: 'cuenta', id })), [ws.movimientos, lookup, id])
 
   if (!c) {

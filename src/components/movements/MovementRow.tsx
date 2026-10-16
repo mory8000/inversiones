@@ -84,8 +84,6 @@ export function MovementRow({ m, lookup, perspective, titularId }: { m: Movimien
   const label = movementLabel(m, lookup, perspective, titularId)
   let sign = 0
   if (perspective) sign = sameRef(m.destino, perspective) ? 1 : sameRef(m.origen, perspective) ? -1 : 0
-  // Lo que pasa «de paso» por la cuenta no baja su saldo: sin signo menos.
-  if (sign < 0 && isDePaso(lookup, m)) sign = 0
   const amountValue = sign === 0 ? m.importe : sign * m.importe
   const amountClass = sign > 0 ? 'text-emerald-600' : 'text-slate-900'
   const origenName = entityName(lookup, m.origen)

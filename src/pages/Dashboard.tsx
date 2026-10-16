@@ -214,7 +214,10 @@ function TitularHero({ tf, fin }: { tf: TitularFinance; fin: FinanceData }) {
 
 /**
  * Debajo de la tarjeta del «Fondo ahorro»: el total de todos los titulares sumado, en una sola
- * línea (p. ej. «Total 37.998,09 €»). Solo informa: cada tarjeta sigue con sus cifras por separado.
+ * línea (p. ej. «Total 37.998,09 €»). Es una ventana como las de las cuentas: el mismo fondo
+ * (azul oscuro, como las tarjetas) y dentro la misma caja con el icono, el nombre y el importe a
+ * la derecha que la ventana de «MyInvestor». Solo informa: cada tarjeta sigue con sus cifras por
+ * separado.
  */
 function TotalCard({ fin }: { fin: FinanceData }) {
   // Se suman las cifras tal como se ven (al céntimo), para que la suma cuadre a mano.
@@ -225,16 +228,15 @@ function TotalCard({ fin }: { fin: FinanceData }) {
     <section
       aria-label={`Total de ${nombres}: ${fmtEUR(total)}`}
       data-total-sumado
-      className="flex flex-1 flex-col justify-center rounded-3xl border border-slate-200/80 bg-white px-5 py-4 shadow-sm"
+      className="flex flex-1 flex-col justify-center rounded-3xl bg-brand-900 p-4 text-white shadow-lg shadow-brand-900/10 sm:p-5"
     >
-      <div className="flex items-baseline justify-between gap-3" data-total>
-        <span className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-          <span className="inline-flex size-7 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-700">
-            <Sigma className="size-4" strokeWidth={2.4} />
-          </span>
-          Total
+      {/* La misma caja que la ventana de la cuenta (MyInvestor): icono, nombre e importe. */}
+      <div className={cn(GLASS, 'flex items-center gap-3')} data-total>
+        <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-xl text-white" style={{ backgroundColor: `${EFECTIVO_COLOR}55` }}>
+          <Sigma className="size-[18px]" strokeWidth={2.4} />
         </span>
-        <Amount value={total} className={cn('text-2xl font-bold tracking-tight', total < -0.005 ? 'text-rose-600' : 'text-slate-900')} />
+        <span className="min-w-0 flex-1 truncate text-sm font-semibold">Total</span>
+        <Amount value={total} className={cn('shrink-0 text-lg font-bold', total < -0.005 && 'text-rose-300')} />
       </div>
     </section>
   )
@@ -410,7 +412,6 @@ export function Dashboard() {
         fin.titulares.filter((tf) => tf.ws.movimientos.length > 0).map((tf) => ({ id: tf.titular.id, ws: tf.ws })),
         fin.ws.movimientos,
         fin.today,
-        fin.dePaso,
       ),
     [fin],
   )

@@ -7,7 +7,7 @@ import { buildFlowGraph } from './flow'
 import { parseNumber, fmtEUR, fmtPct } from './format'
 import { inferMovementType } from './meta'
 import { buildDemoWorkspace } from './demo'
-import { movementsToCSV, buildLookup, detectorDePaso, filterMovements, isDePaso, movementKind, seVeEn, seVePara, totalsOf, EMPTY_FILTERS } from './movements'
+import { movementsToCSV, buildLookup, filterMovements, isDePaso, movementKind, seVeEn, seVePara, totalsOf, EMPTY_FILTERS } from './movements'
 import { aplicarProgramadas, movimientosDe } from './programadas'
 import { addMonths, daysBetween } from './dates'
 
@@ -454,18 +454,18 @@ describe('el principal y el «Fondo ahorro», cada uno por su lado', () => {
     return { luis: de('T1'), ahorro: de('T2') }
   }
 
-  it('lo que pasa por su MyInvestor hacia el «Fondo ahorro» no cuenta para el principal (ni baja su saldo): cuenta solo para el «Fondo ahorro»', () => {
+  it('lo que pasa por su MyInvestor hacia el «Fondo ahorro» sale de su saldo pero no cuenta para el principal: cuenta solo para el «Fondo ahorro»', () => {
     const ds = base()
     const my = computeAccountStats(ds).get('MY')!
-    // MyInvestor: entran 5.000 y salen 3.500 a sus inversiones. Los 500 del «Fondo ahorro» entran y se van.
-    expect(my).toMatchObject({ entradas: 5000, salidas: 3500, saldo: 1500, dePaso: 500, enviadoOtros: 0 })
-    expect(my.dePasoA).toEqual([{ titularId: 'T2', importe: 500 }])
+    // MyInvestor: entran 5.000, salen 3.500 a sus inversiones y 500 al «Fondo ahorro» (que salen de verdad).
+    expect(my).toMatchObject({ entradas: 5000, salidas: 4000, saldo: 1000, dePaso: 500, enviadoOtros: 0 })
     // Ni rastro en la cuenta: sus movimientos y «a dónde ha ido su dinero» son solo los de Luis.
     expect(my.numMovimientos).toBe(4)
     expect(my.porProducto.map((x) => x.productoId).sort()).toEqual(['D', 'F', 'K'])
     const { luis, ahorro } = totales(ds)
-    // Luis: F 1.100 + D 2.000 + K 500 + MyInvestor 1.500. Su «Aportado» es solo lo que trajo de su banco.
-    expect(luis).toMatchObject({ patrimonio: 5100, efectivo: 1500, capital: 3500, ganancia: 100, aportadoTotal: 5000 })
+    // Luis: F 1.100 + D 2.000 + K 500 + MyInvestor 1.000. Su «Aportado» es lo que trajo de su banco
+    // menos los 500 que se fueron al «Fondo ahorro» (entraron y se fueron: no engordan lo suyo).
+    expect(luis).toMatchObject({ patrimonio: 4600, efectivo: 1000, capital: 3500, ganancia: 100, aportadoTotal: 4500 })
     // Fondo ahorro: F2 300 + C2 200, que ha recibido de Luis.
     expect(ahorro).toMatchObject({ patrimonio: 500, efectivo: 200, aportadoTotal: 500 })
   })
@@ -473,11 +473,12 @@ describe('el principal y el «Fondo ahorro», cada uno por su lado', () => {
   it('el saldo de la cuenta principal es real: si es negativo, resta', () => {
     const ds = base()
     ds.movimientos.push(mov('2026-02-01', C('MY'), P('F'), 2000))
-    expect(computeAccountStats(ds).get('MY')!.saldo).toBe(-500)
+    // Entran 5.000; salen 3.500 a sus inversiones, 500 al «Fondo ahorro» y 2.000 más a su fondo.
+    expect(computeAccountStats(ds).get('MY')!.saldo).toBe(-1000)
     const { luis } = totales(ds)
-    expect(luis.efectivo).toBe(-500)
-    // F 3.300 + D 2.000 + K 500 − 500.
-    expect(luis.patrimonio).toBeCloseTo(5300, 6)
+    expect(luis.efectivo).toBe(-1000)
+    // F 3.300 + D 2.000 + K 500 − 1.000.
+    expect(luis.patrimonio).toBeCloseTo(4800, 6)
   })
 
   it('con carácter retroactivo: la transferencia mensual al «Fondo ahorro», también los meses ya pasados, no baja el saldo del principal', () => {
@@ -489,13 +490,18 @@ describe('el principal y el «Fondo ahorro», cada uno por su lado', () => {
     const lookup = buildLookup(ds)
     expect(meses.every((m) => isDePaso(lookup, m))).toBe(true)
     const my = computeAccountStats(ds).get('MY')!
-    expect(my.saldo).toBe(1500)
+    // Todo lo que se fue al «Fondo ahorro» sale de su saldo: 5.000 − 3.500 (lo suyo) − 500 − 9.966.
+    expect(my.saldo).toBeCloseTo(5000 - 3500 - 500 - 22 * 453, 6)
     expect(my.dePaso).toBeCloseTo(500 + 22 * 453, 6)
     const { luis, ahorro } = totales(ds)
-    expect(luis).toMatchObject({ patrimonio: 5100, efectivo: 1500, aportadoTotal: 5000 })
+    // Sin apuntar el dinero que llega de fuera, MyInvestor queda en negativo (saldo real), y lo
+    // aportado no cuenta lo que se fue: el patrimonio refleja las dos cosas.
+    expect(luis.efectivo).toBeCloseTo(-8966, 6)
+    expect(luis.patrimonio).toBeCloseTo(3600 - 8966, 6)
+    expect(luis.aportadoTotal).toBeCloseTo(5000 - 500 - 22 * 453, 6)
     expect(ahorro.patrimonio).toBeCloseTo(500 + 22 * 453, 6)
     expect(ahorro.aportadoTotal).toBeCloseTo(500 + 22 * 453, 6)
-    // Tampoco en la evolución: el último punto de Luis es su patrimonio de hoy.
+    // En la evolución: el último punto de Luis es su patrimonio de hoy (saldo real incluido).
     const tl = buildTimelineMulti(
       [
         { id: 'T1', ws: titularWorkspace(ds, 'T1') },
@@ -503,10 +509,9 @@ describe('el principal y el «Fondo ahorro», cada uno por su lado', () => {
       ],
       ds.movimientos,
       '2026-10-15',
-      detectorDePaso(lookup),
     )
     const last = tl[tl.length - 1]
-    expect(last['T1:p']).toBeCloseTo(5100, 6)
+    expect(last['T1:p']).toBeCloseTo(3600 - 8966, 6)
     expect(last['T2:p']).toBeCloseTo(500 + 22 * 453, 6)
   })
 
@@ -528,18 +533,18 @@ describe('el principal y el «Fondo ahorro», cada uno por su lado', () => {
     const stats = computeAccountStats(ds)
     expect(stats.get('C2')).toMatchObject({ saldo: 50, dePaso: 0, enviadoOtros: 150 })
     // Para Luis, lo que recibe en su MyInvestor sí es suyo.
-    expect(stats.get('MY')).toMatchObject({ saldo: 1650, recibidoOtros: 150 })
+    expect(stats.get('MY')).toMatchObject({ saldo: 1150, recibidoOtros: 150 })
   })
 
-  it('lo que va de paso no se bloquea por falta de saldo; lo que invierte el principal en lo suyo, sí', () => {
+  it('el saldo de la cuenta es el real (lo de paso también sale); en los formularios, lo de paso no se comprueba', () => {
     const ds = base()
-    const dePaso = detectorDePaso(buildLookup(ds))
     const enorme = mov('2026-10-15', C('MY'), P('F2'), 50000)
-    expect(saldoEn([...ds.movimientos, enorme], 'MY', '2026-10-15', dePaso)).toBe(1500)
-    expect(faltaDinero(ds.movimientos, [...ds.movimientos, enorme], 'MY', '2026-10-15', { dePaso })).toBeNull()
+    // Lo que se va al «Fondo ahorro» sale del saldo como cualquier otra salida.
+    expect(saldoEn([...ds.movimientos, enorme], 'MY', '2026-10-15')).toBe(1000 - 50000)
+    // Lo que el principal invierte en lo suyo sí se comprueba: 2.000 con 1.000 disponibles.
     const propia = mov('2026-10-15', C('MY'), P('F'), 2000)
-    expect(faltaDinero(ds.movimientos, [...ds.movimientos, propia], 'MY', '2026-10-15', { dePaso })).toMatchObject({ falta: 500, disponible: 1500 })
-    // Sin titulares en los datos no hay nada «de paso».
+    expect(faltaDinero(ds.movimientos, [...ds.movimientos, propia], 'MY', '2026-10-15')).toMatchObject({ falta: 1000, disponible: 1000 })
+    // Sin titulares en los datos no hay nada «de paso»: el mismo saldo.
     expect(computeAccountStats({ cuentas: ds.cuentas, productos: ds.productos, movimientos: ds.movimientos }).get('MY')!.saldo).toBe(1000)
   })
 
@@ -579,10 +584,13 @@ describe('el principal y el «Fondo ahorro», cada uno por su lado', () => {
     const lookup = buildLookup(ds)
     expect(isDePaso(lookup, desdeIng)).toBe(true)
     const ext = computeAccountStats(ds).get('BBVA')!
-    expect(ext).toMatchObject({ salidas: 5000, dePaso: 453, numMovimientos: 1, enviadoOtros: 0 })
+    // De la cuenta externa sale de verdad (se ve en su «aportado neto»), sin figurar como movimiento suyo.
+    expect(ext).toMatchObject({ salidas: 5453, dePaso: 453, numMovimientos: 1, enviadoOtros: 0 })
     expect(titularWorkspace(ds, 'T1').movimientos.includes(desdeIng)).toBe(false)
     const { luis, ahorro } = totales(ds)
-    expect(luis).toMatchObject({ patrimonio: 5100, aportadoTotal: 5000, numMovimientos: 4 })
+    // Para Luis no cambia nada más: ese movimiento nunca contó como aportación suya, y los 500
+    // que salieron de su MyInvestor (los que se fueron antes al «Fondo ahorro») siguen saliendo.
+    expect(luis).toMatchObject({ patrimonio: 4600, aportadoTotal: 4500, numMovimientos: 4 })
     expect(ahorro.patrimonio).toBe(953)
     expect(ahorro.aportadoTotal).toBe(953)
     // Desde el «Fondo ahorro» (no es el principal), lo que sale de sus cuentas no es de paso.

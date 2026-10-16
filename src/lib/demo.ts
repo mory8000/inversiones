@@ -154,8 +154,9 @@ export function buildDemoWorkspace(today: string, titularId = 'demo-t-1'): Works
 /**
  * Ejemplo completo con dos titulares: Marta (la principal) y «Fondo ahorro». Marta envía cada
  * mes 150 € de su cuenta MyInvestor al fondo del «Fondo ahorro», y una vez 2.000 € a su
- * depósito: ese dinero pasa por su MyInvestor de paso (no deja constancia en él: ni baja su
- * saldo ni sale en sus movimientos) y cuenta solo para el «Fondo ahorro», no para Marta.
+ * depósito: ese dinero pasa por su MyInvestor de paso (sale de su saldo, que es el real, pero no
+ * sale en sus movimientos ni cuenta como suyo) y cuenta solo para el «Fondo ahorro», no para
+ * Marta.
  */
 export function buildDemoDataset(today: string): Dataset {
   const at = atFor(today)

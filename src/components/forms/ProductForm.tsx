@@ -40,7 +40,7 @@ export function ProductForm({
   abrirVentanilla?: boolean
 }) {
   const close = useUI((s) => s.close)
-  const { ws, ds, positions, accounts, today, lookup, dePaso } = useFinance()
+  const { ws, ds, positions, accounts, today, lookup } = useFinance()
   const hidden = useData((s) => s.hideAmounts)
   const addProducto = useData((s) => s.addProducto)
   const updateProducto = useData((s) => s.updateProducto)
@@ -85,13 +85,13 @@ export function ProductForm({
   const wantsFirst = offerFirst && importe.trim() !== ''
 
   // La primera aportación desde una cuenta con saldo (MyInvestor) no puede ser mayor que lo que hay.
-  // Si sale de la cuenta del principal hacia una inversión de otro titular, es dinero «de paso»
-  // (entra y se va): no baja su saldo, así que no se comprueba.
+  // Si sale de la cuenta del principal hacia una inversión de otro titular es dinero «de paso»: en
+  // lo suyo no figura, pero el saldo de la cuenta es el real, así que también se comprueba.
   const cuentaElegidaObj = ws.cuentas.find((c) => c.id === cuenta)
   const primeraDePaso = !!cuentaElegidaObj && saleDePaso(lookup, cuentaElegidaObj.id, titularId)
   const disponible =
-    wantsFirst && cuentaElegidaObj && !cuentaElegidaObj.externa && !primeraDePaso && isValidISODate(fecha)
-      ? Math.max(0, saldoMinimoDesde(ws.movimientos, cuentaElegidaObj.id, fecha, dePaso))
+    wantsFirst && cuentaElegidaObj && !cuentaElegidaObj.externa && isValidISODate(fecha)
+      ? Math.max(0, saldoMinimoDesde(ws.movimientos, cuentaElegidaObj.id, fecha))
       : null
   const sinSaldo = disponible !== null && firstAmount !== null && firstAmount > disponible + 0.005
 
@@ -365,7 +365,7 @@ export function ProductForm({
               return c && from && to && c.titularId !== titularId ? (
                 <p className="mt-2 rounded-xl bg-fuchsia-50 px-3 py-2 text-[13px] text-fuchsia-900">
                   {primeraDePaso
-                    ? `Pasa por «${c.nombre}» de paso: no queda en ella ni cuenta para ${from.nombre}. Cuenta como inversión de ${to.nombre}.`
+                    ? `Sale de «${c.nombre}» (de ${from.nombre}) de paso: no figura en lo suyo (aunque sí sale de su saldo) y cuenta como inversión de ${to.nombre}.`
                     : `Sale de una cuenta de ${from.nombre}: cuenta como inversión de ${to.nombre}, no de ${from.nombre}.`}
                 </p>
               ) : null

@@ -9,7 +9,7 @@ import {
   type Totals,
   type TypeSummary,
 } from '../lib/finance'
-import { buildLookup, countsForOwner, detectorDePaso, type DePaso, type Lookup } from '../lib/movements'
+import { buildLookup, countsForOwner, type Lookup } from '../lib/movements'
 import { todayISO } from '../lib/dates'
 import { titularColor, titularWorkspace } from '../lib/titulares'
 import { useDataset } from './data'
@@ -22,7 +22,8 @@ export interface TitularFinance {
   color: string
   /**
    * Sus cuentas y productos, y los movimientos que le tocan (también los que vienen de o van a
-   * otro titular). Al principal no le tocan los «de paso» (no dejan constancia en lo suyo).
+   * otro titular). Al principal no le tocan los «de paso» (no dejan constancia en lo suyo), aunque
+   * su saldo sí baje por ellos: el de las cuentas es el saldo real.
    */
   ws: Workspace
   /** Sus productos. */
@@ -50,8 +51,6 @@ export interface FinanceData {
   ws: Workspace
   today: string
   lookup: Lookup
-  /** ¿Un movimiento es dinero «de paso» por una cuenta del principal hacia otro titular? (no deja constancia en ella) */
-  dePaso: DePaso
   positions: Map<string, Position>
   accounts: Map<string, AccountStats>
   /** Cada titular por separado, en orden (el primero es el principal). */
@@ -78,8 +77,7 @@ export function computeFinance(ds: Dataset, today: string): FinanceData {
   if (hit && hit.today === today) return hit
   const positions = computePositions(ds, today)
   const lookup = buildLookup(ds)
-  const dePaso = detectorDePaso(lookup)
-  const accounts = computeAccountStats(ds, dePaso)
+  const accounts = computeAccountStats(ds)
   const owner = (ref: EntityRef) => (ref.kind === 'cuenta' ? lookup.cuentas.get(ref.id)?.titularId : lookup.productos.get(ref.id)?.titularId)
 
   const titulares = ds.titulares.map((titular, index): TitularFinance => {
@@ -123,7 +121,6 @@ export function computeFinance(ds: Dataset, today: string): FinanceData {
     ws: ds,
     today,
     lookup,
-    dePaso,
     positions,
     accounts,
     titulares,

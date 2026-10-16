@@ -24,7 +24,7 @@ const VISIBLES = 6
  * puede hacer (añadir dinero, invertir, programar la transferencia mensual, sacar dinero), sus
  * transferencias mensuales (el único sitio donde se cambian, con «Editar») y sus movimientos,
  * cada uno con «Editar» y «Borrar». Lo que pasa «de paso» por la cuenta (camino del «Fondo
- * ahorro») no deja constancia aquí: ni en el saldo ni en los movimientos.
+ * ahorro») sale de su saldo (el saldo es el real), pero no figura entre sus movimientos.
  */
 export function AccountSheet({ modalId, cuentaId }: { modalId: string; cuentaId: string }) {
   const close = useUI((s) => s.close)
@@ -46,7 +46,7 @@ export function AccountSheet({ modalId, cuentaId }: { modalId: string; cuentaId:
   const multi = ds.titulares.length > 1
   const esPrincipal = cuentaPrincipal(ds.cuentas, c.titularId)?.id === c.id
   const ref = { kind: 'cuenta' as const, id: c.id }
-  // Sin lo que pasa «de paso» camino de otro titular: aquí no deja constancia.
+  // Sin lo que pasa «de paso» camino de otro titular: no figura aquí (su saldo sí lo nota).
   const movs = sortMovementsDesc(ws.movimientos.filter((m) => seVeEn(lookup, m, ref)))
   /** Dinero traído desde bancos externos (aportaciones): se puede cambiar o borrar. */
   const traidos = movs.filter((m) => m.destino.kind === 'cuenta' && m.destino.id === c.id && isExterna(lookup, m.origen))
@@ -116,7 +116,7 @@ export function AccountSheet({ modalId, cuentaId }: { modalId: string; cuentaId:
             </p>
           ) : (
             <p className="mt-3 text-[13px] text-slate-600">
-              Es el saldo real: lo que ha entrado menos lo que ha salido. Suma en el patrimonio de {titular?.nombre ?? 'su titular'}.
+              Es el saldo real: lo que ha entrado menos lo que ha salido (también lo que ha pasado de camino a otro titular). Suma en el patrimonio de {titular?.nombre ?? 'su titular'}.
             </p>
           )}
         </div>

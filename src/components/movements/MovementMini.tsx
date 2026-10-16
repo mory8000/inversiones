@@ -1,6 +1,6 @@
 import { CalendarSync, Pencil, Trash2 } from 'lucide-react'
 import type { Dataset, EntityRef, Movimiento } from '../../types'
-import { entityName, isDePaso, movementKind, ownerOf, sameRef, type Lookup } from '../../lib/movements'
+import { entityName, movementKind, ownerOf, sameRef, type Lookup } from '../../lib/movements'
 import { fmtDate } from '../../lib/format'
 import { cn } from '../../lib/cn'
 import { editMovement } from '../../store/ui'
@@ -19,8 +19,6 @@ export function MovementMini({ m, perspective, lookup, ds }: { m: Movimiento; pe
   const viewer = perspective.kind === 'cuenta' ? lookup.cuentas.get(perspective.id)?.titularId : lookup.productos.get(perspective.id)?.titularId
   const otherOwner = ownerOf(lookup, other)
   const label = movementLabel(m, lookup, perspective)
-  /** Sale «de paso» de esta cuenta (del principal a otro titular): no baja su saldo. */
-  const dePaso = !incoming && isDePaso(lookup, m)
   return (
     <li className="py-2.5" data-mov={m.id}>
       <div className="flex items-start gap-3">
@@ -28,11 +26,7 @@ export function MovementMini({ m, perspective, lookup, ds }: { m: Movimiento; pe
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline justify-between gap-2">
             <span className="truncate text-sm font-semibold text-slate-800">{label}</span>
-            {dePaso ? (
-              <Amount value={m.importe} className="shrink-0 text-sm font-semibold text-slate-500" />
-            ) : (
-              <Amount value={incoming ? m.importe : -m.importe} sign className={cn('shrink-0 text-sm font-semibold', incoming ? 'text-emerald-600' : 'text-slate-900')} />
-            )}
+            <Amount value={incoming ? m.importe : -m.importe} sign className={cn('shrink-0 text-sm font-semibold', incoming ? 'text-emerald-600' : 'text-slate-900')} />
           </div>
           <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-slate-500">
             {m.programadaId && <CalendarSync className="size-3.5 shrink-0 text-fuchsia-600" aria-label="Transferencia mensual" />}

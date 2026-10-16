@@ -20,20 +20,18 @@
 //
 // Dinero «de paso»: lo que llega desde fuera (p. ej. desde ING), pasa por una
 // cuenta del titular principal (MyInvestor) y se va a otro titular (p. ej. la
-// transferencia mensual al «Fondo ahorro») es un mero paso que no deja constancia
-// en lo del principal: no baja el saldo de su cuenta, no cuenta en su patrimonio
-// ni en sus cifras, y no sale en su cuenta ni en sus movimientos. Solo cuenta para
-// quien lo recibe, con sus ganancias o pérdidas. Como todo se calcula desde el
-// primer movimiento, la regla vale también para lo de antes.
+// transferencia mensual al «Fondo ahorro») sale de esa cuenta (su saldo baja, como
+// en el banco) pero no deja más constancia en lo del principal: no cuenta como su
+// inversión, no sale en su lista de movimientos y no engorda su «Aportado» (para él
+// fue dinero que entró y se fue). Cuenta solo para quien lo recibe, con sus
+// ganancias o pérdidas. Como todo se calcula desde el primer movimiento, la regla
+// vale también para lo de antes.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { Movimiento, Producto, ProductType, Titular, Valoracion, Workspace } from '../types'
 import { addMonths, daysBetween, endOfMonth, maxDate, minDate } from './dates'
 import { PRODUCT_TYPES } from './meta'
 import { buildLookup, detectorDePaso, type DePaso } from './movements'
-
-/** Nunca hay dinero «de paso» (datos sin titulares, o un solo producto). */
-const NUNCA_DE_PASO: DePaso = () => false
 
 export const EPS = 0.005
 
@@ -92,7 +90,7 @@ export interface AccountStats {
   externa: boolean
   /** Todo lo que ha entrado en la cuenta. */
   entradas: number
-  /** Todo lo que ha salido de la cuenta, menos lo que ha pasado «de paso» hacia otro titular. */
+  /** Todo lo que ha salido de la cuenta (también lo que ha pasado «de paso» hacia otro titular). */
   salidas: number
   /**
    * Entradas − salidas. Solo cuenta en las cuentas con saldo. Si es negativo es que falta
@@ -101,12 +99,11 @@ export interface AccountStats {
   saldo: number
   /**
    * Dinero «de paso»: lo que ha pasado por la cuenta (del titular principal) camino de otro
-   * titular, p. ej. del «Fondo ahorro». No deja constancia en la cuenta: no cuenta en su saldo, ni
-   * en sus movimientos, ni para su titular (y la app no lo enseña en ella). Solo para cálculos.
+   * titular, p. ej. al «Fondo ahorro». Sale de la cuenta (baja su saldo) pero no deja más
+   * constancia: no cuenta como inversión suya, no sale en su lista de movimientos y no engorda su
+   * «Aportado» (para él fue dinero que entró y se fue). Solo para cálculos.
    */
   dePaso: number
-  /** Lo «de paso», por titular que lo ha recibido. */
-  dePasoA: { titularId: string; importe: number }[]
   /** Lo que ha entrado desde cuentas externas (aportaciones). */
   aportaciones: number
   /** Enviado desde la cuenta a productos (inversiones) del mismo titular. */
@@ -414,13 +411,13 @@ export function isBetweenTitulares(m: Movimiento, owner: (ref: Movimiento['orige
 
 /**
  * Estadísticas de cada cuenta. Con los titulares en los datos (o con `dePaso`), lo que pasa «de
- * paso» por una cuenta del titular principal hacia otro titular no deja constancia en ella: ni
- * baja su saldo ni cuenta en sus movimientos (solo se suma aparte, en `dePaso`).
+ * paso» por una cuenta del titular principal hacia otro titular sale de ella (baja su saldo, como
+ * en el banco) pero no deja más constancia: no cuenta en sus movimientos (los que se ven en su
+ * ventana), ni como inversión suya. Se suma aparte, en `dePaso`.
  */
 export function computeAccountStats(ws: Workspace & { titulares?: Titular[] }, dePaso: DePaso = detectorDePaso(buildLookup(ws))): Map<string, AccountStats> {
   const map = new Map<string, AccountStats>()
   const perProduct = new Map<string, Map<string, { enviado: number; recibido: number }>>()
-  const pasoA = new Map<string, Map<string, number>>()
   const owner = ownerLookup(ws)
   for (const c of ws.cuentas) {
     map.set(c.id, {
@@ -430,7 +427,6 @@ export function computeAccountStats(ws: Workspace & { titulares?: Titular[] }, d
       salidas: 0,
       saldo: 0,
       dePaso: 0,
-      dePasoA: [],
       aportaciones: 0,
       enviado: 0,
       recibido: 0,
@@ -459,20 +455,15 @@ export function computeAccountStats(ws: Workspace & { titulares?: Titular[] }, d
   const externas = new Set(ws.cuentas.filter((c) => c.externa).map((c) => c.id))
   for (const m of ws.movimientos) {
     const cross = isBetweenTitulares(m, owner)
-    // Dinero «de paso» (de una cuenta del principal a otro titular): un mero paso que no deja
-    // constancia en la cuenta (ni en su saldo, ni en sus movimientos, ni en a dónde ha ido su
-    // dinero). Solo se suma aparte, en `dePaso`.
+    // Dinero «de paso» (de una cuenta del principal a otro titular): entra desde fuera, pasa por
+    // la cuenta y se va, así que su saldo baja (como en el banco). Lo que no deja es más rastro: ni
+    // movimiento suyo, ni inversión suya (ver más abajo). Se suma aparte, en `dePaso`.
     const paso = m.origen.kind === 'cuenta' && dePaso(m)
     if (paso) {
       const s = map.get(m.origen.id)
-      if (s) {
-        s.dePaso += m.importe
-        const quien = owner(m.destino) ?? ''
-        const porTitular = pasoA.get(m.origen.id) ?? new Map<string, number>()
-        porTitular.set(quien, (porTitular.get(quien) ?? 0) + m.importe)
-        pasoA.set(m.origen.id, porTitular)
-      }
-    } else if (m.origen.kind === 'cuenta') {
+      if (s) s.dePaso += m.importe
+    }
+    if (m.origen.kind === 'cuenta') {
       // Saldo: lo que entra menos lo que sale.
       const s = map.get(m.origen.id)
       if (s) s.salidas += m.importe
@@ -523,7 +514,6 @@ export function computeAccountStats(ws: Workspace & { titulares?: Titular[] }, d
   for (const [id, s] of map) {
     s.saldo = s.entradas - s.salidas
     if (Math.abs(s.saldo) < EPS) s.saldo = 0
-    s.dePasoA = [...(pasoA.get(id) ?? new Map<string, number>()).entries()].map(([titularId, importe]) => ({ titularId, importe }))
     s.netoInvertido = s.enviado - s.recibido
     s.porProducto = [...(perProduct.get(id) ?? new Map()).entries()]
       .map(([productoId, v]) => ({ productoId, ...v }))
@@ -575,6 +565,9 @@ export function computeTotals(ws: Workspace, positions: Map<string, Position>, a
     if (suyo.has(d) && !suyo.has(o)) aportadoTotal += m.importe
     if (suyo.has(o) && susExternas.has(d)) retiradoTotal += m.importe
   }
+  // El dinero que entró desde fuera y se fue «de paso» a otro titular (p. ej. al «Fondo ahorro»)
+  // no engorda lo aportado: para este titular fue dinero que entró y se fue (cuenta para el otro).
+  if (accounts) for (const c of ws.cuentas) if (!c.externa) aportadoTotal -= accounts.get(c.id)?.dePaso ?? 0
   return {
     patrimonio,
     efectivo,
@@ -666,9 +659,10 @@ export function timelineDates(movimientos: Movimiento[], today: string, maxPoint
 /**
  * Capital y patrimonio en una fecha del histórico: productos y saldo real de las cuentas con
  * saldo (que suma en los dos, porque es dinero puesto que aún no se ha invertido). Lo que pasa
- * «de paso» por una cuenta (`dePaso`) no baja su saldo.
+ * «de paso» camino de otro titular también sale de la cuenta (su saldo es el real), así que para
+ * el saldo se miran todos los movimientos (`todos`), aunque no figuren en los del titular.
  */
-function valueAt(ws: Workspace, fecha: string, dePaso: DePaso): { capital: number; patrimonio: number } {
+function valueAt(ws: Workspace, fecha: string, todos: Movimiento[] = ws.movimientos): { capital: number; patrimonio: number } {
   let capital = 0
   let patrimonio = 0
   for (const p of ws.productos) {
@@ -679,10 +673,10 @@ function valueAt(ws: Workspace, fecha: string, dePaso: DePaso): { capital: numbe
   for (const c of ws.cuentas) {
     if (c.externa) continue
     let saldo = 0
-    for (const m of ws.movimientos) {
+    for (const m of todos) {
       if (m.fecha > fecha) continue
       if (m.destino.kind === 'cuenta' && m.destino.id === c.id) saldo += m.importe
-      if (m.origen.kind === 'cuenta' && m.origen.id === c.id && !dePaso(m)) saldo -= m.importe
+      if (m.origen.kind === 'cuenta' && m.origen.id === c.id) saldo -= m.importe
     }
     // El saldo real (puede ser negativo si ha salido más de lo que ha entrado).
     capital += saldo
@@ -691,22 +685,19 @@ function valueAt(ws: Workspace, fecha: string, dePaso: DePaso): { capital: numbe
   return { capital, patrimonio }
 }
 
-export function buildTimeline(ws: Workspace & { titulares?: Titular[] }, today: string, maxPoints = 48, dePaso: DePaso = detectorDePaso(buildLookup(ws))): TimelinePoint[] {
-  return timelineDates(ws.movimientos, today, maxPoints).map((fecha) => ({ fecha, ...valueAt(ws, fecha, dePaso) }))
+export function buildTimeline(ws: Workspace, today: string, maxPoints = 48): TimelinePoint[] {
+  return timelineDates(ws.movimientos, today, maxPoints).map((fecha) => ({ fecha, ...valueAt(ws, fecha) }))
 }
 
 /** Un punto del gráfico con varios titulares: `${id}:p` (patrimonio) y `${id}:c` (capital) de cada uno. */
 export type MultiTimelinePoint = { fecha: string } & Record<string, number | string>
 
-/**
- * Evolución de varios titulares en las mismas fechas, cada uno por separado (no se suman).
- * `dePaso`: el detector de dinero «de paso» de todos los datos (cada `ws` solo tiene lo suyo).
- */
-export function buildTimelineMulti(series: { id: string; ws: Workspace }[], all: Movimiento[], today: string, dePaso: DePaso = NUNCA_DE_PASO): MultiTimelinePoint[] {
+/** Evolución de varios titulares en las mismas fechas, cada uno por separado (no se suman). */
+export function buildTimelineMulti(series: { id: string; ws: Workspace }[], all: Movimiento[], today: string): MultiTimelinePoint[] {
   return timelineDates(all, today).map((fecha) => {
     const point: MultiTimelinePoint = { fecha }
     for (const s of series) {
-      const v = valueAt(s.ws, fecha, dePaso)
+      const v = valueAt(s.ws, fecha, all)
       point[`${s.id}:p`] = v.patrimonio
       point[`${s.id}:c`] = v.capital
     }
@@ -719,5 +710,5 @@ export function buildProductTimeline(p: Producto, movimientos: Movimiento[], tod
   const own = movimientos.filter((m) => involvesProduct(m, p.id))
   if (own.length === 0) return []
   const ws: Workspace = { cuentas: [], productos: [p], movimientos: own }
-  return buildTimeline(ws, today, 36, NUNCA_DE_PASO)
+  return buildTimeline(ws, today, 36)
 }

@@ -464,20 +464,21 @@ describe('cuenta principal «MyInvestor» y cuentas externas (versión 4)', () =
     const ahorro = () => f.byTitular.get('t2')!
     expect(ahorro().totals.patrimonio).toBe(600)
     expect(ahorro().totals.aportadoTotal).toBe(600)
-    // Los 600 € (4 meses, también los ya pasados) pasan por MyInvestor camino del «Fondo ahorro»
-    // sin dejar constancia: ni bajan su saldo, ni salen en sus movimientos, ni cuentan para Luis.
+    // Los 600 € (4 meses, también los ya pasados) pasan por MyInvestor camino del «Fondo ahorro»:
+    // salen de verdad de su saldo (el saldo es el real), pero no dejan constancia en sus
+    // movimientos ni cuentan como inversión suya.
     expect(luis().enviadoTotal).toBe(0)
     expect(luis().ws.movimientos).toHaveLength(0)
-    expect(f.accounts.get('c1')).toMatchObject({ saldo: 0, salidas: 0, dePaso: 600, numMovimientos: 0 })
-    expect(luis().totals).toMatchObject({ efectivo: 0, patrimonio: 0, aportadoTotal: 0 })
+    expect(f.accounts.get('c1')).toMatchObject({ saldo: -600, salidas: 600, dePaso: 600, numMovimientos: 0 })
+    expect(luis().totals).toMatchObject({ efectivo: -600, patrimonio: -600, aportadoTotal: -600 })
 
     // Aportación desde una cuenta externa a MyInvestor.
     const st = useData.getState()
     const bbva = st.addCuenta({ titularId: 't1', nombre: 'BBVA', entidad: '', iban: '', color: '#000', notas: '', externa: true })
     st.addMovimiento({ fecha: '2026-10-10', origen: { kind: 'cuenta', id: bbva }, destino: { kind: 'cuenta', id: 'c1' }, importe: 1000, concepto: 'Aportación' })
     f = finance()
-    expect(f.accounts.get('c1')).toMatchObject({ saldo: 1000, aportaciones: 1000, dePaso: 600 })
-    expect(luis().totals).toMatchObject({ efectivo: 1000, patrimonio: 1000, aportadoTotal: 1000, capital: 0 })
+    expect(f.accounts.get('c1')).toMatchObject({ saldo: 400, aportaciones: 1000, dePaso: 600 })
+    expect(luis().totals).toMatchObject({ efectivo: 400, patrimonio: 400, aportadoTotal: 400, capital: 0 })
     expect(ahorro().totals.patrimonio).toBe(600)
     expect(saved(storage).version).toBe(5)
     s = useData.getState()
@@ -537,9 +538,10 @@ describe('cuenta principal «MyInvestor» y cuentas externas (versión 4)', () =
     const f = finance()
     const a = f.byTitular.get(t1.id)!
     const b = f.byTitular.get(t2.id)!
-    // Los 400 € que van al titular 2 pasan por MyInvestor sin dejar constancia: no bajan su saldo.
-    expect(f.accounts.get(my)).toMatchObject({ saldo: 1000, dePaso: 400, numMovimientos: 1 })
-    expect(a.totals).toMatchObject({ efectivo: 1000, patrimonio: 1000, aportadoTotal: 1000 })
+    // Los 400 € que van al titular 2 salen de MyInvestor (saldo real) sin dejar constancia en sus
+    // movimientos, y no cuentan como inversión suya (ni en su patrimonio ni en lo aportado).
+    expect(f.accounts.get(my)).toMatchObject({ saldo: 600, dePaso: 400, numMovimientos: 1 })
+    expect(a.totals).toMatchObject({ efectivo: 600, patrimonio: 600, aportadoTotal: 600 })
     expect(a.enviadoTotal).toBe(0)
     expect(b.totals).toMatchObject({ efectivo: 300, patrimonio: 300, aportadoTotal: 300 })
     expect(b.recibido).toEqual([{ titularId: t1.id, importe: 300 }])
