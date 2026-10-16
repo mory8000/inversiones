@@ -19,7 +19,7 @@ import { currentDataset, useData } from '../store/data'
 import { editMovement, openAccount, openCuenta, openProduct, openTitular } from '../store/ui'
 import { accion } from '../store/deshacer'
 import { anadirDinero, programarMensual } from '../store/acciones'
-import { buildTimelineMulti } from '../lib/finance'
+import { buildTimelineMulti, type MultiTimelinePoint } from '../lib/finance'
 import { buildFlowGraph } from '../lib/flow'
 import { PRODUCT_META, kindMeta } from '../lib/meta'
 import { entityName, movementKind, ownerOf, sortMovementsDesc } from '../lib/movements'
@@ -409,15 +409,25 @@ export function Dashboard() {
   const hidden = useHidden()
   const isDesktop = useMediaQuery('(min-width: 1024px)')
   const withData = fin.titulares.filter((tf) => tf.ws.movimientos.length > 0)
-  const timeline = useMemo(
-    () =>
-      buildTimelineMulti(
-        fin.titulares.filter((tf) => tf.ws.movimientos.length > 0).map((tf) => ({ id: tf.titular.id, ws: tf.ws })),
-        fin.ws.movimientos,
-        fin.today,
-      ),
-    [fin],
-  )
+  // La línea del titular principal empieza hoy: el dinero que ya se fue al «Fondo ahorro» no se
+  // dibuja hacia atrás (solo cuenta a partir de hoy). Con un único titular no se recorta: se
+  // quedaría sin historia.
+  const timeline = useMemo(() => {
+    const puntos = buildTimelineMulti(
+      fin.titulares.filter((tf) => tf.ws.movimientos.length > 0).map((tf) => ({ id: tf.titular.id, ws: tf.ws })),
+      fin.ws.movimientos,
+      fin.today,
+    )
+    const principalId = fin.titulares[0]?.titular.id
+    if (!principalId || fin.titulares.length < 2) return puntos
+    return puntos.map((p) => {
+      if (p.fecha >= fin.today) return p
+      const copia: MultiTimelinePoint = { ...p }
+      delete copia[`${principalId}:p`]
+      delete copia[`${principalId}:c`]
+      return copia
+    })
+  }, [fin])
   const graph = useMemo(() => buildFlowGraph(ds, positions, { from: null, to: null }), [ds, positions])
   const multi = ds.titulares.length > 1
   const empty = ws.movimientos.length === 0
@@ -478,6 +488,11 @@ export function Dashboard() {
                 series={withData.map((tf) => ({ id: tf.titular.id, name: tf.titular.nombre, color: tf.color }))}
                 height={isDesktop ? 320 : 240}
               />
+              {multi && principal && (
+                <p className="mt-2 px-2 text-xs text-slate-500">
+                  La línea de {principal.titular.nombre} empieza hoy: cuenta a partir de ahora.
+                </p>
+              )}
             </div>
           </Card>
 

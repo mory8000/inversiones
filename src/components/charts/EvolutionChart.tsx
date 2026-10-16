@@ -109,6 +109,9 @@ export function MultiEvolutionChart({ points, series, height = 240 }: { points: 
   // Desde 0, o más abajo si algún titular llega a estar en negativo (saldo real de su cuenta).
   const domain: [number, number] = [min < 0 ? Math.floor((min * 1.08) / 100) * 100 : 0, Math.ceil((max * 1.08 || 1) / 100) * 100]
   const money = (v: number) => (hidden ? `${HIDDEN} €` : fmtEUR(v))
+  // Una línea que solo tiene un punto (la del titular principal, que empieza hoy) se queda sin
+  // trazo: se le pone el punto bien visible para que se vea dónde arranca.
+  const soloUnPunto = (clave: string) => points.filter((p) => p[clave] !== undefined).length === 1
 
   return (
     <div style={{ height }}>
@@ -133,6 +136,7 @@ export function MultiEvolutionChart({ points, series, height = 240 }: { points: 
                 <div className="min-w-52 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm shadow-lg">
                   <div className="mb-1.5 text-xs font-medium text-slate-500">{fmtDate(p.fecha)}</div>
                   {series.map((s) => {
+                    if (p[`${s.id}:p`] === undefined) return null
                     const pat = Number(p[`${s.id}:p`]) || 0
                     const cap = Number(p[`${s.id}:c`]) || 0
                     return (
@@ -156,10 +160,10 @@ export function MultiEvolutionChart({ points, series, height = 240 }: { points: 
             }}
           />
           {series.map((s) => (
-            <Line key={`${s.id}:c`} type="monotone" dataKey={`${s.id}:c`} stroke={s.color} strokeOpacity={0.45} strokeWidth={1.5} strokeDasharray="5 4" dot={false} isAnimationActive={false} />
+            <Line key={`${s.id}:c`} type="monotone" dataKey={`${s.id}:c`} stroke={s.color} strokeOpacity={0.45} strokeWidth={1.5} strokeDasharray="5 4" dot={soloUnPunto(`${s.id}:c`) ? { r: 3 } : false} isAnimationActive={false} />
           ))}
           {series.map((s) => (
-            <Line key={`${s.id}:p`} type="monotone" dataKey={`${s.id}:p`} stroke={s.color} strokeWidth={2.5} dot={false} isAnimationActive={false} />
+            <Line key={`${s.id}:p`} type="monotone" dataKey={`${s.id}:p`} stroke={s.color} strokeWidth={2.5} dot={soloUnPunto(`${s.id}:p`) ? { r: 3.5 } : false} isAnimationActive={false} />
           ))}
         </ComposedChart>
       </ResponsiveContainer>
