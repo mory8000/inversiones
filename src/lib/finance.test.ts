@@ -454,11 +454,12 @@ describe('el principal y el «Fondo ahorro», cada uno por su lado', () => {
     return { luis: de('T1'), ahorro: de('T2') }
   }
 
-  it('lo que pasa por su MyInvestor hacia el «Fondo ahorro» sale de su saldo pero no cuenta para el principal: cuenta solo para el «Fondo ahorro»', () => {
+  it('el dinero que pasa por su MyInvestor camino del «Fondo ahorro» no cuenta para el principal: cuenta solo para el «Fondo ahorro»', () => {
     const ds = base()
     const my = computeAccountStats(ds).get('MY')!
-    // MyInvestor: entran 5.000, salen 3.500 a sus inversiones y 500 al «Fondo ahorro» (que salen de verdad).
-    expect(my).toMatchObject({ entradas: 5000, salidas: 4000, saldo: 1000, dePaso: 500, enviadoOtros: 0 })
+    // MyInvestor: entran 5.000 y 500 de ellos se van al «Fondo ahorro», así que no cuentan (ni esa
+    // entrada ni esa salida): quedan 4.500 que entran y 3.500 que salen a sus inversiones.
+    expect(my).toMatchObject({ entradas: 4500, salidas: 3500, saldo: 1000, dePaso: 500, dePasoNoCuenta: 500, enviadoOtros: 0 })
     // Ni rastro en la cuenta: sus movimientos y «a dónde ha ido su dinero» son solo los de Luis.
     expect(my.numMovimientos).toBe(4)
     expect(my.porProducto.map((x) => x.productoId).sort()).toEqual(['D', 'F', 'K'])
@@ -490,18 +491,23 @@ describe('el principal y el «Fondo ahorro», cada uno por su lado', () => {
     const lookup = buildLookup(ds)
     expect(meses.every((m) => isDePaso(lookup, m))).toBe(true)
     const my = computeAccountStats(ds).get('MY')!
-    // Todo lo que se fue al «Fondo ahorro» sale de su saldo: 5.000 − 3.500 (lo suyo) − 500 − 9.966.
+    // Los 10.466 € que se han desviado al «Fondo ahorro» no cuentan: solo dejan de contar 5.000 €
+    // (lo que sí había entrado); el resto no llegó a entrar y sale del saldo igual.
     expect(my.saldo).toBeCloseTo(5000 - 3500 - 500 - 22 * 453, 6)
+    expect(my.entradas).toBeCloseTo(0, 6)
+    expect(my.salidas).toBeCloseTo(3500 + (500 + 22 * 453 - 5000), 6)
     expect(my.dePaso).toBeCloseTo(500 + 22 * 453, 6)
+    expect(my.dePasoNoCuenta).toBeCloseTo(5000, 6)
     const { luis, ahorro } = totales(ds)
-    // Sin apuntar el dinero que llega de fuera, MyInvestor queda en negativo (saldo real), y lo
-    // aportado no cuenta lo que se fue: el patrimonio refleja las dos cosas.
+    // Sin apuntar el dinero que llega de fuera, MyInvestor queda en negativo (saldo real, −8.966) y
+    // lo aportado no cuenta lo que entró y se fue: los 5.000 € que llegaron son los que se fueron.
     expect(luis.efectivo).toBeCloseTo(-8966, 6)
     expect(luis.patrimonio).toBeCloseTo(3600 - 8966, 6)
-    expect(luis.aportadoTotal).toBeCloseTo(5000 - 500 - 22 * 453, 6)
+    expect(luis.aportadoTotal).toBeCloseTo(0, 6)
     expect(ahorro.patrimonio).toBeCloseTo(500 + 22 * 453, 6)
     expect(ahorro.aportadoTotal).toBeCloseTo(500 + 22 * 453, 6)
-    // En la evolución: el último punto de Luis es su patrimonio de hoy (saldo real incluido).
+    // En la evolución: el último punto de Luis es su patrimonio de hoy (el saldo es el real, así que
+    // el gráfico mira también el dinero desviado, que sale de sus cuentas aunque no esté en su lista).
     const tl = buildTimelineMulti(
       [
         { id: 'T1', ws: titularWorkspace(ds, 'T1') },

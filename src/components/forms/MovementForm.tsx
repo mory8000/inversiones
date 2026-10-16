@@ -44,13 +44,12 @@ function explain(tipo: MovementType, o: string, d: string, oExterna: boolean, dE
 
 /**
  * Explicación cuando el dinero va de un titular a otro. `dePaso`: sale de una cuenta del principal
- * (MyInvestor) camino de otro titular, así que en lo del principal no deja constancia más allá de
- * su saldo (que es el real).
+ * (MyInvestor) camino de otro titular, así que en lo del principal no cuenta (es un mero paso).
  */
 function explainCross(o: string, d: string, from: Titular, to: Titular, destino: EntityRef, lookup: Lookup, dePaso: boolean): string {
   if (dePaso) {
     const pasa = `Sale de «${o}» (de ${from.nombre}) de paso`
-    const noQueda = `En lo de ${from.nombre} no figura como movimiento ni como inversión suya (aunque sí sale del saldo de «${o}»)`
+    const noQueda = `No cuenta en «${o}» (ni lo que entra ni lo que sale) ni para ${from.nombre}`
     if (destino.kind === 'producto') return `${pasa} y se invierte en «${d}» (de ${to.nombre}). ${noQueda}: cuenta solo para ${to.nombre}.`
     if (isConSaldo(lookup, destino)) return `${pasa} y llega a «${d}» (de ${to.nombre}). ${noQueda}: cuenta solo para ${to.nombre}.`
     return `${pasa} y llega a «${d}» (de ${to.nombre}, cuenta externa). ${noQueda}; para ${to.nombre} contará cuando lo invierta.`
@@ -124,9 +123,9 @@ export function MovementForm({
   const toT = destinoRef ? lookup.titulares.get(owner(destinoRef) ?? '') : undefined
   const cross = !!fromT && !!toT && fromT.id !== toT.id
   /**
-   * Dinero «de paso»: sale de una cuenta del principal (MyInvestor o una externa suya) hacia otro
-   * titular. El saldo es el real (sale de la cuenta), aunque en lo del principal no deje más rastro
-   * (ni movimiento ni inversión suya).
+   * Dinero desviado: va de una cuenta del principal (MyInvestor o una externa suya) hacia otro
+   * titular (p. ej. al «Fondo ahorro»). No cuenta en lo del principal: ni en la cuenta de la que
+   * sale (no entra ni sale), ni como movimiento ni como inversión suya.
    */
   const vaDePaso = !nuevaExterna && !!origenRef && !!destinoRef && isDePaso(lookup, { origen: origenRef, destino: destinoRef })
 
@@ -162,8 +161,8 @@ export function MovementForm({
 
   // ── ¿Hay dinero en la cuenta con saldo (MyInvestor) de la que sale? ──────
   // No se puede sacar más de lo que hay: ni ese día ni después (si hay movimientos posteriores).
-  // El saldo es el real: lo que va «de paso» a otro titular también sale de la cuenta, así que
-  // se comprueba igual.
+  // El saldo es el real: el dinero que se desvía a otro titular también sale de la cuenta, así que
+  // se comprueba igual que cualquier otra salida (si falta, es que falta apuntar de dónde vino).
   const origenConSaldo = !!origenRef && isConSaldo(lookup, origenRef)
   const sinEste = useMemo(() => (existing ? ws.movimientos.filter((m) => m.id !== existing.id) : ws.movimientos), [ws.movimientos, existing])
   /** Lo que hay disponible en la cuenta de origen en la fecha elegida (sin contar este movimiento). */
@@ -517,7 +516,7 @@ export function MovementForm({
             hint={
               [
                 multi && fromT ? `De ${fromT.nombre}` : null,
-                vaDePaso ? 'De paso: sale de ella y no figura en sus movimientos' : null,
+                vaDePaso ? 'De paso: no cuenta en ella' : null,
                 disponible !== null && !hidden ? `Disponible: ${fmtEUR(disponible)}${fecha < today ? ` (el ${fmtDate(fecha)})` : ''}` : null,
                 saldoProducto !== null && !hidden ? `Saldo actual: ${fmtEUR(saldoProducto)}` : null,
                 nuevaExterna ? `Se creará la cuenta «${NOMBRE_EXTERNA}» (luego puedes cambiarle el nombre en Cuentas)` : null,

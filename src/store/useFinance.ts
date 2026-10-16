@@ -22,8 +22,8 @@ export interface TitularFinance {
   color: string
   /**
    * Sus cuentas y productos, y los movimientos que le tocan (también los que vienen de o van a
-   * otro titular). Al principal no le tocan los «de paso» (no dejan constancia en lo suyo), aunque
-   * su saldo sí baje por ellos: el de las cuentas es el saldo real.
+   * otro titular). Al principal no le tocan los «de paso»: el dinero desviado al «Fondo ahorro» no
+   * cuenta en lo suyo (ni como movimiento, ni en el saldo de la cuenta de la que sale).
    */
   ws: Workspace
   /** Sus productos. */

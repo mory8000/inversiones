@@ -236,7 +236,10 @@ function TotalCard({ fin }: { fin: FinanceData }) {
           <Sigma className="size-[18px]" strokeWidth={2.4} />
         </span>
         <span className="min-w-0 flex-1 truncate text-sm font-semibold">Total</span>
-        <Amount value={total} className={cn('shrink-0 text-lg font-bold', total < -0.005 && 'text-rose-300')} />
+        <Amount
+          value={total}
+          className={cn('shrink-0 text-2xl leading-tight font-bold sm:text-[1.75rem]', total < -0.005 && 'text-rose-300')}
+        />
       </div>
     </section>
   )

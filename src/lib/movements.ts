@@ -73,24 +73,27 @@ export function saleDePaso(lookup: Lookup, cuentaId: string, destinoTitularId: s
 }
 
 /**
- * Dinero «de paso»: el que llega desde fuera (p. ej. desde ING), pasa por una cuenta del titular
+ * Dinero desviado: el que llega desde fuera (p. ej. desde ING), pasa por una cuenta del titular
  * principal (MyInvestor) y se va a otro titular, como la transferencia mensual al «Fondo ahorro».
- * Sale de su cuenta (el saldo es el real, como en el banco), pero no deja más constancia en lo del
- * principal: no cuenta en su patrimonio ni en sus cifras (tampoco lo que genere después, ganancias
- * o pérdidas) y no sale en su ventana, en sus cuentas ni en sus movimientos. Se ve y cuenta solo en
- * quien lo recibe. La regla vale para todos los movimientos, también para los de antes (se calcula
- * siempre desde el principio).
+ * En lo del principal no cuenta: ni en su patrimonio ni en sus cifras (tampoco lo que genere
+ * después, ganancias o pérdidas), ni en la cuenta de la que sale (no cuenta como dinero que entró
+ * ni como dinero que salió), ni en su ventana, en sus cuentas o en sus movimientos. Se ve y cuenta
+ * solo en quien lo recibe. La regla vale para todos los movimientos, también para los de antes (se
+ * calcula siempre desde el principio).
  */
 export function isDePaso(lookup: Lookup, m: Pick<Movimiento, 'origen' | 'destino'>): boolean {
   return m.origen.kind === 'cuenta' && saleDePaso(lookup, m.origen.id, ownerId(lookup, m.destino))
 }
 
-/** Detector de dinero «de paso» para unos datos (para no contarlo como inversión del principal). */
+/**
+ * Detector de dinero desviado para unos datos: lo que no cuenta en el titular principal (ni como
+ * movimiento suyo, ni como dinero que entró o salió por una cuenta suya).
+ */
 export const detectorDePaso = (lookup: Lookup): DePaso => (m) => isDePaso(lookup, m)
 
 /**
- * ¿Se ve el movimiento en esta cuenta o producto? Lo que pasa «de paso» por una cuenta del
- * principal no figura en ella (su saldo sí baja): solo se ve en lo de quien lo recibe.
+ * ¿Se ve el movimiento en esta cuenta o producto? El dinero desviado desde una cuenta del principal
+ * no figura en ella (no cuenta ni al entrar ni al salir): solo se ve en lo de quien lo recibe.
  */
 export function seVeEn(lookup: Lookup, m: Pick<Movimiento, 'origen' | 'destino'>, ref: EntityRef): boolean {
   if (sameRef(m.destino, ref)) return true
@@ -144,6 +147,7 @@ export function sortMovementsDesc(movs: Movimiento[]): Movimiento[] {
     a.fecha === b.fecha ? b.createdAt.localeCompare(a.createdAt) : b.fecha.localeCompare(a.fecha),
   )
 }
+
 
 // ── Filtros ─────────────────────────────────────────────────────────────────
 

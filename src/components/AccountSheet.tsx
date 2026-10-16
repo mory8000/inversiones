@@ -23,8 +23,8 @@ const VISIBLES = 6
  * Ventana de una cuenta con saldo (la cuenta principal «MyInvestor»): su saldo real, lo que se
  * puede hacer (añadir dinero, invertir, programar la transferencia mensual, sacar dinero), sus
  * transferencias mensuales (el único sitio donde se cambian, con «Editar») y sus movimientos,
- * cada uno con «Editar» y «Borrar». Lo que pasa «de paso» por la cuenta (camino del «Fondo
- * ahorro») sale de su saldo (el saldo es el real), pero no figura entre sus movimientos.
+ * cada uno con «Editar» y «Borrar». Lo que se desvía de la cuenta (camino del «Fondo ahorro») no
+ * cuenta en ella (ni lo que entra ni lo que sale) y no figura entre sus movimientos.
  */
 export function AccountSheet({ modalId, cuentaId }: { modalId: string; cuentaId: string }) {
   const close = useUI((s) => s.close)
@@ -46,7 +46,7 @@ export function AccountSheet({ modalId, cuentaId }: { modalId: string; cuentaId:
   const multi = ds.titulares.length > 1
   const esPrincipal = cuentaPrincipal(ds.cuentas, c.titularId)?.id === c.id
   const ref = { kind: 'cuenta' as const, id: c.id }
-  // Sin lo que pasa «de paso» camino de otro titular: no figura aquí (su saldo sí lo nota).
+  // Sin lo que se desvía camino de otro titular: no figura aquí (no cuenta ni al entrar ni al salir).
   const movs = sortMovementsDesc(ws.movimientos.filter((m) => seVeEn(lookup, m, ref)))
   /** Dinero traído desde bancos externos (aportaciones): se puede cambiar o borrar. */
   const traidos = movs.filter((m) => m.destino.kind === 'cuenta' && m.destino.id === c.id && isExterna(lookup, m.origen))

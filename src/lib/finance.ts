@@ -18,14 +18,13 @@
 // el patrimonio del titular. Las cuentas externas solo dicen de dónde viene el
 // dinero: no llevan saldo.
 //
-// Dinero «de paso»: lo que llega desde fuera (p. ej. desde ING), pasa por una
-// cuenta del titular principal (MyInvestor) y se va a otro titular (p. ej. la
-// transferencia mensual al «Fondo ahorro») sale de esa cuenta (su saldo baja, como
-// en el banco) pero no deja más constancia en lo del principal: no cuenta como su
-// inversión, no sale en su lista de movimientos y no engorda su «Aportado» (para él
-// fue dinero que entró y se fue). Cuenta solo para quien lo recibe, con sus
-// ganancias o pérdidas. Como todo se calcula desde el primer movimiento, la regla
-// vale también para lo de antes.
+// Dinero desviado («de paso»): lo que llega desde fuera (p. ej. desde ING), pasa por
+// una cuenta del titular principal (MyInvestor) y se va a otro titular (p. ej. la
+// transferencia mensual al «Fondo ahorro») no cuenta para el principal: ni como
+// inversión suya, ni como dinero que entró de verdad (no engorda su «Aportado»), ni
+// como dinero que salió (no resta en su cuenta). Cuenta solo para quien lo recibe,
+// con sus ganancias o pérdidas. Como todo se calcula desde el primer movimiento, la
+// regla vale también para lo de antes.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { Movimiento, Producto, ProductType, Titular, Valoracion, Workspace } from '../types'
@@ -88,9 +87,9 @@ export interface AccountStats {
   cuentaId: string
   /** Cuenta externa (otro banco): no lleva saldo ni suma en el patrimonio. */
   externa: boolean
-  /** Todo lo que ha entrado en la cuenta. */
+  /** Todo lo que ha entrado en la cuenta (sin el dinero desviado al «Fondo ahorro» que la cubre). */
   entradas: number
-  /** Todo lo que ha salido de la cuenta (también lo que ha pasado «de paso» hacia otro titular). */
+  /** Todo lo que ha salido (sin el dinero desviado; si no había entradas que lo cubran, sí suma). */
   salidas: number
   /**
    * Entradas − salidas. Solo cuenta en las cuentas con saldo. Si es negativo es que falta
@@ -98,12 +97,15 @@ export interface AccountStats {
    */
   saldo: number
   /**
-   * Dinero «de paso»: lo que ha pasado por la cuenta (del titular principal) camino de otro
-   * titular, p. ej. al «Fondo ahorro». Sale de la cuenta (baja su saldo) pero no deja más
-   * constancia: no cuenta como inversión suya, no sale en su lista de movimientos y no engorda su
-   * «Aportado» (para él fue dinero que entró y se fue). Solo para cálculos.
+   * Dinero desviado de esta cuenta (del titular principal) camino de otro titular, p. ej. al
+   * «Fondo ahorro»: lo que salió de ella y en ella no cuenta. Solo para cálculos.
    */
   dePaso: number
+  /**
+   * De lo desviado, la parte que no cuenta como entrada de esta cuenta (porque antes había entrado
+   * de verdad): el dinero que había entrado y se fue con él tampoco engorda lo aportado.
+   */
+  dePasoNoCuenta: number
   /** Lo que ha entrado desde cuentas externas (aportaciones). */
   aportaciones: number
   /** Enviado desde la cuenta a productos (inversiones) del mismo titular. */
@@ -410,10 +412,10 @@ export function isBetweenTitulares(m: Movimiento, owner: (ref: Movimiento['orige
 }
 
 /**
- * Estadísticas de cada cuenta. Con los titulares en los datos (o con `dePaso`), lo que pasa «de
- * paso» por una cuenta del titular principal hacia otro titular sale de ella (baja su saldo, como
- * en el banco) pero no deja más constancia: no cuenta en sus movimientos (los que se ven en su
- * ventana), ni como inversión suya. Se suma aparte, en `dePaso`.
+ * Estadísticas de cada cuenta. Con los titulares en los datos (o con `dePaso`), el dinero que se
+ * desvía «de paso» de una cuenta del principal a otro titular no cuenta en ella: ni como salida, ni
+ * como parte del dinero que había entrado y se fue con él (`dePaso` y `dePasoNoCuenta`). El saldo,
+ * en cambio, es el real: si lo desviado no se cubre con lo que había entrado, sale del saldo.
  */
 export function computeAccountStats(ws: Workspace & { titulares?: Titular[] }, dePaso: DePaso = detectorDePaso(buildLookup(ws))): Map<string, AccountStats> {
   const map = new Map<string, AccountStats>()
@@ -427,6 +429,7 @@ export function computeAccountStats(ws: Workspace & { titulares?: Titular[] }, d
       salidas: 0,
       saldo: 0,
       dePaso: 0,
+      dePasoNoCuenta: 0,
       aportaciones: 0,
       enviado: 0,
       recibido: 0,
@@ -455,18 +458,16 @@ export function computeAccountStats(ws: Workspace & { titulares?: Titular[] }, d
   const externas = new Set(ws.cuentas.filter((c) => c.externa).map((c) => c.id))
   for (const m of ws.movimientos) {
     const cross = isBetweenTitulares(m, owner)
-    // Dinero «de paso» (de una cuenta del principal a otro titular): entra desde fuera, pasa por
-    // la cuenta y se va, así que su saldo baja (como en el banco). Lo que no deja es más rastro: ni
-    // movimiento suyo, ni inversión suya (ver más abajo). Se suma aparte, en `dePaso`.
+    // Dinero desviado (de una cuenta del principal a otro titular): en esa cuenta no cuenta como
+    // salida, y en su ventana tampoco figura. Se suma aparte, en `dePaso` (ver el final).
     const paso = m.origen.kind === 'cuenta' && dePaso(m)
-    if (paso) {
-      const s = map.get(m.origen.id)
-      if (s) s.dePaso += m.importe
-    }
     if (m.origen.kind === 'cuenta') {
       // Saldo: lo que entra menos lo que sale.
       const s = map.get(m.origen.id)
-      if (s) s.salidas += m.importe
+      if (s) {
+        if (paso) s.dePaso += m.importe
+        else s.salidas += m.importe
+      }
     }
     if (m.destino.kind === 'cuenta') {
       const s = map.get(m.destino.id)
@@ -512,6 +513,12 @@ export function computeAccountStats(ws: Workspace & { titulares?: Titular[] }, d
   }
 
   for (const [id, s] of map) {
+    // Lo desviado no cuenta en la cuenta: la parte que había entrado de verdad deja de contar como
+    // entrada y como salida; la que no llegó a entrar (faltaba apuntarla) sale del saldo igual.
+    s.dePasoNoCuenta = Math.min(s.entradas, s.dePaso)
+    s.entradas -= s.dePasoNoCuenta
+    s.salidas += s.dePaso - s.dePasoNoCuenta
+    s.aportaciones = Math.max(0, s.aportaciones - s.dePasoNoCuenta)
     s.saldo = s.entradas - s.salidas
     if (Math.abs(s.saldo) < EPS) s.saldo = 0
     s.netoInvertido = s.enviado - s.recibido
@@ -565,9 +572,9 @@ export function computeTotals(ws: Workspace, positions: Map<string, Position>, a
     if (suyo.has(d) && !suyo.has(o)) aportadoTotal += m.importe
     if (suyo.has(o) && susExternas.has(d)) retiradoTotal += m.importe
   }
-  // El dinero que entró desde fuera y se fue «de paso» a otro titular (p. ej. al «Fondo ahorro»)
-  // no engorda lo aportado: para este titular fue dinero que entró y se fue (cuenta para el otro).
-  if (accounts) for (const c of ws.cuentas) if (!c.externa) aportadoTotal -= accounts.get(c.id)?.dePaso ?? 0
+  // El dinero que había entrado en una cuenta con saldo y se fue desviado a otro titular (p. ej. al
+  // «Fondo ahorro») no engorda lo aportado: para este titular fue dinero que entró y se fue.
+  if (accounts) for (const c of ws.cuentas) if (!c.externa) aportadoTotal -= accounts.get(c.id)?.dePasoNoCuenta ?? 0
   return {
     patrimonio,
     efectivo,
@@ -657,10 +664,10 @@ export function timelineDates(movimientos: Movimiento[], today: string, maxPoint
 }
 
 /**
- * Capital y patrimonio en una fecha del histórico: productos y saldo real de las cuentas con
- * saldo (que suma en los dos, porque es dinero puesto que aún no se ha invertido). Lo que pasa
- * «de paso» camino de otro titular también sale de la cuenta (su saldo es el real), así que para
- * el saldo se miran todos los movimientos (`todos`), aunque no figuren en los del titular.
+ * Capital y patrimonio en una fecha del histórico: productos y saldo de las cuentas con saldo (que
+ * suma en los dos, porque es dinero puesto que aún no se ha invertido). Para el saldo se miran
+ * `todos` los movimientos de sus cuentas (también el dinero desviado, que sale de ellas aunque no
+ * figure en su lista): es lo que hace que el saldo sea el real.
  */
 function valueAt(ws: Workspace, fecha: string, todos: Movimiento[] = ws.movimientos): { capital: number; patrimonio: number } {
   let capital = 0

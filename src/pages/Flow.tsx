@@ -245,7 +245,7 @@ export function Flow() {
                 Cada caja lleva el nombre de su titular. Si el dinero sale de la cuenta de uno y entra en un producto de otro, cuenta como inversión de
                 quien lo recibe. Lo que sigue invertido va por separado para cada titular.
                 {graph.nodes.some((n) => n.kind === 'aportaciones') &&
-                  ' Lo que pasa de paso por una cuenta del titular principal camino de otro titular no figura en ella (su saldo sí baja): sale como «Aportaciones» de quien lo recibe.'}
+                  ' Lo que se desvía de una cuenta del titular principal camino de otro titular no cuenta en ella: sale como «Aportaciones» de quien lo recibe.'}
               </p>
             )}
             <div className="px-2 pt-3 pb-4 sm:px-4">

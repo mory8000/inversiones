@@ -4,9 +4,9 @@
 // cuenta tiene que alcanzar en la fecha del movimiento y también después (si hay
 // movimientos posteriores, no pueden quedarse sin dinero).
 //
-// El saldo es el real: todo lo que sale (también lo que pasa «de paso» camino de otro titular,
-// como la transferencia mensual al «Fondo ahorro») lo baja, así que se comprueba igual que
-// cualquier otra salida.
+// Se comprueba con el dinero que cuenta en la cuenta: lo que se desvía camino de otro titular
+// (como la transferencia mensual al «Fondo ahorro») no cuenta en ella (ni entra ni sale), así
+// que quien decide no lo mira. El saldo que sale de aquí es el real de todas formas.
 
 import type { Movimiento } from '../types'
 import { EPS } from './finance'

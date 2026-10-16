@@ -465,19 +465,23 @@ describe('cuenta principal «MyInvestor» y cuentas externas (versión 4)', () =
     expect(ahorro().totals.patrimonio).toBe(600)
     expect(ahorro().totals.aportadoTotal).toBe(600)
     // Los 600 € (4 meses, también los ya pasados) pasan por MyInvestor camino del «Fondo ahorro»:
-    // salen de verdad de su saldo (el saldo es el real), pero no dejan constancia en sus
-    // movimientos ni cuentan como inversión suya.
+    // no cuentan en ella (ni como entradas ni como salidas) ni dejan constancia en sus movimientos.
+    // Como no hay ninguna entrada apuntada que los cubra, el saldo baja igual, que es el real.
     expect(luis().enviadoTotal).toBe(0)
     expect(luis().ws.movimientos).toHaveLength(0)
     expect(f.accounts.get('c1')).toMatchObject({ saldo: -600, salidas: 600, dePaso: 600, numMovimientos: 0 })
-    expect(luis().totals).toMatchObject({ efectivo: -600, patrimonio: -600, aportadoTotal: -600 })
+    // El saldo es el real (−600 €: los 600 € salieron de verdad y no hay ninguna entrada apuntada),
+    // pero no hay nada «aportado»: no ha entrado dinero de fuera que se haya quedado.
+    expect(luis().totals).toMatchObject({ efectivo: -600, patrimonio: -600, aportadoTotal: 0 })
 
     // Aportación desde una cuenta externa a MyInvestor.
     const st = useData.getState()
     const bbva = st.addCuenta({ titularId: 't1', nombre: 'BBVA', entidad: '', iban: '', color: '#000', notas: '', externa: true })
     st.addMovimiento({ fecha: '2026-10-10', origen: { kind: 'cuenta', id: bbva }, destino: { kind: 'cuenta', id: 'c1' }, importe: 1000, concepto: 'Aportación' })
     f = finance()
-    expect(f.accounts.get('c1')).toMatchObject({ saldo: 400, aportaciones: 1000, dePaso: 600 })
+    // De los 1.000 € que llegan de fuera, 600 € se van al «Fondo ahorro»: ni entran ni salen (dan
+    // igual), así que lo que se ve es 400 € aportados y 400 € de saldo.
+    expect(f.accounts.get('c1')).toMatchObject({ saldo: 400, entradas: 400, salidas: 0, aportaciones: 400, dePaso: 600, dePasoNoCuenta: 600 })
     expect(luis().totals).toMatchObject({ efectivo: 400, patrimonio: 400, aportadoTotal: 400, capital: 0 })
     expect(ahorro().totals.patrimonio).toBe(600)
     expect(saved(storage).version).toBe(5)
