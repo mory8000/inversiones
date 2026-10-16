@@ -8,6 +8,7 @@ import { MovementForm } from './forms/MovementForm'
 import { ProductForm } from './forms/ProductForm'
 import { AccountForm } from './forms/AccountForm'
 import { ValuationForm } from './forms/ValuationForm'
+import { ValoresForm } from './forms/ValoresForm'
 import { TitularForm } from './forms/TitularForm'
 import { InteresForm } from './forms/InteresForm'
 import { InvestmentSheet } from './InvestmentSheet'
@@ -78,6 +79,8 @@ export default function ModalHost() {
             return <AccountSheet key={m.id} modalId={m.id} cuentaId={m.cuentaId} />
           case 'valuation':
             return <ValuationForm key={m.id} modalId={m.id} productId={m.productId} />
+          case 'valores':
+            return <ValoresForm key={m.id} modalId={m.id} />
           case 'interes':
             return <InteresForm key={m.id} modalId={m.id} productId={m.productId} />
           case 'titular':

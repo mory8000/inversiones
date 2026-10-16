@@ -1,10 +1,10 @@
 import { Suspense, lazy, useState } from 'react'
-import { ArrowUpDown, CalendarSync, Check, ChevronLeft, ChevronRight, Plus } from 'lucide-react'
+import { ArrowUpDown, Calculator, CalendarSync, Check, ChevronLeft, ChevronRight, Plus } from 'lucide-react'
 import type { Producto, Titular } from '../types'
 import type { Position } from '../lib/finance'
 import type { FinanceData } from '../store/useFinance'
 import { useData } from '../store/data'
-import { openInvestment, openProduct, toast } from '../store/ui'
+import { openInvestment, openProduct, openValores, toast } from '../store/ui'
 import { PRODUCT_META } from '../lib/meta'
 import { fmtPct } from '../lib/format'
 import { moveInList } from '../lib/titulares'
@@ -175,7 +175,7 @@ export function InvestmentTiles({ fin }: { fin: FinanceData }) {
                 : 'Aquí verás una ventanilla por cada inversión'}
           </p>
         </div>
-        <div className="flex shrink-0 gap-2">
+        <div className="flex min-w-0 shrink flex-wrap justify-end gap-2">
           {sorting2 ? (
             <Button
               icon={Check}
@@ -192,6 +192,11 @@ export function InvestmentTiles({ fin }: { fin: FinanceData }) {
               {visibles.length > 1 && (
                 <Button variant="secondary" icon={ArrowUpDown} onClick={() => setSorting(true)}>
                   Ordenar
+                </Button>
+              )}
+              {visibles.length > 0 && (
+                <Button variant="secondary" icon={Calculator} onClick={openValores}>
+                  Valores
                 </Button>
               )}
               <Button variant="soft" icon={Plus} onClick={() => openProduct({ abrirVentanilla: true })} aria-label="Nueva inversión">

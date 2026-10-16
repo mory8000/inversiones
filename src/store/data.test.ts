@@ -296,6 +296,81 @@ describe('transferencia mensual', () => {
   })
 })
 
+describe('poner los valores de hoy', () => {
+  /** Dos fondos de Luis y uno del «Fondo ahorro», con su dinero invertido. */
+  async function setup() {
+    const app = await open(new MemoryStorage())
+    const st = app.useData.getState()
+    const [t1, t2] = st.datos.titulares
+    const my = st.datos.cuentas[0].id
+    const f1 = st.addProducto({ titularId: t1.id, tipo: 'fondo', nombre: 'Fondo A', entidad: '', isin: '', notas: '', tae: null, vencimiento: null })
+    const f2 = st.addProducto({ titularId: t1.id, tipo: 'cartera', nombre: 'Cartera B', entidad: '', isin: '', notas: '', tae: null, vencimiento: null })
+    const f3 = st.addProducto({ titularId: t2.id, tipo: 'fondo', nombre: 'Fondo ahorro', entidad: '', isin: '', notas: '', tae: null, vencimiento: null })
+    const banco = st.addCuenta({ titularId: t1.id, nombre: 'Banco', entidad: '', iban: '', color: '#000', notas: '', externa: true })
+    const bancoAhorro = st.addCuenta({ titularId: t2.id, nombre: 'Banco ahorro', entidad: '', iban: '', color: '#000', notas: '', externa: true })
+    st.addMovimiento({ fecha: '2026-01-04', origen: { kind: 'cuenta', id: banco }, destino: { kind: 'cuenta', id: my }, importe: 5000, concepto: 'Aportación' })
+    st.addMovimiento({ fecha: '2026-01-05', origen: { kind: 'cuenta', id: my }, destino: { kind: 'producto', id: f1 }, importe: 1000, concepto: '' })
+    st.addMovimiento({ fecha: '2026-01-05', origen: { kind: 'cuenta', id: my }, destino: { kind: 'producto', id: f2 }, importe: 2000, concepto: '' })
+    st.addMovimiento({ fecha: '2026-02-05', origen: { kind: 'cuenta', id: bancoAhorro }, destino: { kind: 'producto', id: f3 }, importe: 500, concepto: '' })
+    return { ...app, t1, t2, my, f1, f2, f3 }
+  }
+
+  it('pone de una vez el valor de cada inversión y las tarjetas cuadran con esos valores', async () => {
+    const { useData, finance, t1, t2, f1, f2, f3 } = await setup()
+    useData.getState().setValores('2026-10-15', [
+      { productoId: f1, valor: 1100 },
+      { productoId: f2, valor: 1800.5 },
+      { productoId: f3, valor: 9011.1 },
+    ])
+    const f = finance()
+    expect(f.positions.get(f1)!.saldo).toBe(1100)
+    expect(f.positions.get(f2)!.saldo).toBe(1800.5)
+    expect(f.positions.get(f3)!.saldo).toBe(9011.1)
+    // Cada producto guarda su valor de mercado con la fecha de hoy.
+    const p1 = useData.getState().datos.productos.find((p) => p.id === f1)!
+    expect(p1.valoraciones).toHaveLength(1)
+    expect(p1.valoraciones[0]).toMatchObject({ fecha: '2026-10-15', modo: 'valor', valor: 1100 })
+    // Tarjetas: sus inversiones + lo que queda en su cuenta (sin invertir).
+    expect(f.byTitular.get(t1.id)!.totals.patrimonio).toBeCloseTo(1100 + 1800.5 + 2000, 2)
+    expect(f.byTitular.get(t2.id)!.totals.patrimonio).toBeCloseTo(9011.1, 2)
+  })
+
+  it('si se vuelve a guardar el mismo día, se cambia el valor (no se apila otro); otro día sí se apila', async () => {
+    const { useData, finance, f1 } = await setup()
+    useData.getState().setValores('2026-10-15', [{ productoId: f1, valor: 1100 }])
+    useData.getState().setValores('2026-10-15', [{ productoId: f1, valor: 1200 }])
+    const vals = () => useData.getState().datos.productos.find((p) => p.id === f1)!.valoraciones
+    expect(vals()).toHaveLength(1)
+    expect(vals()[0].valor).toBe(1200)
+    expect(finance().positions.get(f1)!.saldo).toBe(1200)
+    useData.getState().setValores('2026-10-16', [{ productoId: f1, valor: 1300 }])
+    expect(vals()).toHaveLength(2)
+    // El saldo se calcula con el valor más reciente.
+    const fin = await import('./useFinance')
+    expect(fin.computeFinance(useData.getState().datos, '2026-10-16').positions.get(f1)!.saldo).toBe(1300)
+  })
+
+  it('se puede deshacer de una vez', async () => {
+    const { useData, finance, f1, f2, my } = await setup()
+    const antes = finance().byTitular.get(useData.getState().datos.titulares[0].id)!.totals.patrimonio
+    await import('./deshacer')
+    const { conDeshacer } = await import('./data')
+    conDeshacer('Valores de hoy', () =>
+      useData.getState().setValores('2026-10-15', [
+        { productoId: f1, valor: 1100 },
+        { productoId: f2, valor: 1800 },
+      ]),
+    )
+    expect(finance().positions.get(f1)!.saldo).toBe(1100)
+    expect(useData.getState().deshacer()).toBe('Valores de hoy')
+    const f = finance()
+    expect(f.positions.get(f1)!.saldo).toBe(1000)
+    expect(f.positions.get(f2)!.saldo).toBe(2000)
+    expect(f.byTitular.get(useData.getState().datos.titulares[0].id)!.totals.patrimonio).toBeCloseTo(antes, 6)
+    expect(f.accounts.get(my)!.saldo).toBe(2000)
+  })
+})
+
 describe('datos de ejemplo', () => {
   it('van aparte de tus datos: Marta envía cada mes al «Fondo ahorro» y cuenta solo para él', async () => {
     const { useData, finance } = await open(new MemoryStorage())

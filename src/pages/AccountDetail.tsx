@@ -168,13 +168,13 @@ export function AccountDetail({ id }: { id: string }) {
           <div className="mt-4 grid grid-cols-1 gap-2 sm:flex sm:flex-wrap">
             {!c.externa && (
               <>
-                <Button icon={Plus} onClick={() => anadirDinero(ds, c.id)}>
+                <Button wrap icon={Plus} onClick={() => anadirDinero(ds, c.id)}>
                   Añadir dinero (desde cuenta externa)
                 </Button>
-                <Button variant="soft" icon={CalendarSync} onClick={() => programarMensual(ds, c.titularId, c.id)}>
+                <Button wrap variant="soft" icon={CalendarSync} onClick={() => programarMensual(ds, c.titularId, c.id)}>
                   Programar transferencia mensual
                 </Button>
-                <Button variant="soft" icon={ArrowDownLeft} onClick={() => sacarDinero(ds, c.id)}>
+                <Button wrap variant="soft" icon={ArrowDownLeft} onClick={() => sacarDinero(ds, c.id)}>
                   Sacar dinero (a cuenta externa)
                 </Button>
               </>

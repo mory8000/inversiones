@@ -29,8 +29,9 @@ Sustituye al antiguo `Inversiones.xlsx` y mantiene sus mismos conceptos: titular
   - La tarjeta de cada titular (el primero es el principal) con su patrimonio, su rentabilidad, lo invertido, lo
     que tiene sin invertir en su cuenta **MyInvestor** y lo aportado. Las cifras de cada titular van por
     separado: la cifra grande del principal es todo lo suyo, sin el «Fondo ahorro» (que tiene su propia tarjeta).
-  - **Total**: debajo de la tarjeta del «Fondo ahorro», una ventana de información con el total de los dos
-    sumado (lo del principal + lo del «Fondo ahorro»). Las tarjetas siguen con sus cifras por separado.
+  - **Total**: debajo de la tarjeta del «Fondo ahorro», una ventana con el total de los dos sumado (una sola
+    línea: «Total 37.998,09 €»). Las tarjetas siguen con sus cifras por separado. En el ordenador, la tarjeta
+    del «Fondo ahorro» y la del total juntas ocupan lo mismo que la del titular principal.
   - En la del principal está su cuenta **MyInvestor** (con su saldo) y el botón **«Abrir MyInvestor»**.
   - **Ventana de MyInvestor** (al abrirla): su **saldo real** (positivo o negativo), **Añadir dinero** (desde una
     cuenta externa), **Invertir**, **Programar transferencia mensual**, **Sacar dinero**, sus transferencias
@@ -44,6 +45,12 @@ Sustituye al antiguo `Inversiones.xlsx` y mantiene sus mismos conceptos: titular
     se guarda y se usa también en *Inversiones*.
   - Debajo: la evolución (una línea por titular), dónde está el dinero de cada uno, el diagrama del flujo del
     dinero, el resumen por tipo de cada titular (como el Excel), los últimos movimientos y las cuentas.
+- **Poner los valores de hoy**: en Inicio, el botón **«Valores»** (y en Ajustes, la fila «Poner los valores de
+  hoy») abre una ventana con **una casilla por inversión**: se escribe lo que vale hoy cada fondo, cartera o
+  depósito, tal como se ve en la app del banco, y al guardar se actualizan todos de una vez (quedan como su
+  **valor de mercado**, con la fecha de hoy; lo que ya hubiera apuntado ese mismo día se sustituye). Abajo se ve
+  en vivo cómo quedan las tarjetas de Inicio (cada titular y el total), para poder compararlo con el banco y
+  cuadrarlo. Todo se deshace con un solo «Deshacer».
 - **% de beneficio o pérdida**: en cada fondo, cartera, plan… se pone el % que gana o pierde (**«Gana (sube)» o
   «Pierde (baja)»**): si las acciones suben un 3 %, se pone 3 y su saldo pasa a ser el capital + 3 %. Se ve al
   momento en su ventanilla y en el patrimonio de su titular. También se puede poner su valor en euros.

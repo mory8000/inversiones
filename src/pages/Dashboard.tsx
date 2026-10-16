@@ -213,8 +213,8 @@ function TitularHero({ tf, fin }: { tf: TitularFinance; fin: FinanceData }) {
 }
 
 /**
- * Debajo de la tarjeta del «Fondo ahorro»: el total de los titulares sumado (p. ej. «Luis
- * principal» + «Fondo ahorro»). Solo informa: cada tarjeta sigue con sus cifras por separado.
+ * Debajo de la tarjeta del «Fondo ahorro»: el total de todos los titulares sumado, en una sola
+ * línea (p. ej. «Total 37.998,09 €»). Solo informa: cada tarjeta sigue con sus cifras por separado.
  */
 function TotalCard({ fin }: { fin: FinanceData }) {
   // Se suman las cifras tal como se ven (al céntimo), para que la suma cuadre a mano.
@@ -222,31 +222,18 @@ function TotalCard({ fin }: { fin: FinanceData }) {
   const total = cents(fin.titulares.reduce((sum, tf) => sum + cents(tf.totals.patrimonio), 0))
   const nombres = fin.titulares.map((tf) => tf.titular.nombre).join(' + ')
   return (
-    <section aria-label={`Total de ${fin.titulares.map((tf) => tf.titular.nombre).join(' y ')}`} data-total-sumado className="rounded-3xl border border-slate-200/80 bg-white p-5 shadow-sm sm:p-6">
-      <div className="flex items-center gap-2.5">
-        <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-700">
-          <Sigma className="size-[18px]" strokeWidth={2.4} />
+    <section
+      aria-label={`Total de ${nombres}: ${fmtEUR(total)}`}
+      data-total-sumado
+      className="flex flex-1 flex-col justify-center rounded-3xl border border-slate-200/80 bg-white px-5 py-4 shadow-sm"
+    >
+      <div className="flex items-baseline justify-between gap-3" data-total>
+        <span className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+          <span className="inline-flex size-7 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-700">
+            <Sigma className="size-4" strokeWidth={2.4} />
+          </span>
+          Total
         </span>
-        <div className="min-w-0">
-          <h2 className="text-[15px] font-semibold text-slate-900">Total</h2>
-          <p className="text-xs text-slate-500">
-            {nombres} · a {fmtDate(fin.today)}
-          </p>
-        </div>
-      </div>
-      <ul className="mt-3 divide-y divide-slate-100">
-        {fin.titulares.map((tf) => (
-          <li key={tf.titular.id} className="flex items-center justify-between gap-3 py-2.5" data-total-titular={tf.titular.nombre}>
-            <span className="flex min-w-0 items-center gap-2">
-              <TitularAvatar titular={tf.titular} size="xs" />
-              <span className="truncate text-sm text-slate-700">{tf.titular.nombre}</span>
-            </span>
-            <Amount value={tf.totals.patrimonio} className={cn('shrink-0 text-sm font-semibold', tf.totals.patrimonio < -0.005 ? 'text-rose-600' : 'text-slate-900')} />
-          </li>
-        ))}
-      </ul>
-      <div className="flex items-baseline justify-between gap-3 border-t border-slate-200 pt-3" data-total>
-        <span className="text-sm font-semibold text-slate-900">Total</span>
         <Amount value={total} className={cn('text-2xl font-bold tracking-tight', total < -0.005 ? 'text-rose-600' : 'text-slate-900')} />
       </div>
     </section>
@@ -439,10 +426,12 @@ export function Dashboard() {
       {/* Arriba, los titulares a la vez (el primero es el principal), el total de todos debajo del
           último y una ventanilla por inversión */}
       <div>
-        <div className={cn('grid grid-cols-1 items-start gap-4 lg:gap-5', multi && 'lg:grid-cols-2')}>
+        <div className={cn('grid grid-cols-1 items-stretch gap-4 lg:gap-5', multi && 'lg:grid-cols-2')}>
           {principal && <TitularHero tf={principal} fin={fin} />}
           {otros.length > 0 && (
-            <div className="grid grid-cols-1 gap-4 lg:gap-5">
+            // La tarjeta del «Fondo ahorro» y, debajo, la del total: entre las dos ocupan lo mismo
+            // que la del titular principal (el total se estira hasta donde llega la otra columna).
+            <div className="flex flex-col gap-4 lg:gap-5">
               {otros.map((tf) => (
                 <TitularHero key={tf.titular.id} tf={tf} fin={fin} />
               ))}

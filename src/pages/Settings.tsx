@@ -1,5 +1,6 @@
 import { useRef, type ReactNode } from 'react'
 import {
+  Calculator,
   Check,
   Crown,
   Download,
@@ -16,7 +17,7 @@ import {
 } from 'lucide-react'
 import { exportBackup, sanitizeData, useData } from '../store/data'
 import { useFinance, type TitularFinance } from '../store/useFinance'
-import { confirmDialog, openTitular, toast } from '../store/ui'
+import { confirmDialog, openTitular, openValores, toast } from '../store/ui'
 import { accion } from '../store/deshacer'
 import { movementsToCSV } from '../lib/movements'
 import { downloadFile } from '../lib/download'
@@ -223,6 +224,16 @@ export function Settings() {
                     }}
                   />
                 </>
+              }
+            />
+            <Row
+              icon={<Calculator className="size-[18px]" />}
+              title="Poner los valores de hoy"
+              text="Escribe lo que vale ahora cada fondo, cartera o depósito (lo que ves en MyInvestor) y se actualizan todos de una vez."
+              action={
+                <Button id="abrir-valores" variant="secondary" size="sm" onClick={openValores}>
+                  Abrir
+                </Button>
               }
             />
             <Row

@@ -54,6 +54,11 @@ interface Actions {
   addValoracion: (productoId: string, data: ValoracionInput) => void
   removeValoracion: (productoId: string, valoracionId: string) => void
   /**
+   * Pone de una vez el valor de mercado (en €) de varias inversiones, con la fecha indicada.
+   * Lo que ya tuviera un valor ese mismo día se sustituye (no se acumulan).
+   */
+  setValores: (fecha: string, valores: { productoId: string; valor: number }[]) => void
+  /**
    * Cambia el interés (TAE) de un depósito desde una fecha (los intereses pueden variar).
    * Con `desde: null` se corrige el interés inicial (desde que se contrató).
    */
@@ -327,6 +332,26 @@ export const useData = create<DataState>()(
             }),
             'Actualización de valor eliminada',
           ),
+        setValores: (fecha, valores) =>
+          updateDs((ds) => {
+            if (valores.length === 0) return ds
+            const porId = new Map(valores.map((v) => [v.productoId, round2(v.valor)]))
+            const stamp = nowStamp()
+            return {
+              ...ds,
+              productos: ds.productos.map((p) => {
+                const valor = porId.get(p.id)
+                if (valor === undefined) return p
+                // Si ya hay un valor de mercado de ese mismo día, se cambia (no se apila otro).
+                const otros = p.valoraciones.filter((v) => !(v.fecha === fecha && v.modo === 'valor'))
+                return {
+                  ...p,
+                  valoraciones: [...otros, { id: uid(), fecha, modo: 'valor' as const, valor, porcentaje: 0, createdAt: stamp }],
+                }
+              }),
+            }
+          }, 'Valores de hoy'),
+
         cambiarTae: (productoId, desde, tae) =>
           updateDs(
             (ds) => ({
