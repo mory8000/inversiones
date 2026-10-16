@@ -142,11 +142,6 @@ export function AccountCard({ c, s }: { c: Cuenta; s: AccountStats }) {
             A otros titulares: <Amount value={s.enviadoOtros} decimals={0} className="font-semibold" />
           </span>
         )}
-        {s.dePaso > 0 && (
-          <span className="truncate text-fuchsia-700">
-            De paso a otros: <Amount value={s.dePaso} decimals={0} className="font-semibold" /> (no cuenta)
-          </span>
-        )}
         {s.recibidoOtros > 0 && (
           <span className="truncate text-fuchsia-700">
             De otros titulares: <Amount value={s.recibidoOtros} decimals={0} className="font-semibold" />

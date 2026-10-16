@@ -2,6 +2,7 @@
 // Todos se ven a la vez; el primero de la lista es el principal.
 
 import type { Cuenta, Dataset, EntityRef, Titular, Workspace } from '../types'
+import { buildLookup, isDePaso } from './movements'
 
 /** Nombre que la app da a un titular hasta que el usuario le pone el suyo: «Titular 1», «Titular 2»… */
 export const defaultTitularName = (n: number): string => `Titular ${n}`
@@ -26,14 +27,22 @@ export function ownerOf(ws: Workspace, ref: EntityRef): string | undefined {
   return ref.kind === 'cuenta' ? ws.cuentas.find((c) => c.id === ref.id)?.titularId : ws.productos.find((p) => p.id === ref.id)?.titularId
 }
 
-/** Cuentas, productos y movimientos que tocan a un titular (incluidos los que vienen de o van a otro titular). */
-export function titularWorkspace(ds: Workspace, titularId: string): Workspace {
+/**
+ * Cuentas, productos y movimientos que tocan a un titular (incluidos los que vienen de o van a
+ * otro titular). Al principal no le tocan los movimientos «de paso» (lo que pasa por una cuenta
+ * suya camino de otro titular, como la transferencia mensual al «Fondo ahorro»): no dejan
+ * constancia en lo suyo.
+ */
+export function titularWorkspace(ds: Workspace & { titulares?: Titular[] }, titularId: string): Workspace {
   const cuentas = ds.cuentas.filter((c) => c.titularId === titularId)
   const productos = ds.productos.filter((p) => p.titularId === titularId)
   const ids = new Set<string>()
   for (const c of cuentas) ids.add(`cuenta:${c.id}`)
   for (const p of productos) ids.add(`producto:${p.id}`)
-  const movimientos = ds.movimientos.filter((m) => ids.has(`${m.origen.kind}:${m.origen.id}`) || ids.has(`${m.destino.kind}:${m.destino.id}`))
+  const lookup = ds.titulares?.[0]?.id === titularId ? buildLookup(ds) : null
+  const movimientos = ds.movimientos.filter(
+    (m) => (ids.has(`${m.origen.kind}:${m.origen.id}`) || ids.has(`${m.destino.kind}:${m.destino.id}`)) && !(lookup && isDePaso(lookup, m)),
+  )
   return { cuentas, productos, movimientos }
 }
 

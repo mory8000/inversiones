@@ -43,16 +43,16 @@ function explain(tipo: MovementType, o: string, d: string, oExterna: boolean, dE
 }
 
 /**
- * Explicación cuando el dinero va de un titular a otro. `dePaso`: sale de la cuenta del principal
- * (MyInvestor), así que entra y se va sin bajar su saldo ni contar para él.
+ * Explicación cuando el dinero va de un titular a otro. `dePaso`: sale de una cuenta del principal
+ * (MyInvestor), así que es un mero paso: no deja constancia en esa cuenta ni cuenta para él.
  */
 function explainCross(o: string, d: string, from: Titular, to: Titular, destino: EntityRef, lookup: Lookup, dePaso: boolean): string {
   if (dePaso) {
-    const pasa = `Pasa por «${o}» de paso (entra y se va)`
-    const noCuenta = `No baja el saldo de «${o}» ni cuenta para ${from.nombre}`
-    if (destino.kind === 'producto') return `${pasa} y se invierte en «${d}» (de ${to.nombre}). ${noCuenta}: cuenta solo para ${to.nombre}.`
-    if (isConSaldo(lookup, destino)) return `${pasa} y llega a «${d}» (de ${to.nombre}). ${noCuenta}: cuenta solo para ${to.nombre}.`
-    return `${pasa} y llega a «${d}» (de ${to.nombre}, cuenta externa). ${noCuenta}; para ${to.nombre} contará cuando lo invierta.`
+    const pasa = `Pasa por «${o}» de paso`
+    const noQueda = `No queda en «${o}» (ni en su saldo ni en sus movimientos) ni cuenta para ${from.nombre}`
+    if (destino.kind === 'producto') return `${pasa} y se invierte en «${d}» (de ${to.nombre}). ${noQueda}: cuenta solo para ${to.nombre}.`
+    if (isConSaldo(lookup, destino)) return `${pasa} y llega a «${d}» (de ${to.nombre}). ${noQueda}: cuenta solo para ${to.nombre}.`
+    return `${pasa} y llega a «${d}» (de ${to.nombre}, cuenta externa). ${noQueda}; para ${to.nombre} contará cuando lo invierta.`
   }
   if (destino.kind === 'producto') return `Sale dinero de «${o}» (de ${from.nombre}) y se invierte en «${d}» (de ${to.nombre}). Cuenta solo para ${to.nombre}, no para ${from.nombre}.`
   if (isConSaldo(lookup, destino)) return `Pasa dinero de «${o}» (de ${from.nombre}) a «${d}» (de ${to.nombre}). Cuenta solo para ${to.nombre}, no para ${from.nombre}.`
@@ -511,7 +511,7 @@ export function MovementForm({
             hint={
               [
                 multi && fromT ? `De ${fromT.nombre}` : null,
-                vaDePaso ? 'De paso: no baja su saldo' : null,
+                vaDePaso ? 'De paso: no queda en ella' : null,
                 disponible !== null && !hidden ? `Disponible: ${fmtEUR(disponible)}${fecha < today ? ` (el ${fmtDate(fecha)})` : ''}` : null,
                 saldoProducto !== null && !hidden ? `Saldo actual: ${fmtEUR(saldoProducto)}` : null,
                 nuevaExterna ? `Se creará la cuenta «${NOMBRE_EXTERNA}» (luego puedes cambiarle el nombre en Cuentas)` : null,

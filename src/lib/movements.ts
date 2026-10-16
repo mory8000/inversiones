@@ -63,21 +63,23 @@ export type DePaso = (m: Pick<Movimiento, 'origen' | 'destino'>) => boolean
 
 /**
  * ¿Lo que sale de la cuenta `cuentaId` hacia algo del titular `destinoTitularId` es dinero «de
- * paso»? Sí si sale de una cuenta con saldo del titular principal (su «MyInvestor») y va a otro
- * titular (p. ej. al «Fondo ahorro»).
+ * paso»? Sí si sale de una cuenta del titular principal (su «MyInvestor», o una externa como ING)
+ * y va a otro titular (p. ej. al «Fondo ahorro»).
  */
 export function saleDePaso(lookup: Lookup, cuentaId: string, destinoTitularId: string | undefined): boolean {
   const principal = lookup.principalId
   const c = lookup.cuentas.get(cuentaId)
-  return !!principal && !!c && !c.externa && c.titularId === principal && !!destinoTitularId && destinoTitularId !== principal
+  return !!principal && !!c && c.titularId === principal && !!destinoTitularId && destinoTitularId !== principal
 }
 
 /**
- * Dinero «de paso»: el que entra en la cuenta principal (MyInvestor) del titular principal y se va
- * a otro titular, como la transferencia mensual al «Fondo ahorro». No cuenta para el principal: ni
- * baja el saldo de su cuenta ni su patrimonio, y lo que genere después (ganancias o pérdidas)
- * tampoco. Cuenta solo para quien lo recibe. La regla vale para todos los movimientos, también
- * para los de antes (los saldos se calculan siempre desde el principio).
+ * Dinero «de paso»: el que llega desde fuera (p. ej. desde ING), pasa por una cuenta del titular
+ * principal (MyInvestor) y se va a otro titular, como la transferencia mensual al «Fondo ahorro».
+ * Es un mero paso que no deja constancia en lo del principal: no baja el saldo de su cuenta, no
+ * cuenta en su patrimonio ni en sus cifras (tampoco lo que genere después, ganancias o pérdidas) y
+ * no sale en su ventana, en sus cuentas ni en sus movimientos. Se ve y cuenta solo en quien lo
+ * recibe. La regla vale para todos los movimientos, también para los de antes (se calcula siempre
+ * desde el principio).
  */
 export function isDePaso(lookup: Lookup, m: Pick<Movimiento, 'origen' | 'destino'>): boolean {
   return m.origen.kind === 'cuenta' && saleDePaso(lookup, m.origen.id, ownerId(lookup, m.destino))
@@ -85,6 +87,21 @@ export function isDePaso(lookup: Lookup, m: Pick<Movimiento, 'origen' | 'destino
 
 /** Detector de dinero «de paso» para unos datos (para calcular los saldos). */
 export const detectorDePaso = (lookup: Lookup): DePaso => (m) => isDePaso(lookup, m)
+
+/**
+ * ¿Se ve el movimiento en esta cuenta o producto? Lo que pasa «de paso» por una cuenta del
+ * principal no deja constancia en ella: solo se ve en lo de quien lo recibe.
+ */
+export function seVeEn(lookup: Lookup, m: Pick<Movimiento, 'origen' | 'destino'>, ref: EntityRef): boolean {
+  if (sameRef(m.destino, ref)) return true
+  return sameRef(m.origen, ref) && !isDePaso(lookup, m)
+}
+
+/** ¿Se ve el movimiento en lo de este titular? Lo «de paso» no se ve en lo del principal. */
+export function seVePara(lookup: Lookup, m: Pick<Movimiento, 'origen' | 'destino'>, titularId: string): boolean {
+  if (ownerId(lookup, m.destino) === titularId) return true
+  return ownerId(lookup, m.origen) === titularId && !isDePaso(lookup, m)
+}
 
 /**
  * Cómo se ve un movimiento desde un titular (o desde todos, sin `titularId`):
@@ -163,9 +180,10 @@ export function filterMovements(movs: Movimiento[], lookup: Lookup, f: MovementF
   const ref = f.entidad ? parseRefKey(f.entidad) : null
   const q = normalize(f.q.trim())
   return movs.filter((m) => {
-    if (f.titular && !touchesTitular(lookup, m, f.titular)) return false
+    // Lo que pasa «de paso» por una cuenta del principal no sale ni en lo suyo ni en esa cuenta.
+    if (f.titular && !seVePara(lookup, m, f.titular)) return false
     if (f.tipo !== 'todos' && movementKind(lookup, m, f.titular || undefined) !== f.tipo) return false
-    if (ref && !sameRef(m.origen, ref) && !sameRef(m.destino, ref)) return false
+    if (ref && !seVeEn(lookup, m, ref)) return false
     if (f.productType !== 'todos') {
       const types = [m.origen, m.destino]
         .filter((r) => r.kind === 'producto')

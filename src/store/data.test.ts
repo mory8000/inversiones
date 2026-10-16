@@ -200,10 +200,14 @@ describe('entre titulares', () => {
     const b = f.byTitular.get(t2.id)!
     expect(a.totals).toMatchObject({ patrimonio: 700, aportado: 700 })
     expect(b.totals).toMatchObject({ patrimonio: 200, aportado: 200 })
-    expect(a.enviadoTotal).toBe(200)
     expect(b.recibidoTotal).toBe(200)
     expect(b.recibido).toEqual([{ titularId: t1.id, importe: 200 }])
-    expect(f.accounts.get(c1)).toMatchObject({ enviado: 700, enviadoOtros: 200 })
+    // T1 es el principal: lo que sale de su cuenta hacia T2 es un mero paso que no deja constancia
+    // en lo suyo (ni en lo enviado ni en sus movimientos). Sí sale en lo de T2.
+    expect(a.enviadoTotal).toBe(0)
+    expect(a.ws.movimientos.map((m) => m.importe)).toEqual([700])
+    expect(b.ws.movimientos.map((m) => m.importe)).toEqual([200])
+    expect(f.accounts.get(c1)).toMatchObject({ enviado: 700, enviadoOtros: 0, dePaso: 200, numMovimientos: 1 })
   })
 
   it('borrar un titular quita sus cosas y lo que se movía con él; «hacer principal» lo pone primero', async () => {
@@ -251,7 +255,10 @@ describe('transferencia mensual', () => {
     const f = finance()
     expect(f.byTitular.get(t2.id)!.totals.aportado).toBe(600)
     expect(f.byTitular.get(t1.id)!.totals.aportado).toBe(0)
-    expect(f.byTitular.get(t1.id)!.enviadoTotal).toBe(600)
+    // Sale de una cuenta del principal: pasa de paso, sin dejar constancia en lo suyo.
+    expect(f.byTitular.get(t1.id)!.enviadoTotal).toBe(0)
+    expect(f.byTitular.get(t1.id)!.ws.movimientos).toHaveLength(0)
+    expect(f.byTitular.get(t2.id)!.ws.movimientos).toHaveLength(4)
   })
 
   it('al volver a abrir la app apunta los meses que falten (y nunca duplica)', async () => {
@@ -301,14 +308,16 @@ describe('datos de ejemplo', () => {
     expect([marta.titular.nombre, pablo.titular.nombre]).toEqual(['Marta', 'Fondo ahorro'])
     expect(pablo.recibidoTotal).toBeGreaterThan(2000)
     expect(pablo.totals.aportado).toBeCloseTo(pablo.recibidoTotal, 2)
-    expect(marta.enviadoTotal).toBeCloseTo(pablo.recibidoTotal, 2)
+    // Lo que va al «Fondo ahorro» pasa por el MyInvestor de Marta sin dejar constancia en lo suyo.
+    expect(marta.enviadoTotal).toBe(0)
+    expect(marta.ws.movimientos.some((m) => pablo.ws.movimientos.includes(m))).toBe(false)
     expect(marta.totals.patrimonio).toBeGreaterThan(20000)
     // Marta tiene su MyInvestor con saldo, que nunca se queda en negativo (ni contando lo que pasa de paso).
     const my = s.ejemplo!.cuentas.find((c) => c.nombre === 'MyInvestor' && c.titularId === marta.titular.id)!
     expect(my.externa).toBe(false)
     expect(marta.totals.efectivo).toBeGreaterThan(0)
-    // Todo lo que manda al «Fondo ahorro» sale de su MyInvestor de paso: no baja su saldo.
-    expect(f.accounts.get(my.id)!.dePaso).toBeCloseTo(marta.enviadoTotal, 2)
+    // Todo lo que recibe el «Fondo ahorro» pasa por el MyInvestor de Marta de paso: no baja su saldo.
+    expect(f.accounts.get(my.id)!.dePaso).toBeCloseTo(pablo.recibidoTotal, 2)
     expect(marta.totals.efectivo).toBeCloseTo(f.accounts.get(my.id)!.entradas - f.accounts.get(my.id)!.salidas, 2)
     let saldo = 0
     for (const m of [...s.ejemplo!.movimientos].sort((x, y) => x.fecha.localeCompare(y.fecha) || x.createdAt.localeCompare(y.createdAt))) {
@@ -380,10 +389,11 @@ describe('cuenta principal «MyInvestor» y cuentas externas (versión 4)', () =
     const ahorro = () => f.byTitular.get('t2')!
     expect(ahorro().totals.patrimonio).toBe(600)
     expect(ahorro().totals.aportadoTotal).toBe(600)
-    expect(luis().enviadoTotal).toBe(600)
-    // Los 600 € (4 meses, también los ya pasados) entran en MyInvestor y se van al «Fondo ahorro»:
-    // no bajan su saldo ni cuentan para Luis.
-    expect(f.accounts.get('c1')).toMatchObject({ saldo: 0, salidas: 0, dePaso: 600 })
+    // Los 600 € (4 meses, también los ya pasados) pasan por MyInvestor camino del «Fondo ahorro»
+    // sin dejar constancia: ni bajan su saldo, ni salen en sus movimientos, ni cuentan para Luis.
+    expect(luis().enviadoTotal).toBe(0)
+    expect(luis().ws.movimientos).toHaveLength(0)
+    expect(f.accounts.get('c1')).toMatchObject({ saldo: 0, salidas: 0, dePaso: 600, numMovimientos: 0 })
     expect(luis().totals).toMatchObject({ efectivo: 0, patrimonio: 0, aportadoTotal: 0 })
 
     // Aportación desde una cuenta externa a MyInvestor.
@@ -452,10 +462,10 @@ describe('cuenta principal «MyInvestor» y cuentas externas (versión 4)', () =
     const f = finance()
     const a = f.byTitular.get(t1.id)!
     const b = f.byTitular.get(t2.id)!
-    // Los 400 € que van al titular 2 entran en MyInvestor y se van: no bajan su saldo.
-    expect(f.accounts.get(my)).toMatchObject({ saldo: 1000, dePaso: 400 })
+    // Los 400 € que van al titular 2 pasan por MyInvestor sin dejar constancia: no bajan su saldo.
+    expect(f.accounts.get(my)).toMatchObject({ saldo: 1000, dePaso: 400, numMovimientos: 1 })
     expect(a.totals).toMatchObject({ efectivo: 1000, patrimonio: 1000, aportadoTotal: 1000 })
-    expect(a.enviadoTotal).toBe(400)
+    expect(a.enviadoTotal).toBe(0)
     expect(b.totals).toMatchObject({ efectivo: 300, patrimonio: 300, aportadoTotal: 300 })
     expect(b.recibido).toEqual([{ titularId: t1.id, importe: 300 }])
     expect(b.recibidoEnExternas).toBe(100)

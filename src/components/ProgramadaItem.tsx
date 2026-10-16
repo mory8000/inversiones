@@ -9,7 +9,9 @@ import { Amount, useHidden } from './ui/Amount'
 
 /**
  * Una transferencia mensual, en una ventana: cuánto, cuándo, de dónde a dónde y cuántas van.
- * Con su botón «Editar» a la vista: al tocarla se cambia (o se elimina).
+ * Con su botón «Editar» a la vista: al tocarla se cambia (o se elimina). Si pasa «de paso» por la
+ * cuenta del principal (camino del «Fondo ahorro»), solo se dice cuánto, cuándo y a dónde va: no
+ * deja constancia en esa cuenta (ni lo apuntado ni el total).
  */
 export function ProgramadaItem({ p, fin }: { p: Programada; fin: FinanceData }) {
   const { ds, lookup, today, owner } = fin
@@ -17,7 +19,7 @@ export function ProgramadaItem({ p, fin }: { p: Programada; fin: FinanceData }) 
   const from = lookup.titulares.get(owner(p.origen) ?? '')
   const to = lookup.titulares.get(owner(p.destino) ?? '')
   const cross = !!from && !!to && from.id !== to.id
-  /** Sale de la cuenta del principal (MyInvestor) hacia otro titular: dinero «de paso», no baja su saldo. */
+  /** Sale de una cuenta del principal (MyInvestor) hacia otro titular: dinero «de paso», no deja constancia en ella. */
   const dePaso = isDePaso(lookup, p)
   const hechas = movimientosDe(ds, p.id)
   const total = hechas.reduce((sum, m) => sum + m.importe, 0)
@@ -38,16 +40,27 @@ export function ProgramadaItem({ p, fin }: { p: Programada; fin: FinanceData }) 
           <span className="block text-sm font-semibold text-slate-900">
             <Amount value={p.importe} /> al mes{cross && to ? ` a ${to.nombre}` : ''} · el día {diaDe(p)}
           </span>
-          <span className="block truncate text-xs text-slate-600">
-            «{entityName(lookup, p.origen)}» → «{entityName(lookup, p.destino)}»
-          </span>
-          <span className="block text-xs text-slate-500">
-            {hechas.length} apuntada{hechas.length === 1 ? '' : 's'} (<Amount value={total} />) · {next ? `próxima: ${fmtDate(next)}` : 'terminada'}
-          </span>
+          {dePaso ? (
+            <span className="block text-xs text-slate-600">
+              A «{entityName(lookup, p.destino)}» · {next ? `próxima: ${fmtDate(next)}` : 'terminada'}
+            </span>
+          ) : (
+            <>
+              <span className="block truncate text-xs text-slate-600">
+                «{entityName(lookup, p.origen)}» → «{entityName(lookup, p.destino)}»
+              </span>
+              <span className="block text-xs text-slate-500">
+                {hechas.length} apuntada{hechas.length === 1 ? '' : 's'} (<Amount value={total} />) · {next ? `próxima: ${fmtDate(next)}` : 'terminada'}
+              </span>
+            </>
+          )}
           {cross && to && from && (
             <span className="block text-xs font-medium text-fuchsia-800">
-              {countsForOwner(lookup, p.destino) ? `Cuenta solo para ${to.nombre}, no para ${from.nombre}` : `Va a una cuenta externa de ${to.nombre}`}
-              {dePaso ? `. Pasa por «${entityName(lookup, p.origen)}» de paso: no baja su saldo` : ''}
+              {dePaso
+                ? `De paso: no queda en «${entityName(lookup, p.origen)}» ni cuenta para ${from.nombre}. ${countsForOwner(lookup, p.destino) ? `Cuenta solo para ${to.nombre}.` : `Va a una cuenta externa de ${to.nombre}.`}`
+                : countsForOwner(lookup, p.destino)
+                  ? `Cuenta solo para ${to.nombre}, no para ${from.nombre}`
+                  : `Va a una cuenta externa de ${to.nombre}`}
             </span>
           )}
         </span>

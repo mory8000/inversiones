@@ -29,12 +29,14 @@ Sustituye al antiguo `Inversiones.xlsx` y mantiene sus mismos conceptos: titular
   - La tarjeta de cada titular (el primero es el principal) con su patrimonio, su rentabilidad, lo invertido, lo
     que tiene sin invertir en su cuenta **MyInvestor** y lo aportado. Las cifras de cada titular van por
     separado: la cifra grande del principal es todo lo suyo, sin el «Fondo ahorro» (que tiene su propia tarjeta).
+  - **Total**: debajo de la tarjeta del «Fondo ahorro», una ventana de información con el total de los dos
+    sumado (lo del principal + lo del «Fondo ahorro»). Las tarjetas siguen con sus cifras por separado.
   - En la del principal está su cuenta **MyInvestor** (con su saldo) y el botón **«Abrir MyInvestor»**.
-  - **Ventana de MyInvestor** (al abrirla): su **saldo real** (positivo o negativo), lo que ha pasado **de paso**
-    al «Fondo ahorro» (no cuenta en el saldo), **Añadir dinero** (desde una cuenta externa), **Invertir**,
-    **Programar transferencia mensual**, **Sacar dinero**, sus transferencias mensuales (con **Editar**: es el
-    único sitio donde se cambian) y el **dinero añadido desde bancos externos**, cada movimiento con sus botones
-    **Editar** y **Borrar**.
+  - **Ventana de MyInvestor** (al abrirla): su **saldo real** (positivo o negativo), **Añadir dinero** (desde una
+    cuenta externa), **Invertir**, **Programar transferencia mensual**, **Sacar dinero**, sus transferencias
+    mensuales (con **Editar**: es el único sitio donde se cambian) y el **dinero añadido desde bancos externos**,
+    cada movimiento con sus botones **Editar** y **Borrar**. Lo que pasa **de paso** camino del «Fondo ahorro» no
+    sale aquí (solo la transferencia mensual, para poder cambiarla).
   - **Ventanillas**: al tocar una se abre con su saldo, su **% de rentabilidad** (o su **interés**, en los
     depósitos) con el botón para cambiarlo, y con lo que se puede hacer: **Aportar**, **Retirar** (reembolso),
     **Traspasar**, **Programar transferencia mensual** y ver sus movimientos (con **Editar** y **Borrar**).
@@ -91,12 +93,14 @@ Sustituye al antiguo `Inversiones.xlsx` y mantiene sus mismos conceptos: titular
   Un mes concreto se puede cambiar o borrar sin tocar los demás.
 - **El dinero cuenta para quien lo recibe**: si sale de la cuenta del titular 1 y entra en un producto o en una
   cuenta con saldo del titular 2, cuenta solo para el titular 2, no para el titular 1.
-- **Dinero de paso** (p. ej. la transferencia mensual al «Fondo ahorro»): lo que entra en MyInvestor del titular
-  principal y se va a otro titular **no cuenta para el principal**: no baja el saldo de su MyInvestor, ni su
-  patrimonio, ni su aportado, y lo que ese dinero gane o pierda después tampoco. Cuenta solo para quien lo
-  recibe. Se aplica a todo, **también a los meses ya apuntados**. Por eso no hace falta apuntar con «Añadir
-  dinero» el dinero que llega a MyInvestor solo para irse al «Fondo ahorro». En la ventana de MyInvestor se ve
-  aparte («De paso a Fondo ahorro»).
+- **Dinero de paso** (p. ej. la transferencia mensual al «Fondo ahorro»): lo que llega desde fuera (p. ej. desde
+  ING), pasa por MyInvestor del titular principal y se va a otro titular es **un mero paso que no deja constancia
+  en lo del principal**: no baja el saldo de su MyInvestor, no cuenta en su patrimonio ni en su aportado (tampoco
+  lo que ese dinero gane o pierda después) y **no sale** en su ventana de MyInvestor, en el detalle de sus
+  cuentas ni en sus movimientos. Lo mismo si sale de una cuenta externa suya (ING) hacia el «Fondo ahorro». Se ve
+  y cuenta solo en quien lo recibe (en «Todos» los movimientos sale como «Aportación a Fondo ahorro» y en el flujo
+  del dinero como «Aportaciones · Fondo ahorro»). Se aplica a todo, **también a los meses ya apuntados**. Por eso
+  no hace falta apuntar con «Añadir dinero» el dinero que llega a MyInvestor solo para irse al «Fondo ahorro».
 - **Ocultar importes** con un toque (icono del ojo).
 - **Copia de seguridad** (descargar / restaurar) y **datos de ejemplo** para probarla sin miedo.
 - **Se instala como una app** en el móvil o el ordenador y funciona **sin conexión**.
@@ -117,7 +121,8 @@ Una transferencia de una **cuenta externa** a una **cuenta con saldo** (como MyI
 
 Si el origen y el destino son de **titulares distintos**, el movimiento se ve como **«Entre titulares»**. Para
 quien lo recibe en un producto o en una cuenta con saldo es dinero suyo (una aportación); para quien lo envía, no.
-Si sale de MyInvestor del titular principal, para él se ve como **«De paso a …»**.
+Si sale de una cuenta del titular principal (MyInvestor o una externa), es **de paso**: en lo del principal no se
+ve, y en «Todos» se ve como **«Aportación a …»** de quien lo recibe.
 
 ## Cómo se calcula
 
@@ -151,11 +156,17 @@ Patrimonio = saldo de sus productos + saldo de sus cuentas con saldo (MyInvestor
 Aportado   = lo que ha entrado desde fuera (cuentas externas u otros titulares)
 ```
 
-En el saldo de MyInvestor del titular principal no se resta lo que pasa **de paso** hacia otro titular (entra y
-se va): ese dinero, y lo que gane o pierda después, solo cuenta para quien lo recibe. Como todo se calcula desde
-el primer movimiento, vale también para lo que ya estaba apuntado.
+En el saldo de MyInvestor del titular principal no se resta lo que pasa **de paso** hacia otro titular (llega
+de fuera y se va): ese dinero, y lo que gane o pierda después, solo cuenta para quien lo recibe, y no deja
+constancia en lo del principal. Como todo se calcula desde el primer movimiento, vale también para lo que ya
+estaba apuntado.
 
-Las cifras de varios titulares nunca se suman: cada uno ve solo lo suyo.
+Las cifras de cada titular van por separado: cada uno ve solo lo suyo. Solo la ventana **Total** (debajo del
+«Fondo ahorro») suma el patrimonio de todos, tal como se ve en cada tarjeta (al céntimo):
+
+```
+Total = patrimonio del principal + patrimonio del «Fondo ahorro»
+```
 
 Si el saldo de MyInvestor queda en negativo (por ejemplo, al borrar dinero añadido que ya se había invertido, o
 si una aportación mensual a una inversión suya llega sin dinero suficiente), se ve en rojo, resta en el

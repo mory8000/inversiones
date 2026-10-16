@@ -11,8 +11,9 @@ import { editMovement } from '../../store/ui'
 
 /**
  * Nombre del movimiento visto desde una cuenta o producto (`perspective`), desde un titular
- * (`titularId`) o en general. Un movimiento de un titular a otro se nombra como tal; el que sale
- * de la cuenta del principal (MyInvestor) es dinero «de paso» para él: «De paso a …».
+ * (`titularId`) o en general. Un movimiento de un titular a otro se nombra como tal; el que pasa
+ * «de paso» por la cuenta del principal (MyInvestor) es de quien lo recibe: «Aportación a …» (en
+ * lo del principal no se ve; si se viera desde su cuenta, «De paso a …»).
  */
 export function movementLabel(m: Movimiento, lookup: Lookup, perspective?: EntityRef, titularId?: string): string {
   if (isCross(lookup, m)) {
@@ -22,7 +23,7 @@ export function movementLabel(m: Movimiento, lookup: Lookup, perspective?: Entit
     const outgoing = perspective ? sameRef(m.origen, perspective) : titularId === from.id
     if (incoming) return m.destino.kind === 'producto' ? `Aportación de ${from.nombre}` : `Recibido de ${from.nombre}`
     if (outgoing) return isDePaso(lookup, m) ? `De paso a ${to.nombre}` : `Enviado a ${to.nombre}`
-    return `De ${from.nombre} a ${to.nombre}`
+    return isDePaso(lookup, m) ? `Aportación a ${to.nombre}` : `De ${from.nombre} a ${to.nombre}`
   }
   // De una cuenta externa a una cuenta con saldo (MyInvestor): una aportación; al revés, una retirada.
   if (m.tipo === 'transferencia') {

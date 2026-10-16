@@ -20,7 +20,10 @@ export interface TitularFinance {
   /** Posición en la lista (0 = principal). */
   index: number
   color: string
-  /** Sus cuentas y productos, y los movimientos que le tocan (también los que vienen de o van a otro titular). */
+  /**
+   * Sus cuentas y productos, y los movimientos que le tocan (también los que vienen de o van a
+   * otro titular). Al principal no le tocan los «de paso» (no dejan constancia en lo suyo).
+   */
   ws: Workspace
   /** Sus productos. */
   positions: Map<string, Position>
@@ -32,7 +35,7 @@ export interface TitularFinance {
   recibido: { titularId: string; importe: number }[]
   /**
    * Dinero enviado a cada uno de los otros titulares (no cuenta para él, sino para quien lo recibe).
-   * Si sale de la cuenta del principal (MyInvestor), es dinero «de paso»: tampoco baja su saldo.
+   * Sin lo «de paso» por las cuentas del principal, que no deja constancia en lo suyo.
    */
   enviado: { titularId: string; importe: number }[]
   recibidoTotal: number
@@ -47,7 +50,7 @@ export interface FinanceData {
   ws: Workspace
   today: string
   lookup: Lookup
-  /** ¿Un movimiento es dinero «de paso» por la cuenta del principal hacia otro titular? (no baja su saldo) */
+  /** ¿Un movimiento es dinero «de paso» por una cuenta del principal hacia otro titular? (no deja constancia en ella) */
   dePaso: DePaso
   positions: Map<string, Position>
   accounts: Map<string, AccountStats>

@@ -10,9 +10,10 @@
 // Varios titulares, vistos a la vez: cada cuenta y cada producto tiene un dueño
 // (`titularId`). Un movimiento puede ir de un titular a otro; el dinero cuenta
 // siempre para el dueño de lo que lo recibe (un producto o una cuenta con saldo),
-// nunca para quien lo envía. Si sale de la cuenta con saldo del titular principal
-// («MyInvestor»), es dinero «de paso»: entra y se va, sin bajar su saldo (p. ej. la
-// transferencia mensual al «Fondo ahorro»).
+// nunca para quien lo envía. Si sale de una cuenta del titular principal (su
+// «MyInvestor», o una externa como ING), es dinero «de paso»: un mero paso que no
+// deja constancia en lo del principal (p. ej. la transferencia mensual al «Fondo
+// ahorro»): ni baja su saldo ni sale en su cuenta o en sus movimientos.
 //
 // El orden de `productos` es el que elige el usuario para ver sus inversiones.
 // ─────────────────────────────────────────────────────────────────────────────

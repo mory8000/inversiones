@@ -10,6 +10,7 @@ import {
   Landmark,
   Pencil,
   Plus,
+  Sigma,
   Wallet,
 } from 'lucide-react'
 import type { Movimiento, Titular } from '../types'
@@ -211,6 +212,47 @@ function TitularHero({ tf, fin }: { tf: TitularFinance; fin: FinanceData }) {
   )
 }
 
+/**
+ * Debajo de la tarjeta del «Fondo ahorro»: el total de los titulares sumado (p. ej. «Luis
+ * principal» + «Fondo ahorro»). Solo informa: cada tarjeta sigue con sus cifras por separado.
+ */
+function TotalCard({ fin }: { fin: FinanceData }) {
+  // Se suman las cifras tal como se ven (al céntimo), para que la suma cuadre a mano.
+  const cents = (x: number) => Math.round(x * 100) / 100
+  const total = cents(fin.titulares.reduce((sum, tf) => sum + cents(tf.totals.patrimonio), 0))
+  const nombres = fin.titulares.map((tf) => tf.titular.nombre).join(' + ')
+  return (
+    <section aria-label={`Total de ${fin.titulares.map((tf) => tf.titular.nombre).join(' y ')}`} data-total-sumado className="rounded-3xl border border-slate-200/80 bg-white p-5 shadow-sm sm:p-6">
+      <div className="flex items-center gap-2.5">
+        <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-700">
+          <Sigma className="size-[18px]" strokeWidth={2.4} />
+        </span>
+        <div className="min-w-0">
+          <h2 className="text-[15px] font-semibold text-slate-900">Total</h2>
+          <p className="text-xs text-slate-500">
+            {nombres} · a {fmtDate(fin.today)}
+          </p>
+        </div>
+      </div>
+      <ul className="mt-3 divide-y divide-slate-100">
+        {fin.titulares.map((tf) => (
+          <li key={tf.titular.id} className="flex items-center justify-between gap-3 py-2.5" data-total-titular={tf.titular.nombre}>
+            <span className="flex min-w-0 items-center gap-2">
+              <TitularAvatar titular={tf.titular} size="xs" />
+              <span className="truncate text-sm text-slate-700">{tf.titular.nombre}</span>
+            </span>
+            <Amount value={tf.totals.patrimonio} className={cn('shrink-0 text-sm font-semibold', tf.totals.patrimonio < -0.005 ? 'text-rose-600' : 'text-slate-900')} />
+          </li>
+        ))}
+      </ul>
+      <div className="flex items-baseline justify-between gap-3 border-t border-slate-200 pt-3" data-total>
+        <span className="text-sm font-semibold text-slate-900">Total</span>
+        <Amount value={total} className={cn('text-2xl font-bold tracking-tight', total < -0.005 ? 'text-rose-600' : 'text-slate-900')} />
+      </div>
+    </section>
+  )
+}
+
 /** Dónde está el dinero de cada titular (por tipo de producto y en cuentas), uno junto a otro. */
 function DistributionCard({ fin }: { fin: FinanceData }) {
   const list = fin.titulares.filter((tf) => tf.totals.patrimonio > 0.005)
@@ -322,7 +364,7 @@ function GettingStarted({ fin }: { fin: FinanceData }) {
           {
             done: ds.programadas.length > 0,
             title: 'Programa la transferencia mensual',
-            text: `Está dentro de la ventana «${principal?.nombre ?? MYINVESTOR}» (tócala en la tarjeta de ${t1.nombre}). La app la apuntará sola cada mes y contará solo para ${t2.nombre}: el dinero pasa por «${principal?.nombre ?? MYINVESTOR}» de paso, sin bajar su saldo.`,
+            text: `Está dentro de la ventana «${principal?.nombre ?? MYINVESTOR}» (tócala en la tarjeta de ${t1.nombre}). La app la apuntará sola cada mes y contará solo para ${t2.nombre}: el dinero pasa por «${principal?.nombre ?? MYINVESTOR}» de paso, sin quedarse en ella.`,
             action: (
               <Button size="sm" variant="soft" icon={CalendarSync} onClick={() => programarMensual(ds, t1.id)}>
                 Programar
@@ -388,17 +430,25 @@ export function Dashboard() {
   const graph = useMemo(() => buildFlowGraph(ds, positions, { from: null, to: null }), [ds, positions])
   const multi = ds.titulares.length > 1
   const empty = ws.movimientos.length === 0
+  const [principal, ...otros] = fin.titulares
 
   return (
     <div className="space-y-4 lg:space-y-5">
       <DemoBanner />
 
-      {/* Arriba, los titulares a la vez (el primero es el principal) y una ventanilla por inversión */}
+      {/* Arriba, los titulares a la vez (el primero es el principal), el total de todos debajo del
+          último y una ventanilla por inversión */}
       <div>
         <div className={cn('grid grid-cols-1 items-start gap-4 lg:gap-5', multi && 'lg:grid-cols-2')}>
-          {fin.titulares.map((tf) => (
-            <TitularHero key={tf.titular.id} tf={tf} fin={fin} />
-          ))}
+          {principal && <TitularHero tf={principal} fin={fin} />}
+          {otros.length > 0 && (
+            <div className="grid grid-cols-1 gap-4 lg:gap-5">
+              {otros.map((tf) => (
+                <TitularHero key={tf.titular.id} tf={tf} fin={fin} />
+              ))}
+              {!empty && <TotalCard fin={fin} />}
+            </div>
+          )}
         </div>
         <InvestmentTiles fin={fin} />
       </div>
@@ -587,11 +637,6 @@ function AccountsCard({ fin }: { fin: FinanceData }) {
                         {s.enviadoOtros > 0 && (
                           <div className="text-[11px] text-fuchsia-700">
                             <Amount value={s.enviadoOtros} /> a otros
-                          </div>
-                        )}
-                        {s.dePaso > 0 && (
-                          <div className="text-[11px] text-fuchsia-700">
-                            <Amount value={s.dePaso} /> de paso (no cuenta)
                           </div>
                         )}
                       </div>

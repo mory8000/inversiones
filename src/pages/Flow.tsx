@@ -16,25 +16,40 @@ import { DemoBanner } from '../components/DemoBanner'
 import { AccountAvatar } from '../components/ui/icons'
 import { TitularTag } from '../components/Titulares'
 import type { Movimiento } from '../types'
-import { entityName, isConSaldo, isExterna, ownerOf, refKey } from '../lib/movements'
+import { entityName, isConSaldo, isDePaso, isExterna, ownerOf, refKey } from '../lib/movements'
+
+/** Clave de «de dónde → a dónde». Lo que pasa «de paso» por una cuenta del principal va como «Aportaciones». */
+const pairKey = (m: Movimiento, paso: boolean) => `${paso ? 'aportaciones' : refKey(m.origen)}>${refKey(m.destino)}`
 
 /**
  * Aportaciones (de una cuenta externa a MyInvestor) y demás movimientos entre cuentas, resumidos
- * por «de dónde → a dónde» para que se vea claro aunque haya muchos.
+ * por «de dónde → a dónde» para que se vea claro aunque haya muchos. Lo que pasa «de paso» por una
+ * cuenta del principal camino de otro titular no deja constancia en esa cuenta: sale como
+ * «Aportaciones» a la cuenta de quien lo recibe.
  */
 function TransfersCard({ transfers }: { transfers: Movimiento[] }) {
   const { lookup } = useFinance()
   const multi = lookup.titulares.size > 1
-  const pairs = new Map<string, { m: Movimiento; total: number; count: number }>()
+  const pairs = new Map<string, { m: Movimiento; paso: boolean; total: number; count: number }>()
   for (const m of transfers) {
-    const k = `${refKey(m.origen)}>${refKey(m.destino)}`
+    const paso = isDePaso(lookup, m)
+    const k = pairKey(m, paso)
     const p = pairs.get(k)
     if (p) {
       p.total += m.importe
       p.count++
-    } else pairs.set(k, { m, total: m.importe, count: 1 })
+    } else pairs.set(k, { m, paso, total: m.importe, count: 1 })
   }
   const list = [...pairs.values()].sort((a, b) => b.total - a.total)
+  const aportaciones = (
+    <span className="flex min-w-0 items-center gap-2">
+      <AccountAvatar color="#94A3B8" size="xs" />
+      <span className="min-w-0">
+        <span className="block truncate text-sm font-medium text-slate-800">Aportaciones</span>
+        <span className="block truncate text-[11px] text-slate-400">De paso</span>
+      </span>
+    </span>
+  )
   const end = (ref: Movimiento['origen']) => {
     const c = lookup.cuentas.get(ref.id)
     const t = multi ? ownerOf(lookup, ref) : undefined
@@ -63,12 +78,12 @@ function TransfersCard({ transfers }: { transfers: Movimiento[] }) {
         subtitle="Lo que entra en tus cuentas con saldo (como MyInvestor) desde cuentas externas, y lo que se mueve entre cuentas"
       />
       <ul className="mt-3 divide-y divide-slate-100 border-t border-slate-100">
-        {list.map(({ m, total, count }) => {
-          const aportacion = isExterna(lookup, m.origen) && isConSaldo(lookup, m.destino)
+        {list.map(({ m, paso, total, count }) => {
+          const aportacion = paso || (isExterna(lookup, m.origen) && isConSaldo(lookup, m.destino))
           return (
-            <li key={`${refKey(m.origen)}>${refKey(m.destino)}`} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 px-4 py-3 sm:px-5">
+            <li key={pairKey(m, paso)} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 px-4 py-3 sm:px-5">
               <span className="flex min-w-0 items-center gap-2">
-                {end(m.origen)}
+                {paso ? aportaciones : end(m.origen)}
                 <ArrowRight className="size-4 shrink-0 text-slate-300" aria-hidden />
                 {end(m.destino)}
               </span>
@@ -229,6 +244,8 @@ export function Flow() {
               <p className="px-4 pt-2 text-[13px] text-slate-500 sm:px-5">
                 Cada caja lleva el nombre de su titular. Si el dinero sale de la cuenta de uno y entra en un producto de otro, cuenta como inversión de
                 quien lo recibe. Lo que sigue invertido va por separado para cada titular.
+                {graph.nodes.some((n) => n.kind === 'aportaciones') &&
+                  ' Lo que pasa de paso por una cuenta del titular principal camino de otro titular no deja constancia en ella: sale como «Aportaciones» de quien lo recibe.'}
               </p>
             )}
             <div className="px-2 pt-3 pb-4 sm:px-4">

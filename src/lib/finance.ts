@@ -18,11 +18,13 @@
 // el patrimonio del titular. Las cuentas externas solo dicen de dónde viene el
 // dinero: no llevan saldo.
 //
-// Dinero «de paso»: lo que entra en la cuenta principal del titular principal y
-// se va a otro titular (p. ej. la transferencia mensual al «Fondo ahorro») no
-// cuenta para el principal: no baja el saldo de su cuenta ni su patrimonio. Solo
-// cuenta para quien lo recibe, con sus ganancias o pérdidas. Como todo se calcula
-// desde el primer movimiento, la regla vale también para lo de antes.
+// Dinero «de paso»: lo que llega desde fuera (p. ej. desde ING), pasa por una
+// cuenta del titular principal (MyInvestor) y se va a otro titular (p. ej. la
+// transferencia mensual al «Fondo ahorro») es un mero paso que no deja constancia
+// en lo del principal: no baja el saldo de su cuenta, no cuenta en su patrimonio
+// ni en sus cifras, y no sale en su cuenta ni en sus movimientos. Solo cuenta para
+// quien lo recibe, con sus ganancias o pérdidas. Como todo se calcula desde el
+// primer movimiento, la regla vale también para lo de antes.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { Movimiento, Producto, ProductType, Titular, Valoracion, Workspace } from '../types'
@@ -98,8 +100,9 @@ export interface AccountStats {
    */
   saldo: number
   /**
-   * Dinero «de paso»: lo que ha entrado en la cuenta (del titular principal) y se ha ido a otro
-   * titular, p. ej. al «Fondo ahorro». No cuenta en el saldo ni para el titular de la cuenta.
+   * Dinero «de paso»: lo que ha pasado por la cuenta (del titular principal) camino de otro
+   * titular, p. ej. del «Fondo ahorro». No deja constancia en la cuenta: no cuenta en su saldo, ni
+   * en sus movimientos, ni para su titular (y la app no lo enseña en ella). Solo para cálculos.
    */
   dePaso: number
   /** Lo «de paso», por titular que lo ha recibido. */
@@ -411,7 +414,8 @@ export function isBetweenTitulares(m: Movimiento, owner: (ref: Movimiento['orige
 
 /**
  * Estadísticas de cada cuenta. Con los titulares en los datos (o con `dePaso`), lo que pasa «de
- * paso» por la cuenta del titular principal hacia otro titular no baja su saldo.
+ * paso» por una cuenta del titular principal hacia otro titular no deja constancia en ella: ni
+ * baja su saldo ni cuenta en sus movimientos (solo se suma aparte, en `dePaso`).
  */
 export function computeAccountStats(ws: Workspace & { titulares?: Titular[] }, dePaso: DePaso = detectorDePaso(buildLookup(ws))): Map<string, AccountStats> {
   const map = new Map<string, AccountStats>()
@@ -455,18 +459,23 @@ export function computeAccountStats(ws: Workspace & { titulares?: Titular[] }, d
   const externas = new Set(ws.cuentas.filter((c) => c.externa).map((c) => c.id))
   for (const m of ws.movimientos) {
     const cross = isBetweenTitulares(m, owner)
-    // Dinero «de paso» (de la cuenta del principal a otro titular): entra y se va, no baja el saldo.
-    const paso = dePaso(m)
-    // Saldo: lo que entra menos lo que sale.
-    if (m.origen.kind === 'cuenta') {
+    // Dinero «de paso» (de una cuenta del principal a otro titular): un mero paso que no deja
+    // constancia en la cuenta (ni en su saldo, ni en sus movimientos, ni en a dónde ha ido su
+    // dinero). Solo se suma aparte, en `dePaso`.
+    const paso = m.origen.kind === 'cuenta' && dePaso(m)
+    if (paso) {
       const s = map.get(m.origen.id)
-      if (s && paso) {
+      if (s) {
         s.dePaso += m.importe
         const quien = owner(m.destino) ?? ''
         const porTitular = pasoA.get(m.origen.id) ?? new Map<string, number>()
         porTitular.set(quien, (porTitular.get(quien) ?? 0) + m.importe)
         pasoA.set(m.origen.id, porTitular)
-      } else if (s) s.salidas += m.importe
+      }
+    } else if (m.origen.kind === 'cuenta') {
+      // Saldo: lo que entra menos lo que sale.
+      const s = map.get(m.origen.id)
+      if (s) s.salidas += m.importe
     }
     if (m.destino.kind === 'cuenta') {
       const s = map.get(m.destino.id)
@@ -475,20 +484,16 @@ export function computeAccountStats(ws: Workspace & { titulares?: Titular[] }, d
         if (m.origen.kind === 'cuenta' && externas.has(m.origen.id) && m.origen.id !== m.destino.id) s.aportaciones += m.importe
       }
     }
-    if (m.origen.kind === 'cuenta') {
+    if (m.origen.kind === 'cuenta' && !paso) {
       const s = touch(m.origen.id, m.fecha)
       if (s) {
         if (m.destino.kind === 'producto') {
-          if (paso) {
-            // Va aparte, en `dePaso`.
-          } else if (cross) s.enviadoOtros += m.importe
+          if (cross) s.enviadoOtros += m.importe
           else s.enviado += m.importe
           const pp = perProduct.get(m.origen.id)!
           const e = pp.get(m.destino.id) ?? { enviado: 0, recibido: 0 }
           e.enviado += m.importe
           pp.set(m.destino.id, e)
-        } else if (paso) {
-          // Va aparte, en `dePaso`.
         } else if (cross) {
           s.enviadoOtros += m.importe
         } else {

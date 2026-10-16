@@ -7,7 +7,7 @@ import { buildFlowGraph } from './flow'
 import { parseNumber, fmtEUR, fmtPct } from './format'
 import { inferMovementType } from './meta'
 import { buildDemoWorkspace } from './demo'
-import { movementsToCSV, buildLookup, detectorDePaso, filterMovements, isDePaso, movementKind, totalsOf, EMPTY_FILTERS } from './movements'
+import { movementsToCSV, buildLookup, detectorDePaso, filterMovements, isDePaso, movementKind, seVeEn, seVePara, totalsOf, EMPTY_FILTERS } from './movements'
 import { aplicarProgramadas, movimientosDe } from './programadas'
 import { addMonths, daysBetween } from './dates'
 
@@ -460,6 +460,9 @@ describe('el principal y el «Fondo ahorro», cada uno por su lado', () => {
     // MyInvestor: entran 5.000 y salen 3.500 a sus inversiones. Los 500 del «Fondo ahorro» entran y se van.
     expect(my).toMatchObject({ entradas: 5000, salidas: 3500, saldo: 1500, dePaso: 500, enviadoOtros: 0 })
     expect(my.dePasoA).toEqual([{ titularId: 'T2', importe: 500 }])
+    // Ni rastro en la cuenta: sus movimientos y «a dónde ha ido su dinero» son solo los de Luis.
+    expect(my.numMovimientos).toBe(4)
+    expect(my.porProducto.map((x) => x.productoId).sort()).toEqual(['D', 'F', 'K'])
     const { luis, ahorro } = totales(ds)
     // Luis: F 1.100 + D 2.000 + K 500 + MyInvestor 1.500. Su «Aportado» es solo lo que trajo de su banco.
     expect(luis).toMatchObject({ patrimonio: 5100, efectivo: 1500, capital: 3500, ganancia: 100, aportadoTotal: 5000 })
@@ -538,5 +541,66 @@ describe('el principal y el «Fondo ahorro», cada uno por su lado', () => {
     expect(faltaDinero(ds.movimientos, [...ds.movimientos, propia], 'MY', '2026-10-15', { dePaso })).toMatchObject({ falta: 500, disponible: 1500 })
     // Sin titulares en los datos no hay nada «de paso».
     expect(computeAccountStats({ cuentas: ds.cuentas, productos: ds.productos, movimientos: ds.movimientos }).get('MY')!.saldo).toBe(1000)
+  })
+
+  it('lo de paso no deja constancia en lo del principal: ni en sus movimientos, ni en su cuenta, ni en sus filtros; sí en lo del «Fondo ahorro»', () => {
+    const ds = base()
+    const lookup = buildLookup(ds)
+    const paso = ds.movimientos.filter((m) => isDePaso(lookup, m))
+    expect(paso.map((m) => m.importe)).toEqual([300, 200])
+    // El espacio de Luis no los lleva; el del «Fondo ahorro», sí.
+    const luis = titularWorkspace(ds, 'T1')
+    const ahorro = titularWorkspace(ds, 'T2')
+    expect(luis.movimientos.some((m) => paso.includes(m))).toBe(false)
+    expect(luis.movimientos).toHaveLength(4)
+    expect(paso.every((m) => ahorro.movimientos.includes(m))).toBe(true)
+    // Desde MyInvestor no se ven; desde lo que los recibe, sí.
+    for (const m of paso) {
+      expect(seVeEn(lookup, m, C('MY'))).toBe(false)
+      expect(seVeEn(lookup, m, m.destino)).toBe(true)
+      expect(seVePara(lookup, m, 'T1')).toBe(false)
+      expect(seVePara(lookup, m, 'T2')).toBe(true)
+    }
+    // Movimientos filtrados por titular o por cuenta.
+    const ver = (f: Partial<typeof EMPTY_FILTERS>) => filterMovements(ds.movimientos, lookup, { ...EMPTY_FILTERS, ...f }).map((m) => m.importe)
+    expect(ver({ titular: 'T1' })).toEqual([5000, 1000, 2000, 500])
+    expect(ver({ titular: 'T2' })).toEqual([300, 200])
+    expect(ver({ entidad: 'cuenta:MY' })).toEqual([5000, 1000, 2000, 500])
+    expect(ver({ entidad: 'producto:F2' })).toEqual([300])
+    expect(ver({ entidad: 'cuenta:C2' })).toEqual([200])
+    // En «todos» siguen estando (son del «Fondo ahorro»).
+    expect(ver({})).toHaveLength(6)
+  })
+
+  it('lo que va desde una cuenta externa del principal (ING) al «Fondo ahorro» también es de paso: no deja constancia en ella ni en Luis', () => {
+    const ds = base()
+    const desdeIng = mov('2026-02-15', C('BBVA'), P('F2'), 453)
+    ds.movimientos.push(desdeIng)
+    const lookup = buildLookup(ds)
+    expect(isDePaso(lookup, desdeIng)).toBe(true)
+    const ext = computeAccountStats(ds).get('BBVA')!
+    expect(ext).toMatchObject({ salidas: 5000, dePaso: 453, numMovimientos: 1, enviadoOtros: 0 })
+    expect(titularWorkspace(ds, 'T1').movimientos.includes(desdeIng)).toBe(false)
+    const { luis, ahorro } = totales(ds)
+    expect(luis).toMatchObject({ patrimonio: 5100, aportadoTotal: 5000, numMovimientos: 4 })
+    expect(ahorro.patrimonio).toBe(953)
+    expect(ahorro.aportadoTotal).toBe(953)
+    // Desde el «Fondo ahorro» (no es el principal), lo que sale de sus cuentas no es de paso.
+    expect(isDePaso(lookup, mov('2026-03-01', C('C2'), C('MY'), 10))).toBe(false)
+  })
+
+  it('en el flujo del dinero, lo de paso sale como «Aportaciones» del «Fondo ahorro», no de MyInvestor', () => {
+    const ds = base()
+    const g = buildFlowGraph(ds, computePositions(ds, '2026-10-15'), { from: null, to: null })
+    const node = (id: string) => g.nodes.find((x) => x.id === id)
+    const my = node('L:c:MY')!
+    // MyInvestor solo lleva lo que Luis invierte en lo suyo (F 1.000 + D 2.000 + K 500).
+    expect(my.value).toBe(3500)
+    expect(g.links.some((l) => l.source === my.id && l.target === 'M:F2')).toBe(false)
+    const ap = node('L:aportaciones:T2')!
+    expect(ap).toMatchObject({ kind: 'aportaciones', label: 'Aportaciones · Fondo ahorro', value: 300 })
+    expect(g.links.find((l) => l.source === ap.id)).toMatchObject({ target: 'M:F2', value: 300 })
+    // La transferencia a la cuenta del «Fondo ahorro» va a la lista de transferencias (como antes).
+    expect(g.transfers.map((m) => m.importe)).toEqual([5000, 200])
   })
 })

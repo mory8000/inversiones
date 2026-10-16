@@ -4,6 +4,8 @@
 //   ORIGEN (de dónde viene)  →  PRODUCTO (dónde está)  →  DESTINO (a dónde va)
 //
 //   · Origen:  cuentas, traspasos desde otros productos y rentabilidad generada.
+//              Lo que pasa «de paso» por una cuenta del principal camino de otro
+//              titular sale como «Aportaciones» de quien lo recibe, no de esa cuenta.
 //   · Destino: reembolsos a cuentas, traspasos a otros productos, pérdidas y
 //              lo que sigue invertido (valor actual).
 // ─────────────────────────────────────────────────────────────────────────────
@@ -12,9 +14,11 @@ import type { Cuenta, EntityRef, Movimiento, Producto, ProductType, Titular, Wor
 import { EPS, type Position } from './finance'
 import { PRODUCT_META, PRODUCT_TYPES } from './meta'
 import { titularColor } from './titulares'
+import { buildLookup, isDePaso } from './movements'
 
 export type FlowNodeKind =
   | 'cuenta'
+  | 'aportaciones'
   | 'producto'
   | 'traspaso-in'
   | 'traspaso-out'
@@ -80,6 +84,7 @@ export function buildFlowGraph(ws: Workspace & { titulares?: Titular[] }, positi
   const titulares = ws.titulares ?? []
   const multi = titulares.length > 1
   const titularName = new Map(titulares.map((t) => [t.id, t.nombre]))
+  const lookup = buildLookup(ws)
   const nodes = new Map<string, FlowNode>()
   const links = new Map<string, FlowLink>()
   const transfers: Movimiento[] = []
@@ -131,9 +136,17 @@ export function buildFlowGraph(ws: Workspace & { titulares?: Titular[] }, positi
       case 'transferencia':
         transfers.push(m)
         break
-      case 'inversion':
-        addLink(accountNode(m.origen.id, 0), productNode(m.destino.id), m.importe, 'inversion')
+      case 'inversion': {
+        // Lo que pasa «de paso» por una cuenta del principal no deja constancia en ella: sale como
+        // «Aportaciones» de quien lo recibe (p. ej. «Aportaciones · Fondo ahorro»).
+        const t = productos.get(m.destino.id)?.titularId
+        const source =
+          isDePaso(lookup, m) && t
+            ? ensure({ id: `L:aportaciones:${t}`, column: 0, kind: 'aportaciones', label: `Aportaciones${suffix(t)}`, color: titularColor(titulares, t) })
+            : accountNode(m.origen.id, 0)
+        addLink(source, productNode(m.destino.id), m.importe, 'inversion')
         break
+      }
       case 'reembolso':
         addLink(productNode(m.origen.id), accountNode(m.destino.id, 2), m.importe, 'reembolso')
         break
