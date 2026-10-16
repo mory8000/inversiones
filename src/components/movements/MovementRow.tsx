@@ -1,6 +1,6 @@
 import { ArrowRight, CalendarSync, ChevronRight } from 'lucide-react'
 import type { EntityRef, Movimiento } from '../../types'
-import { entityName, isConSaldo, isCross, isExterna, movementKind, ownerId, ownerOf, sameRef, type Lookup } from '../../lib/movements'
+import { entityName, isConSaldo, isCross, isDePaso, isExterna, movementKind, ownerId, ownerOf, sameRef, type Lookup } from '../../lib/movements'
 import { MOVEMENT_META, PRODUCT_META, kindMeta } from '../../lib/meta'
 import { fmtDate } from '../../lib/format'
 import { cn } from '../../lib/cn'
@@ -11,7 +11,8 @@ import { editMovement } from '../../store/ui'
 
 /**
  * Nombre del movimiento visto desde una cuenta o producto (`perspective`), desde un titular
- * (`titularId`) o en general. Un movimiento de un titular a otro se nombra como tal.
+ * (`titularId`) o en general. Un movimiento de un titular a otro se nombra como tal; el que sale
+ * de la cuenta del principal (MyInvestor) es dinero «de paso» para él: «De paso a …».
  */
 export function movementLabel(m: Movimiento, lookup: Lookup, perspective?: EntityRef, titularId?: string): string {
   if (isCross(lookup, m)) {
@@ -20,7 +21,7 @@ export function movementLabel(m: Movimiento, lookup: Lookup, perspective?: Entit
     const incoming = perspective ? sameRef(m.destino, perspective) : titularId === to.id
     const outgoing = perspective ? sameRef(m.origen, perspective) : titularId === from.id
     if (incoming) return m.destino.kind === 'producto' ? `Aportación de ${from.nombre}` : `Recibido de ${from.nombre}`
-    if (outgoing) return `Enviado a ${to.nombre}`
+    if (outgoing) return isDePaso(lookup, m) ? `De paso a ${to.nombre}` : `Enviado a ${to.nombre}`
     return `De ${from.nombre} a ${to.nombre}`
   }
   // De una cuenta externa a una cuenta con saldo (MyInvestor): una aportación; al revés, una retirada.
@@ -82,6 +83,8 @@ export function MovementRow({ m, lookup, perspective, titularId }: { m: Movimien
   const label = movementLabel(m, lookup, perspective, titularId)
   let sign = 0
   if (perspective) sign = sameRef(m.destino, perspective) ? 1 : sameRef(m.origen, perspective) ? -1 : 0
+  // Lo que pasa «de paso» por la cuenta no baja su saldo: sin signo menos.
+  if (sign < 0 && isDePaso(lookup, m)) sign = 0
   const amountValue = sign === 0 ? m.importe : sign * m.importe
   const amountClass = sign > 0 ? 'text-emerald-600' : 'text-slate-900'
   const origenName = entityName(lookup, m.origen)

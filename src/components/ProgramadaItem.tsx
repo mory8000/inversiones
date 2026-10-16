@@ -2,7 +2,7 @@ import { CalendarSync, Pencil } from 'lucide-react'
 import type { Programada } from '../types'
 import type { FinanceData } from '../store/useFinance'
 import { openProgramada } from '../store/ui'
-import { countsForOwner, entityName } from '../lib/movements'
+import { countsForOwner, entityName, isDePaso } from '../lib/movements'
 import { diaDe, movimientosDe, proximaFecha } from '../lib/programadas'
 import { fmtDate, fmtEUR } from '../lib/format'
 import { Amount, useHidden } from './ui/Amount'
@@ -17,6 +17,8 @@ export function ProgramadaItem({ p, fin }: { p: Programada; fin: FinanceData }) 
   const from = lookup.titulares.get(owner(p.origen) ?? '')
   const to = lookup.titulares.get(owner(p.destino) ?? '')
   const cross = !!from && !!to && from.id !== to.id
+  /** Sale de la cuenta del principal (MyInvestor) hacia otro titular: dinero «de paso», no baja su saldo. */
+  const dePaso = isDePaso(lookup, p)
   const hechas = movimientosDe(ds, p.id)
   const total = hechas.reduce((sum, m) => sum + m.importe, 0)
   const next = proximaFecha(p, today)
@@ -45,6 +47,7 @@ export function ProgramadaItem({ p, fin }: { p: Programada; fin: FinanceData }) 
           {cross && to && from && (
             <span className="block text-xs font-medium text-fuchsia-800">
               {countsForOwner(lookup, p.destino) ? `Cuenta solo para ${to.nombre}, no para ${from.nombre}` : `Va a una cuenta externa de ${to.nombre}`}
+              {dePaso ? `. Pasa por «${entityName(lookup, p.origen)}» de paso: no baja su saldo` : ''}
             </span>
           )}
         </span>

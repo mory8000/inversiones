@@ -9,7 +9,7 @@ import {
   type Totals,
   type TypeSummary,
 } from '../lib/finance'
-import { buildLookup, countsForOwner, type Lookup } from '../lib/movements'
+import { buildLookup, countsForOwner, detectorDePaso, type DePaso, type Lookup } from '../lib/movements'
 import { todayISO } from '../lib/dates'
 import { titularColor, titularWorkspace } from '../lib/titulares'
 import { useDataset } from './data'
@@ -30,7 +30,10 @@ export interface TitularFinance {
   byType: TypeSummary[]
   /** Dinero recibido de cada uno de los otros titulares en sus productos o cuentas con saldo (cuenta para él). */
   recibido: { titularId: string; importe: number }[]
-  /** Dinero enviado a cada uno de los otros titulares (no cuenta para él, sino para quien lo recibe). */
+  /**
+   * Dinero enviado a cada uno de los otros titulares (no cuenta para él, sino para quien lo recibe).
+   * Si sale de la cuenta del principal (MyInvestor), es dinero «de paso»: tampoco baja su saldo.
+   */
   enviado: { titularId: string; importe: number }[]
   recibidoTotal: number
   enviadoTotal: number
@@ -44,6 +47,8 @@ export interface FinanceData {
   ws: Workspace
   today: string
   lookup: Lookup
+  /** ¿Un movimiento es dinero «de paso» por la cuenta del principal hacia otro titular? (no baja su saldo) */
+  dePaso: DePaso
   positions: Map<string, Position>
   accounts: Map<string, AccountStats>
   /** Cada titular por separado, en orden (el primero es el principal). */
@@ -69,8 +74,9 @@ export function computeFinance(ds: Dataset, today: string): FinanceData {
   const hit = cache.get(ds)
   if (hit && hit.today === today) return hit
   const positions = computePositions(ds, today)
-  const accounts = computeAccountStats(ds)
   const lookup = buildLookup(ds)
+  const dePaso = detectorDePaso(lookup)
+  const accounts = computeAccountStats(ds, dePaso)
   const owner = (ref: EntityRef) => (ref.kind === 'cuenta' ? lookup.cuentas.get(ref.id)?.titularId : lookup.productos.get(ref.id)?.titularId)
 
   const titulares = ds.titulares.map((titular, index): TitularFinance => {
@@ -114,6 +120,7 @@ export function computeFinance(ds: Dataset, today: string): FinanceData {
     ws: ds,
     today,
     lookup,
+    dePaso,
     positions,
     accounts,
     titulares,

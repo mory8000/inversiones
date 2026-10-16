@@ -14,7 +14,7 @@ import { accion } from '../../store/deshacer'
 import { anadirDinero, borrarMovimiento, etiquetaMovimiento } from '../../store/acciones'
 import { fmtDate, fmtEUR, fmtNumberInput, parseNumber } from '../../lib/format'
 import { isValidISODate, minDate, todayISO } from '../../lib/dates'
-import { entityName, isConSaldo, isExterna, parseRefKey, refKey, type Lookup } from '../../lib/movements'
+import { entityName, isConSaldo, isDePaso, isExterna, parseRefKey, refKey, type Lookup } from '../../lib/movements'
 import { aplicarProgramadas, diaDe, fechasDebidas, movimientosDe, sincronizarProgramada } from '../../lib/programadas'
 import { faltaDinero, saldoMinimoDesde, type FaltaDinero } from '../../lib/saldo'
 import { MYINVESTOR, cuentaPrincipal } from '../../lib/titulares'
@@ -42,8 +42,18 @@ function explain(tipo: MovementType, o: string, d: string, oExterna: boolean, dE
   }
 }
 
-/** Explicación cuando el dinero va de un titular a otro. */
-function explainCross(o: string, d: string, from: Titular, to: Titular, destino: EntityRef, lookup: Lookup): string {
+/**
+ * Explicación cuando el dinero va de un titular a otro. `dePaso`: sale de la cuenta del principal
+ * (MyInvestor), así que entra y se va sin bajar su saldo ni contar para él.
+ */
+function explainCross(o: string, d: string, from: Titular, to: Titular, destino: EntityRef, lookup: Lookup, dePaso: boolean): string {
+  if (dePaso) {
+    const pasa = `Pasa por «${o}» de paso (entra y se va)`
+    const noCuenta = `No baja el saldo de «${o}» ni cuenta para ${from.nombre}`
+    if (destino.kind === 'producto') return `${pasa} y se invierte en «${d}» (de ${to.nombre}). ${noCuenta}: cuenta solo para ${to.nombre}.`
+    if (isConSaldo(lookup, destino)) return `${pasa} y llega a «${d}» (de ${to.nombre}). ${noCuenta}: cuenta solo para ${to.nombre}.`
+    return `${pasa} y llega a «${d}» (de ${to.nombre}, cuenta externa). ${noCuenta}; para ${to.nombre} contará cuando lo invierta.`
+  }
   if (destino.kind === 'producto') return `Sale dinero de «${o}» (de ${from.nombre}) y se invierte en «${d}» (de ${to.nombre}). Cuenta solo para ${to.nombre}, no para ${from.nombre}.`
   if (isConSaldo(lookup, destino)) return `Pasa dinero de «${o}» (de ${from.nombre}) a «${d}» (de ${to.nombre}). Cuenta solo para ${to.nombre}, no para ${from.nombre}.`
   return `Pasa dinero de «${o}» (de ${from.nombre}) a «${d}» (de ${to.nombre}, cuenta externa). No cuenta para ${from.nombre}; para ${to.nombre} contará cuando lo invierta.`
@@ -63,7 +73,7 @@ export function MovementForm({
   preset?: MovementPreset
 }) {
   const close = useUI((s) => s.close)
-  const { ws, ds, positions, accounts, lookup, today, owner } = useFinance()
+  const { ws, ds, positions, accounts, lookup, today, owner, dePaso } = useFinance()
   const hidden = useData((s) => s.hideAmounts)
   const addCuenta = useData((s) => s.addCuenta)
   const addMovimiento = useData((s) => s.addMovimiento)
@@ -112,6 +122,8 @@ export function MovementForm({
   const fromT = nuevaExterna ? lookup.titulares.get(externaNuevaT) : origenRef ? lookup.titulares.get(owner(origenRef) ?? '') : undefined
   const toT = destinoRef ? lookup.titulares.get(owner(destinoRef) ?? '') : undefined
   const cross = !!fromT && !!toT && fromT.id !== toT.id
+  /** Dinero «de paso»: de la cuenta del principal (MyInvestor) a otro titular. No baja su saldo. */
+  const vaDePaso = !nuevaExterna && !!origenRef && !!destinoRef && isDePaso(lookup, { origen: origenRef, destino: destinoRef })
 
   const changeTipo = (t: MovementType) => {
     if (t === tipo) return
@@ -145,10 +157,11 @@ export function MovementForm({
 
   // ── ¿Hay dinero en la cuenta con saldo (MyInvestor) de la que sale? ──────
   // No se puede sacar más de lo que hay: ni ese día ni después (si hay movimientos posteriores).
+  // Lo que va «de paso» (de MyInvestor del principal a otro titular) entra y se va: no se comprueba.
   const origenConSaldo = !!origenRef && isConSaldo(lookup, origenRef)
   const sinEste = useMemo(() => (existing ? ws.movimientos.filter((m) => m.id !== existing.id) : ws.movimientos), [ws.movimientos, existing])
   /** Lo que hay disponible en la cuenta de origen en la fecha elegida (sin contar este movimiento). */
-  const disponible = origenConSaldo && origenRef && isValidISODate(fecha) ? Math.max(0, saldoMinimoDesde(sinEste, origenRef.id, fecha)) : null
+  const disponible = origenConSaldo && !vaDePaso && origenRef && isValidISODate(fecha) ? Math.max(0, saldoMinimoDesde(sinEste, origenRef.id, fecha, dePaso)) : null
   const borrador: Movimiento | null =
     origenRef && destinoRef && amount !== null && amount > 0 && isValidISODate(fecha) && origen !== destino
       ? {
@@ -166,7 +179,8 @@ export function MovementForm({
   const desde = existing ? minDate(existing.fecha, fecha) : fecha
   const despues = borrador ? [...sinEste, borrador] : null
   /** Movimiento normal: falta dinero en la cuenta de origen. */
-  const sinSaldo: FaltaDinero | null = !repetir && despues && origenConSaldo && origenRef ? faltaDinero(ws.movimientos, despues, origenRef.id, desde, sinEste) : null
+  const sinSaldo: FaltaDinero | null =
+    !repetir && despues && origenConSaldo && !vaDePaso && origenRef ? faltaDinero(ws.movimientos, despues, origenRef.id, desde, { sinElMovimiento: sinEste, dePaso }) : null
   /** Al cambiar un movimiento, otras cuentas con saldo que se quedarían en negativo (p. ej. si se baja dinero añadido que ya se ha invertido). */
   const avisos: FaltaDinero[] = []
   if (!repetir && existing && despues) {
@@ -174,23 +188,23 @@ export function MovementForm({
     for (const r of [existing.origen, existing.destino, destinoRef]) if (r && isConSaldo(lookup, r)) afectadas.add(r.id)
     if (origenConSaldo && origenRef) afectadas.delete(origenRef.id)
     for (const id of afectadas) {
-      const f = faltaDinero(ws.movimientos, despues, id, desde)
+      const f = faltaDinero(ws.movimientos, despues, id, desde, { dePaso })
       if (f) avisos.push(f)
     }
   }
   /** Transferencia mensual: ¿hay dinero para las que tocan hasta hoy? */
   const sinSaldoMensual = useMemo((): FaltaDinero | null => {
-    if (!repetir || !origenConSaldo || !origenRef || !destinoRef || amount === null || amount <= 0 || !isValidISODate(fecha) || origen === destino) return null
+    if (!repetir || !origenConSaldo || vaDePaso || !origenRef || !destinoRef || amount === null || amount <= 0 || !isValidISODate(fecha) || origen === destino) return null
     if (fin && (!isValidISODate(fin) || fin < fecha)) return null
     const data = { origen: origenRef, destino: destinoRef, importe: amount, inicio: fecha, fin: fin || null, concepto }
     const draft: Programada = prog ? { ...prog, ...data } : { id: '__nueva__', ...data, excluidos: [], createdAt: '', updatedAt: '' }
     const simulado = prog
       ? sincronizarProgramada({ ...ds, programadas: ds.programadas.map((x) => (x.id === prog.id ? draft : x)) }, draft, today)
       : aplicarProgramadas({ ...ds, programadas: [...ds.programadas, draft] }, today)
-    return faltaDinero(ds.movimientos, simulado.movimientos, origenRef.id, prog ? minDate(prog.inicio, fecha) : fecha)
+    return faltaDinero(ds.movimientos, simulado.movimientos, origenRef.id, prog ? minDate(prog.inicio, fecha) : fecha, { dePaso })
     // origenRef y destinoRef salen de origen y destino.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [repetir, origenConSaldo, amount, fecha, fin, origen, destino, concepto, prog, ds, today])
+  }, [repetir, origenConSaldo, vaDePaso, amount, fecha, fin, origen, destino, concepto, prog, ds, today, dePaso])
   const bloqueado = !!sinSaldo || !!sinSaldoMensual
 
   // Transferencia mensual: cuántas se apuntan ya (desde la primera fecha hasta hoy).
@@ -497,6 +511,7 @@ export function MovementForm({
             hint={
               [
                 multi && fromT ? `De ${fromT.nombre}` : null,
+                vaDePaso ? 'De paso: no baja su saldo' : null,
                 disponible !== null && !hidden ? `Disponible: ${fmtEUR(disponible)}${fecha < today ? ` (el ${fmtDate(fecha)})` : ''}` : null,
                 saldoProducto !== null && !hidden ? `Saldo actual: ${fmtEUR(saldoProducto)}` : null,
                 nuevaExterna ? `Se creará la cuenta «${NOMBRE_EXTERNA}» (luego puedes cambiarle el nombre en Cuentas)` : null,
@@ -696,7 +711,7 @@ export function MovementForm({
           </div>
           {oName && dName && (
             <p className="mt-3 text-[13px] text-slate-600">
-              {cross && destinoRef ? explainCross(oName, dName, fromT!, toT!, destinoRef, lookup) : explain(tipo, oName, dName, oExterna, dExterna)}
+              {cross && destinoRef ? explainCross(oName, dName, fromT!, toT!, destinoRef, lookup, vaDePaso) : explain(tipo, oName, dName, oExterna, dExterna)}
             </p>
           )}
         </div>

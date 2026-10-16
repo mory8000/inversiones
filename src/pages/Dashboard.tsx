@@ -322,7 +322,7 @@ function GettingStarted({ fin }: { fin: FinanceData }) {
           {
             done: ds.programadas.length > 0,
             title: 'Programa la transferencia mensual',
-            text: `Está dentro de la ventana «${principal?.nombre ?? MYINVESTOR}» (tócala en la tarjeta de ${t1.nombre}). La app la apuntará sola cada mes y contará solo para ${t2.nombre}.`,
+            text: `Está dentro de la ventana «${principal?.nombre ?? MYINVESTOR}» (tócala en la tarjeta de ${t1.nombre}). La app la apuntará sola cada mes y contará solo para ${t2.nombre}: el dinero pasa por «${principal?.nombre ?? MYINVESTOR}» de paso, sin bajar su saldo.`,
             action: (
               <Button size="sm" variant="soft" icon={CalendarSync} onClick={() => programarMensual(ds, t1.id)}>
                 Programar
@@ -381,6 +381,7 @@ export function Dashboard() {
         fin.titulares.filter((tf) => tf.ws.movimientos.length > 0).map((tf) => ({ id: tf.titular.id, ws: tf.ws })),
         fin.ws.movimientos,
         fin.today,
+        fin.dePaso,
       ),
     [fin],
   )
@@ -586,6 +587,11 @@ function AccountsCard({ fin }: { fin: FinanceData }) {
                         {s.enviadoOtros > 0 && (
                           <div className="text-[11px] text-fuchsia-700">
                             <Amount value={s.enviadoOtros} /> a otros
+                          </div>
+                        )}
+                        {s.dePaso > 0 && (
+                          <div className="text-[11px] text-fuchsia-700">
+                            <Amount value={s.dePaso} /> de paso (no cuenta)
                           </div>
                         )}
                       </div>

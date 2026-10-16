@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import type { Cuenta, Dataset, EntityRef, Movimiento, Producto, Valoracion, Workspace } from '../types'
-import { buildTimeline, computeAccountStats, computePositions, computeTotals, evaluateProduct, interesEntre, summarizeByType, taeEn } from './finance'
+import { buildTimeline, buildTimelineMulti, computeAccountStats, computePositions, computeTotals, evaluateProduct, interesEntre, summarizeByType, taeEn } from './finance'
 import { titularWorkspace } from './titulares'
 import { faltaDinero, saldoEn, saldoMinimoDesde } from './saldo'
 import { buildFlowGraph } from './flow'
 import { parseNumber, fmtEUR, fmtPct } from './format'
 import { inferMovementType } from './meta'
 import { buildDemoWorkspace } from './demo'
-import { movementsToCSV, buildLookup, filterMovements, movementKind, totalsOf, EMPTY_FILTERS } from './movements'
+import { movementsToCSV, buildLookup, detectorDePaso, filterMovements, isDePaso, movementKind, totalsOf, EMPTY_FILTERS } from './movements'
+import { aplicarProgramadas, movimientosDe } from './programadas'
 import { addMonths, daysBetween } from './dates'
 
 let n = 0
@@ -453,21 +454,89 @@ describe('el principal y el «Fondo ahorro», cada uno por su lado', () => {
     return { luis: de('T1'), ahorro: de('T2') }
   }
 
-  it('lo enviado al «Fondo ahorro» cuenta solo para él: el principal suma sus inversiones y el saldo real de su MyInvestor', () => {
-    const { luis, ahorro } = totales(base())
-    // Luis: F 1.100 + D 2.000 + K 500 + MyInvestor 1.000 (5.000 − 1.000 − 2.000 − 500 − 300 − 200).
-    expect(luis).toMatchObject({ patrimonio: 4600, efectivo: 1000, capital: 3500, ganancia: 100 })
-    // Fondo ahorro: F2 300 + C2 200.
-    expect(ahorro).toMatchObject({ patrimonio: 500, efectivo: 200 })
+  it('lo que pasa por su MyInvestor hacia el «Fondo ahorro» no cuenta para el principal (ni baja su saldo): cuenta solo para el «Fondo ahorro»', () => {
+    const ds = base()
+    const my = computeAccountStats(ds).get('MY')!
+    // MyInvestor: entran 5.000 y salen 3.500 a sus inversiones. Los 500 del «Fondo ahorro» entran y se van.
+    expect(my).toMatchObject({ entradas: 5000, salidas: 3500, saldo: 1500, dePaso: 500, enviadoOtros: 0 })
+    expect(my.dePasoA).toEqual([{ titularId: 'T2', importe: 500 }])
+    const { luis, ahorro } = totales(ds)
+    // Luis: F 1.100 + D 2.000 + K 500 + MyInvestor 1.500. Su «Aportado» es solo lo que trajo de su banco.
+    expect(luis).toMatchObject({ patrimonio: 5100, efectivo: 1500, capital: 3500, ganancia: 100, aportadoTotal: 5000 })
+    // Fondo ahorro: F2 300 + C2 200, que ha recibido de Luis.
+    expect(ahorro).toMatchObject({ patrimonio: 500, efectivo: 200, aportadoTotal: 500 })
   })
 
   it('el saldo de la cuenta principal es real: si es negativo, resta', () => {
     const ds = base()
     ds.movimientos.push(mov('2026-02-01', C('MY'), P('F'), 2000))
-    expect(computeAccountStats(ds).get('MY')!.saldo).toBe(-1000)
+    expect(computeAccountStats(ds).get('MY')!.saldo).toBe(-500)
     const { luis } = totales(ds)
-    expect(luis.efectivo).toBe(-1000)
-    // F 3.300 + D 2.000 + K 500 − 1.000.
-    expect(luis.patrimonio).toBeCloseTo(4800, 6)
+    expect(luis.efectivo).toBe(-500)
+    // F 3.300 + D 2.000 + K 500 − 500.
+    expect(luis.patrimonio).toBeCloseTo(5300, 6)
+  })
+
+  it('con carácter retroactivo: la transferencia mensual al «Fondo ahorro», también los meses ya pasados, no baja el saldo del principal', () => {
+    const programada = { id: 'p1', origen: C('MY'), destino: P('F2'), importe: 453, inicio: '2025-01-15', fin: null, concepto: '', excluidos: [], createdAt: '', updatedAt: '' }
+    const ds = aplicarProgramadas({ ...base(), programadas: [programada] }, '2026-10-15')
+    const meses = movimientosDe(ds, 'p1')
+    // De enero de 2025 a octubre de 2026: 22 meses apuntados de golpe.
+    expect(meses).toHaveLength(22)
+    const lookup = buildLookup(ds)
+    expect(meses.every((m) => isDePaso(lookup, m))).toBe(true)
+    const my = computeAccountStats(ds).get('MY')!
+    expect(my.saldo).toBe(1500)
+    expect(my.dePaso).toBeCloseTo(500 + 22 * 453, 6)
+    const { luis, ahorro } = totales(ds)
+    expect(luis).toMatchObject({ patrimonio: 5100, efectivo: 1500, aportadoTotal: 5000 })
+    expect(ahorro.patrimonio).toBeCloseTo(500 + 22 * 453, 6)
+    expect(ahorro.aportadoTotal).toBeCloseTo(500 + 22 * 453, 6)
+    // Tampoco en la evolución: el último punto de Luis es su patrimonio de hoy.
+    const tl = buildTimelineMulti(
+      [
+        { id: 'T1', ws: titularWorkspace(ds, 'T1') },
+        { id: 'T2', ws: titularWorkspace(ds, 'T2') },
+      ],
+      ds.movimientos,
+      '2026-10-15',
+      detectorDePaso(lookup),
+    )
+    const last = tl[tl.length - 1]
+    expect(last['T1:p']).toBeCloseTo(5100, 6)
+    expect(last['T2:p']).toBeCloseTo(500 + 22 * 453, 6)
+  })
+
+  it('lo que gane o pierda el «Fondo ahorro» no cambia las cifras del principal', () => {
+    const antes = totales(base())
+    for (const pct of [50, -30]) {
+      const ds = base()
+      ds.productos = ds.productos.map((p) => (p.id === 'F2' ? { ...p, valoraciones: [val('2026-09-01', 'porcentaje', pct)] } : p))
+      const { luis, ahorro } = totales(ds)
+      expect(luis).toEqual(antes.luis)
+      expect(ahorro.patrimonio).toBeCloseTo(300 * (1 + pct / 100) + 200, 6)
+      expect(ahorro.ganancia).toBeCloseTo(300 * (pct / 100), 6)
+    }
+  })
+
+  it('lo que sale de la cuenta del «Fondo ahorro» (no es el principal) sí baja su saldo', () => {
+    const ds = base()
+    ds.movimientos.push(mov('2026-03-01', C('C2'), C('MY'), 150))
+    const stats = computeAccountStats(ds)
+    expect(stats.get('C2')).toMatchObject({ saldo: 50, dePaso: 0, enviadoOtros: 150 })
+    // Para Luis, lo que recibe en su MyInvestor sí es suyo.
+    expect(stats.get('MY')).toMatchObject({ saldo: 1650, recibidoOtros: 150 })
+  })
+
+  it('lo que va de paso no se bloquea por falta de saldo; lo que invierte el principal en lo suyo, sí', () => {
+    const ds = base()
+    const dePaso = detectorDePaso(buildLookup(ds))
+    const enorme = mov('2026-10-15', C('MY'), P('F2'), 50000)
+    expect(saldoEn([...ds.movimientos, enorme], 'MY', '2026-10-15', dePaso)).toBe(1500)
+    expect(faltaDinero(ds.movimientos, [...ds.movimientos, enorme], 'MY', '2026-10-15', { dePaso })).toBeNull()
+    const propia = mov('2026-10-15', C('MY'), P('F'), 2000)
+    expect(faltaDinero(ds.movimientos, [...ds.movimientos, propia], 'MY', '2026-10-15', { dePaso })).toMatchObject({ falta: 500, disponible: 1500 })
+    // Sin titulares en los datos no hay nada «de paso».
+    expect(computeAccountStats({ cuentas: ds.cuentas, productos: ds.productos, movimientos: ds.movimientos }).get('MY')!.saldo).toBe(1000)
   })
 })

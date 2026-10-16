@@ -30,10 +30,11 @@ Sustituye al antiguo `Inversiones.xlsx` y mantiene sus mismos conceptos: titular
     que tiene sin invertir en su cuenta **MyInvestor** y lo aportado. Las cifras de cada titular van por
     separado: la cifra grande del principal es todo lo suyo, sin el «Fondo ahorro» (que tiene su propia tarjeta).
   - En la del principal está su cuenta **MyInvestor** (con su saldo) y el botón **«Abrir MyInvestor»**.
-  - **Ventana de MyInvestor** (al abrirla): su **saldo real** (positivo o negativo), **Añadir dinero** (desde una
-    cuenta externa), **Invertir**, **Programar transferencia mensual**, **Sacar dinero**, sus transferencias
-    mensuales (con **Editar**: es el único sitio donde se cambian) y el **dinero añadido desde bancos externos**,
-    cada movimiento con sus botones **Editar** y **Borrar**.
+  - **Ventana de MyInvestor** (al abrirla): su **saldo real** (positivo o negativo), lo que ha pasado **de paso**
+    al «Fondo ahorro» (no cuenta en el saldo), **Añadir dinero** (desde una cuenta externa), **Invertir**,
+    **Programar transferencia mensual**, **Sacar dinero**, sus transferencias mensuales (con **Editar**: es el
+    único sitio donde se cambian) y el **dinero añadido desde bancos externos**, cada movimiento con sus botones
+    **Editar** y **Borrar**.
   - **Ventanillas**: al tocar una se abre con su saldo, su **% de rentabilidad** (o su **interés**, en los
     depósitos) con el botón para cambiarlo, y con lo que se puede hacer: **Aportar**, **Retirar** (reembolso),
     **Traspasar**, **Programar transferencia mensual** y ver sus movimientos (con **Editar** y **Borrar**).
@@ -54,7 +55,8 @@ Sustituye al antiguo `Inversiones.xlsx` y mantiene sus mismos conceptos: titular
 - **No se puede aportar más dinero del que hay** en MyInvestor (ni en otra cuenta con saldo): si se intenta,
   sale un aviso con lo que hay disponible, lo que falta y un botón para «Añadir dinero». Se comprueba en la fecha
   del movimiento y después (si luego hay más salidas, tampoco pueden quedarse sin dinero). Al programar una
-  transferencia mensual que empieza en el pasado, se comprueba que haya dinero para las que ya tocan.
+  transferencia mensual que empieza en el pasado, se comprueba que haya dinero para las que ya tocan. Lo que va
+  **de paso** a otro titular (como la transferencia mensual al «Fondo ahorro») no se comprueba: no baja el saldo.
 - **Movimientos**: todos los movimientos de todos los titulares, con su origen (**De**) y destino (**A**) y de quién
   es cada uno, agrupados por meses. Filtros por titular, tipo, cuenta o producto, tipo de producto y periodo;
   buscador; y exportación a Excel (CSV).
@@ -88,8 +90,13 @@ Sustituye al antiguo `Inversiones.xlsx` y mantiene sus mismos conceptos: titular
   cuándo) o eliminarla: **«Abrir MyInvestor» → «Editar»** (es el único sitio; en las tarjetas de Inicio no sale).
   Un mes concreto se puede cambiar o borrar sin tocar los demás.
 - **El dinero cuenta para quien lo recibe**: si sale de la cuenta del titular 1 y entra en un producto o en una
-  cuenta con saldo del titular 2, cuenta solo para el titular 2, no para el titular 1 (en la cuenta del titular 1
-  se ve como dinero que ha salido).
+  cuenta con saldo del titular 2, cuenta solo para el titular 2, no para el titular 1.
+- **Dinero de paso** (p. ej. la transferencia mensual al «Fondo ahorro»): lo que entra en MyInvestor del titular
+  principal y se va a otro titular **no cuenta para el principal**: no baja el saldo de su MyInvestor, ni su
+  patrimonio, ni su aportado, y lo que ese dinero gane o pierda después tampoco. Cuenta solo para quien lo
+  recibe. Se aplica a todo, **también a los meses ya apuntados**. Por eso no hace falta apuntar con «Añadir
+  dinero» el dinero que llega a MyInvestor solo para irse al «Fondo ahorro». En la ventana de MyInvestor se ve
+  aparte («De paso a Fondo ahorro»).
 - **Ocultar importes** con un toque (icono del ojo).
 - **Copia de seguridad** (descargar / restaurar) y **datos de ejemplo** para probarla sin miedo.
 - **Se instala como una app** en el móvil o el ordenador y funciona **sin conexión**.
@@ -110,6 +117,7 @@ Una transferencia de una **cuenta externa** a una **cuenta con saldo** (como MyI
 
 Si el origen y el destino son de **titulares distintos**, el movimiento se ve como **«Entre titulares»**. Para
 quien lo recibe en un producto o en una cuenta con saldo es dinero suyo (una aportación); para quien lo envía, no.
+Si sale de MyInvestor del titular principal, para él se ve como **«De paso a …»**.
 
 ## Cómo se calcula
 
@@ -143,11 +151,16 @@ Patrimonio = saldo de sus productos + saldo de sus cuentas con saldo (MyInvestor
 Aportado   = lo que ha entrado desde fuera (cuentas externas u otros titulares)
 ```
 
+En el saldo de MyInvestor del titular principal no se resta lo que pasa **de paso** hacia otro titular (entra y
+se va): ese dinero, y lo que gane o pierda después, solo cuenta para quien lo recibe. Como todo se calcula desde
+el primer movimiento, vale también para lo que ya estaba apuntado.
+
 Las cifras de varios titulares nunca se suman: cada uno ve solo lo suyo.
 
 Si el saldo de MyInvestor queda en negativo (por ejemplo, al borrar dinero añadido que ya se había invertido, o
-si una transferencia mensual llega sin dinero suficiente), se ve en rojo, resta en el patrimonio y la app avisa
-de que falta apuntar de dónde vino el dinero («Añadir dinero», dentro de la ventana de MyInvestor).
+si una aportación mensual a una inversión suya llega sin dinero suficiente), se ve en rojo, resta en el
+patrimonio y la app avisa de que falta apuntar de dónde vino el dinero («Añadir dinero», dentro de la ventana de
+MyInvestor).
 
 ## Tus datos
 

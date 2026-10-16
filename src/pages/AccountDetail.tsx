@@ -41,6 +41,8 @@ export function AccountDetail({ id }: { id: string }) {
   const principal = c.externa ? cuentaPrincipal(ds.cuentas, c.titularId) : undefined
   const titular = lookup.titulares.get(c.titularId)
   const multi = lookup.titulares.size > 1
+  /** A quién ha ido el dinero «de paso» (entra en esta cuenta y se va a otro titular). */
+  const receptores = s.dePasoA.map((x) => lookup.titulares.get(x.titularId)?.nombre ?? 'otro titular').join(' y ')
   /** « · Luis» si el producto es de otro titular. */
   const otherOwner = (productoId: string) => {
     const t = lookup.titulares.get(lookup.productos.get(productoId)?.titularId ?? '')
@@ -149,8 +151,14 @@ export function AccountDetail({ id }: { id: string }) {
             )}
           </dl>
 
-          {(s.enviadoOtros > 0 || s.recibidoOtros > 0) && (
+          {(s.enviadoOtros > 0 || s.recibidoOtros > 0 || s.dePaso > 0) && (
             <div className="mt-3 space-y-1 rounded-2xl bg-fuchsia-50 px-4 py-3 text-sm text-fuchsia-900">
+              {s.dePaso > 0 && (
+                <p data-de-paso>
+                  De paso a {receptores}: <Amount value={s.dePaso} className="font-bold" />
+                  <span className="text-fuchsia-700"> · entra y se va: no cuenta en el saldo ni para {titular?.nombre ?? 'este titular'}</span>
+                </p>
+              )}
               {s.enviadoOtros > 0 && (
                 <p>
                   Enviado a otros titulares: <Amount value={s.enviadoOtros} className="font-bold" />

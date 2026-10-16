@@ -14,6 +14,7 @@ import { anadirDinero } from '../../store/acciones'
 import { fmtDate, fmtEUR, fmtNumberInput, parseNumber } from '../../lib/format'
 import { cuentaPrincipal } from '../../lib/titulares'
 import { saldoMinimoDesde } from '../../lib/saldo'
+import { saleDePaso } from '../../lib/movements'
 import { addMonths, isValidISODate } from '../../lib/dates'
 import { navigate, paths } from '../../lib/router'
 import { cn } from '../../lib/cn'
@@ -39,7 +40,7 @@ export function ProductForm({
   abrirVentanilla?: boolean
 }) {
   const close = useUI((s) => s.close)
-  const { ws, ds, positions, accounts, today } = useFinance()
+  const { ws, ds, positions, accounts, today, lookup, dePaso } = useFinance()
   const hidden = useData((s) => s.hideAmounts)
   const addProducto = useData((s) => s.addProducto)
   const updateProducto = useData((s) => s.updateProducto)
@@ -84,8 +85,14 @@ export function ProductForm({
   const wantsFirst = offerFirst && importe.trim() !== ''
 
   // La primera aportación desde una cuenta con saldo (MyInvestor) no puede ser mayor que lo que hay.
+  // Si sale de la cuenta del principal hacia una inversión de otro titular, es dinero «de paso»
+  // (entra y se va): no baja su saldo, así que no se comprueba.
   const cuentaElegidaObj = ws.cuentas.find((c) => c.id === cuenta)
-  const disponible = wantsFirst && cuentaElegidaObj && !cuentaElegidaObj.externa && isValidISODate(fecha) ? Math.max(0, saldoMinimoDesde(ws.movimientos, cuentaElegidaObj.id, fecha)) : null
+  const primeraDePaso = !!cuentaElegidaObj && saleDePaso(lookup, cuentaElegidaObj.id, titularId)
+  const disponible =
+    wantsFirst && cuentaElegidaObj && !cuentaElegidaObj.externa && !primeraDePaso && isValidISODate(fecha)
+      ? Math.max(0, saldoMinimoDesde(ws.movimientos, cuentaElegidaObj.id, fecha, dePaso))
+      : null
   const sinSaldo = disponible !== null && firstAmount !== null && firstAmount > disponible + 0.005
 
   const errors = {
@@ -357,7 +364,9 @@ export function ProductForm({
               const to = ds.titulares.find((t) => t.id === titularId)
               return c && from && to && c.titularId !== titularId ? (
                 <p className="mt-2 rounded-xl bg-fuchsia-50 px-3 py-2 text-[13px] text-fuchsia-900">
-                  Sale de una cuenta de {from.nombre}: cuenta como inversión de {to.nombre}, no de {from.nombre}.
+                  {primeraDePaso
+                    ? `Pasa por «${c.nombre}» de paso (entra y se va): no baja su saldo ni cuenta para ${from.nombre}. Cuenta como inversión de ${to.nombre}.`
+                    : `Sale de una cuenta de ${from.nombre}: cuenta como inversión de ${to.nombre}, no de ${from.nombre}.`}
                 </p>
               ) : null
             })()}

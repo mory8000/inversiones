@@ -46,7 +46,7 @@ function Row({ icon, title, text, action, danger }: { icon: ReactNode; title: st
           {text && <div className="mt-0.5 text-[13px] text-slate-500">{text}</div>}
         </div>
       </div>
-      <div className="flex shrink-0 gap-2 pl-12 sm:pl-0">{action}</div>
+      <div className="flex shrink-0 flex-wrap gap-2 pl-12 sm:pl-0">{action}</div>
     </div>
   )
 }
@@ -238,7 +238,7 @@ export function Settings() {
             <Row
               icon={<FlaskConical className="size-[18px]" />}
               title="Datos de ejemplo"
-              text="Dos titulares ficticios (Marta y Pablo, con una transferencia mensual entre ellos) para probar la app. Van aparte: no tocan tus datos."
+              text="Dos titulares ficticios (Marta y su «Fondo ahorro», que recibe una transferencia mensual de ella) para probar la app. Van aparte: no tocan tus datos."
               action={
                 <>
                   {hasDemo && (

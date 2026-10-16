@@ -7,6 +7,8 @@ export interface Lookup {
   cuentas: Map<string, Cuenta>
   productos: Map<string, Producto>
   titulares: Map<string, Titular>
+  /** El titular principal (el primero de la lista), si los datos traen titulares. */
+  principalId?: string
 }
 
 export function buildLookup(ws: Workspace & { titulares?: Titular[] }): Lookup {
@@ -14,6 +16,7 @@ export function buildLookup(ws: Workspace & { titulares?: Titular[] }): Lookup {
     cuentas: new Map(ws.cuentas.map((c) => [c.id, c])),
     productos: new Map(ws.productos.map((p) => [p.id, p])),
     titulares: new Map((ws.titulares ?? []).map((t) => [t.id, t])),
+    principalId: ws.titulares?.[0]?.id,
   }
 }
 
@@ -52,6 +55,36 @@ export const isConSaldo = (lookup: Lookup, ref: EntityRef): boolean => ref.kind 
  * con saldo (como MyInvestor); no si llega a una cuenta externa (sale de lo que lleva la app).
  */
 export const countsForOwner = (lookup: Lookup, ref: EntityRef): boolean => ref.kind === 'producto' || isConSaldo(lookup, ref)
+
+// ── Dinero «de paso» por la cuenta principal ────────────────────────────────
+
+/** ¿Un movimiento es dinero «de paso»? (ver `isDePaso`) */
+export type DePaso = (m: Pick<Movimiento, 'origen' | 'destino'>) => boolean
+
+/**
+ * ¿Lo que sale de la cuenta `cuentaId` hacia algo del titular `destinoTitularId` es dinero «de
+ * paso»? Sí si sale de una cuenta con saldo del titular principal (su «MyInvestor») y va a otro
+ * titular (p. ej. al «Fondo ahorro»).
+ */
+export function saleDePaso(lookup: Lookup, cuentaId: string, destinoTitularId: string | undefined): boolean {
+  const principal = lookup.principalId
+  const c = lookup.cuentas.get(cuentaId)
+  return !!principal && !!c && !c.externa && c.titularId === principal && !!destinoTitularId && destinoTitularId !== principal
+}
+
+/**
+ * Dinero «de paso»: el que entra en la cuenta principal (MyInvestor) del titular principal y se va
+ * a otro titular, como la transferencia mensual al «Fondo ahorro». No cuenta para el principal: ni
+ * baja el saldo de su cuenta ni su patrimonio, y lo que genere después (ganancias o pérdidas)
+ * tampoco. Cuenta solo para quien lo recibe. La regla vale para todos los movimientos, también
+ * para los de antes (los saldos se calculan siempre desde el principio).
+ */
+export function isDePaso(lookup: Lookup, m: Pick<Movimiento, 'origen' | 'destino'>): boolean {
+  return m.origen.kind === 'cuenta' && saleDePaso(lookup, m.origen.id, ownerId(lookup, m.destino))
+}
+
+/** Detector de dinero «de paso» para unos datos (para calcular los saldos). */
+export const detectorDePaso = (lookup: Lookup): DePaso => (m) => isDePaso(lookup, m)
 
 /**
  * Cómo se ve un movimiento desde un titular (o desde todos, sin `titularId`):

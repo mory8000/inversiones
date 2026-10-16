@@ -3,7 +3,7 @@
 
 import type { Dataset, EntityRef, Movimiento, Producto } from '../types'
 import { cuentaPrincipal, cuentasExternas } from '../lib/titulares'
-import { buildLookup, entityName, isConSaldo, isExterna, type Lookup } from '../lib/movements'
+import { buildLookup, detectorDePaso, entityName, isConSaldo, isExterna, type Lookup } from '../lib/movements'
 import { faltaDinero } from '../lib/saldo'
 import { fmtDate, fmtEUR } from '../lib/format'
 import { useData } from './data'
@@ -166,7 +166,8 @@ export async function borrarMovimiento(ds: Dataset, m: Movimiento): Promise<bool
   const lookup = buildLookup(ds)
   const hidden = useData.getState().hideAmounts
   const sin = ds.movimientos.filter((x) => x.id !== m.id)
-  const queda = m.destino.kind === 'cuenta' && isConSaldo(lookup, m.destino) ? faltaDinero(ds.movimientos, sin, m.destino.id, m.fecha) : null
+  const queda =
+    m.destino.kind === 'cuenta' && isConSaldo(lookup, m.destino) ? faltaDinero(ds.movimientos, sin, m.destino.id, m.fecha, { dePaso: detectorDePaso(lookup) }) : null
   const parent = m.programadaId ? ds.programadas.find((p) => p.id === m.programadaId) : undefined
   const ok = await confirmDialog({
     title: '¿Borrar este movimiento?',

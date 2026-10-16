@@ -303,10 +303,13 @@ describe('datos de ejemplo', () => {
     expect(pablo.totals.aportado).toBeCloseTo(pablo.recibidoTotal, 2)
     expect(marta.enviadoTotal).toBeCloseTo(pablo.recibidoTotal, 2)
     expect(marta.totals.patrimonio).toBeGreaterThan(20000)
-    // Marta tiene su MyInvestor con saldo, que nunca se queda en negativo.
+    // Marta tiene su MyInvestor con saldo, que nunca se queda en negativo (ni contando lo que pasa de paso).
     const my = s.ejemplo!.cuentas.find((c) => c.nombre === 'MyInvestor' && c.titularId === marta.titular.id)!
     expect(my.externa).toBe(false)
     expect(marta.totals.efectivo).toBeGreaterThan(0)
+    // Todo lo que manda al «Fondo ahorro» sale de su MyInvestor de paso: no baja su saldo.
+    expect(f.accounts.get(my.id)!.dePaso).toBeCloseTo(marta.enviadoTotal, 2)
+    expect(marta.totals.efectivo).toBeCloseTo(f.accounts.get(my.id)!.entradas - f.accounts.get(my.id)!.salidas, 2)
     let saldo = 0
     for (const m of [...s.ejemplo!.movimientos].sort((x, y) => x.fecha.localeCompare(y.fecha) || x.createdAt.localeCompare(y.createdAt))) {
       if (m.destino.kind === 'cuenta' && m.destino.id === my.id) saldo += m.importe
@@ -343,7 +346,7 @@ describe('cuenta principal «MyInvestor» y cuentas externas (versión 4)', () =
   })
   const v3 = (datos: object) => legacy(3, { datos: { titulares, movimientos: [], programadas: [], productos: [], ...datos }, ejemplo: null, verEjemplo: false, hideAmounts: false })
 
-  it('«Cuenta principal» pasa a llamarse «MyInvestor» y a llevar saldo; lo que va a «Fondo ahorro» cuenta solo para el otro titular', async () => {
+  it('«Cuenta principal» pasa a llamarse «MyInvestor» y a llevar saldo; lo que va a «Fondo ahorro» pasa de paso y cuenta solo para el otro titular', async () => {
     const storage = new MemoryStorage()
     storage.setItem(
       'mis-inversiones',
@@ -378,17 +381,18 @@ describe('cuenta principal «MyInvestor» y cuentas externas (versión 4)', () =
     expect(ahorro().totals.patrimonio).toBe(600)
     expect(ahorro().totals.aportadoTotal).toBe(600)
     expect(luis().enviadoTotal).toBe(600)
-    // Ha salido más de lo que ha entrado (falta apuntar la aportación): el saldo es real, negativo.
-    expect(f.accounts.get('c1')!.saldo).toBe(-600)
-    expect(luis().totals).toMatchObject({ efectivo: -600, patrimonio: -600, aportadoTotal: 0 })
+    // Los 600 € (4 meses, también los ya pasados) entran en MyInvestor y se van al «Fondo ahorro»:
+    // no bajan su saldo ni cuentan para Luis.
+    expect(f.accounts.get('c1')).toMatchObject({ saldo: 0, salidas: 0, dePaso: 600 })
+    expect(luis().totals).toMatchObject({ efectivo: 0, patrimonio: 0, aportadoTotal: 0 })
 
     // Aportación desde una cuenta externa a MyInvestor.
     const st = useData.getState()
     const bbva = st.addCuenta({ titularId: 't1', nombre: 'BBVA', entidad: '', iban: '', color: '#000', notas: '', externa: true })
     st.addMovimiento({ fecha: '2026-10-10', origen: { kind: 'cuenta', id: bbva }, destino: { kind: 'cuenta', id: 'c1' }, importe: 1000, concepto: 'Aportación' })
     f = finance()
-    expect(f.accounts.get('c1')).toMatchObject({ saldo: 400, aportaciones: 1000 })
-    expect(luis().totals).toMatchObject({ efectivo: 400, patrimonio: 400, aportadoTotal: 1000, capital: 0 })
+    expect(f.accounts.get('c1')).toMatchObject({ saldo: 1000, aportaciones: 1000, dePaso: 600 })
+    expect(luis().totals).toMatchObject({ efectivo: 1000, patrimonio: 1000, aportadoTotal: 1000, capital: 0 })
     expect(ahorro().totals.patrimonio).toBe(600)
     expect(saved(storage).version).toBe(5)
     s = useData.getState()
@@ -432,7 +436,7 @@ describe('cuenta principal «MyInvestor» y cuentas externas (versión 4)', () =
     expect(useData.getState().datos.cuentas).toEqual([expect.objectContaining({ id, nombre: 'MyInvestor', externa: false, titularId: 't1' })])
   })
 
-  it('lo que llega a una cuenta con saldo de otro titular cuenta para él; a una externa, todavía no', async () => {
+  it('lo que llega a una cuenta con saldo de otro titular cuenta para él; a una externa, todavía no. Para el principal es dinero de paso', async () => {
     const { useData, finance } = await open(new MemoryStorage())
     const st = useData.getState()
     const [t1, t2] = st.datos.titulares
@@ -448,7 +452,9 @@ describe('cuenta principal «MyInvestor» y cuentas externas (versión 4)', () =
     const f = finance()
     const a = f.byTitular.get(t1.id)!
     const b = f.byTitular.get(t2.id)!
-    expect(a.totals).toMatchObject({ efectivo: 600, patrimonio: 600, aportadoTotal: 1000 })
+    // Los 400 € que van al titular 2 entran en MyInvestor y se van: no bajan su saldo.
+    expect(f.accounts.get(my)).toMatchObject({ saldo: 1000, dePaso: 400 })
+    expect(a.totals).toMatchObject({ efectivo: 1000, patrimonio: 1000, aportadoTotal: 1000 })
     expect(a.enviadoTotal).toBe(400)
     expect(b.totals).toMatchObject({ efectivo: 300, patrimonio: 300, aportadoTotal: 300 })
     expect(b.recibido).toEqual([{ titularId: t1.id, importe: 300 }])

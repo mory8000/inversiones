@@ -43,6 +43,9 @@ export function AccountSheet({ modalId, cuentaId }: { modalId: string; cuentaId:
   const saldo = s?.saldo ?? 0
   const negativo = saldo < -0.005
   const titular = lookup.titulares.get(c.titularId)
+  /** A quién va el dinero «de paso» (p. ej. «Fondo ahorro»): entra en esta cuenta y se va. */
+  const dePaso = s && s.dePaso > 0.005 ? s.dePaso : 0
+  const receptores = (s?.dePasoA ?? []).map((x) => lookup.titulares.get(x.titularId)?.nombre ?? 'otro titular').join(' y ')
   const multi = ds.titulares.length > 1
   const esPrincipal = cuentaPrincipal(ds.cuentas, c.titularId)?.id === c.id
   const ref = { kind: 'cuenta' as const, id: c.id }
@@ -105,6 +108,17 @@ export function AccountSheet({ modalId, cuentaId }: { modalId: string; cuentaId:
               </dd>
             </div>
           </dl>
+          {dePaso > 0 && (
+            <div className="mt-2 rounded-xl bg-white/70 p-3" data-de-paso>
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="min-w-0 text-[11px] font-medium text-slate-500">De paso a {receptores}</span>
+                <Amount value={dePaso} className="shrink-0 text-sm font-semibold text-slate-800" />
+              </div>
+              <p className="mt-1 text-xs text-slate-500">
+                Entra en {c.nombre} y se va a {receptores}: no cuenta en este saldo ni para {titular?.nombre ?? 'su titular'}. Cuenta solo para {receptores}.
+              </p>
+            </div>
+          )}
           {negativo ? (
             <p className="mt-3 flex gap-2 text-[13px] text-rose-800">
               <TriangleAlert className="mt-0.5 size-4 shrink-0" />
