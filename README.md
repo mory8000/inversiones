@@ -74,6 +74,10 @@ Sustituye al antiguo `Inversiones.xlsx` y mantiene sus mismos conceptos: titular
 - **Movimientos**: todos los movimientos de todos los titulares, con su origen (**De**) y destino (**A**) y de quién
   es cada uno, agrupados por meses. Filtros por titular, tipo, cuenta o producto, tipo de producto y periodo;
   buscador; y exportación a Excel (CSV).
+- **Descargar copia en Excel** (en *Ajustes*): un libro de Excel como la app —Inicio, Evolución, Inversiones
+  (con las columnas de siempre: Invertido, Reembolso, Traspaso, %, € y Saldo), Cuentas, Movimientos, Flujo y
+  Transferencias— con los mismos colores por titular y las mismas cifras, y con fórmulas donde la app calcula
+  (totales, capital, ganancia y saldo en %), para que se pueda usar igual: cambias un % y se recalcula.
 - **Flujo del dinero**: diagrama de bandas en tres columnas — *de dónde viene* (tus cuentas, traspasos y la
   rentabilidad), *dónde está* (tus productos) y *a dónde va* (reembolsos, traspasos y lo que sigue invertido).
   Toca una caja para ver su recorrido. Se puede ver todo el histórico o un periodo concreto.

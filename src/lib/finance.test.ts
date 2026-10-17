@@ -725,6 +725,26 @@ describe('el principal y el «Fondo ahorro», cada uno por su lado', () => {
     expect(v.patrimonio).toBeCloseTo(luis.patrimonio, 6)
     expect(v.capital).toBeCloseTo(luis.patrimonio - luis.ganancia, 6)
   })
+  it('el Excel que descarga la app: un .xlsx con las hojas y las mismas cifras', async () => {
+    const { computeFinance } = await import('../store/useFinance')
+    const { buildExcel } = await import('./excel')
+    const ds = base()
+    ds.lineaDesde = '2026-10-14'
+    const fin = computeFinance(ds, '2026-10-15')
+    const bytes = buildExcel(fin)
+    // Un zip (todo .xlsx es un zip).
+    expect(bytes[0]).toBe(0x50) // «P»
+    expect(bytes[1]).toBe(0x4b) // «K»
+    const texto = new TextDecoder().decode(bytes)
+    // Las pestañas, con los nombres de la app.
+    for (const hoja of ['Inicio', 'Evolución', 'Inversiones', 'Cuentas', 'Movimientos', 'Flujo', 'Transferencias']) {
+      expect(texto).toContain(hoja)
+    }
+    // Las cifras de Luis y del «Fondo ahorro», y las fórmulas que calculan solas.
+    expect(texto).toContain('Luis')
+    expect(texto).toContain('Fondo ahorro')
+    expect(texto).toContain('<f>SUM(')
+    expect(texto).toContain('Mis inversiones')
+  })
+
 })
-
-

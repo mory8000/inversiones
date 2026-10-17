@@ -20,6 +20,7 @@ import { useFinance, type TitularFinance } from '../store/useFinance'
 import { confirmDialog, openTitular, openValores, toast } from '../store/ui'
 import { accion } from '../store/deshacer'
 import { movementsToCSV } from '../lib/movements'
+import { buildExcel } from '../lib/excel'
 import { downloadFile } from '../lib/download'
 import { isStandalone, useInstallPrompt } from '../lib/install'
 import { cn } from '../lib/cn'
@@ -114,6 +115,16 @@ export function Settings() {
   const exportCSV = () => {
     downloadFile(`movimientos-${today}.csv`, movementsToCSV(ws.movimientos, lookup), 'text/csv;charset=utf-8')
     toast('Movimientos exportados')
+  }
+
+  const exportExcel = () => {
+    const bytes = buildExcel(fin)
+    downloadFile(
+      `mis-inversiones-${today}.xlsx`,
+      new Blob([bytes.buffer as ArrayBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    )
+    toast('Excel descargado')
   }
 
   const restore = async (file: File) => {
@@ -233,6 +244,16 @@ export function Settings() {
               action={
                 <Button id="abrir-valores" variant="secondary" size="sm" onClick={openValores}>
                   Abrir
+                </Button>
+              }
+            />
+            <Row
+              icon={<FileSpreadsheet className="size-[18px]" />}
+              title="Descargar copia en Excel"
+              text="Un libro de Excel como esta app: Inicio, Evolución, Inversiones, Cuentas, Movimientos, Flujo y Transferencias, con las mismas cifras y fórmulas (los totales se calculan solos)."
+              action={
+                <Button variant="secondary" size="sm" icon={Download} onClick={exportExcel} disabled={!ws.movimientos.length}>
+                  Descargar Excel
                 </Button>
               }
             />
