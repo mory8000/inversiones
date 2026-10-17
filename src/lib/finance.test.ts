@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Cuenta, Dataset, EntityRef, Movimiento, Producto, Valoracion, Workspace } from '../types'
-import { buildTimeline, buildTimelineMulti, computeAccountStats, computePositions, computeTotals, evaluateProduct, interesEntre, summarizeByType, taeEn } from './finance'
+import { buildTimeline, buildTimelineMulti, computeAccountStats, computePositions, computeTotals, evaluateProduct, interesEntre, lineaAlDineroDeHoy, summarizeByType, taeEn } from './finance'
 import { titularWorkspace } from './titulares'
 import { faltaDinero, saldoEn, saldoMinimoDesde } from './saldo'
 import { buildFlowGraph } from './flow'
@@ -616,5 +616,25 @@ describe('el principal y el «Fondo ahorro», cada uno por su lado', () => {
     expect(g.links.find((l) => l.source === ap.id)).toMatchObject({ target: 'M:F2', value: 300 })
     // La transferencia a la cuenta del «Fondo ahorro» va a la lista de transferencias (como antes).
     expect(g.transfers.map((m) => m.importe)).toEqual([5000, 200])
+  })
+})
+
+
+describe('la línea del titular principal', () => {
+  it('va plana al dinero de hoy hasta hoy y desde hoy sigue los datos', () => {
+    const puntos = [
+      { fecha: '2025-01-02', 'T1:p': 39966, 'T1:c': 0, 'T2:p': 0, 'T2:c': 0 },
+      { fecha: '2026-01-31', 'T1:p': 38500, 'T1:c': 29901.9, 'T2:p': 9000, 'T2:c': 8000 },
+      { fecha: '2026-10-16', 'T1:p': 28938.37, 'T1:c': 29901.9, 'T2:p': 9011.1, 'T2:c': 9966 },
+      { fecha: '2026-11-30', 'T1:p': 29000, 'T1:c': 30400, 'T2:p': 9500, 'T2:c': 10419 },
+    ]
+    const out = lineaAlDineroDeHoy(puntos, 'T1', '2026-10-16')
+    // El pasado, plano al dinero real de hoy (el mismo que la tarjeta), desde el primer día.
+    expect(out.map((p) => p['T1:p'])).toEqual([28938.37, 28938.37, 28938.37, 29000])
+    expect(out.map((p) => p['T1:c'])).toEqual([29901.9, 29901.9, 29901.9, 30400])
+    expect(out[0].fecha).toBe(puntos[0].fecha)
+    // No toca lo de los demás titulares.
+    expect(out.map((p) => p['T2:p'])).toEqual([0, 9000, 9011.1, 9500])
+    expect(out.map((p) => p['T2:c'])).toEqual([0, 8000, 9966, 10419])
   })
 })

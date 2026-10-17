@@ -712,6 +712,20 @@ export function buildTimelineMulti(series: { id: string; ws: Workspace }[], all:
   })
 }
 
+/**
+ * La línea del titular principal no dibuja el pasado: los puntos anteriores a hoy van planos al
+ * dinero real que hay hoy en sus cuentas (el punto de hoy, el mismo que su tarjeta), desde el
+ * primer día del gráfico (el mismo en que empieza la del «Fondo ahorro»). Desde hoy los puntos
+ * quedan como están, así que la línea sigue los datos a partir de ahora.
+ */
+export function lineaAlDineroDeHoy(puntos: MultiTimelinePoint[], id: string, today: string): MultiTimelinePoint[] {
+  const hoy = [...puntos].reverse().find((p) => p.fecha <= today)
+  if (!hoy) return puntos
+  const patrimonio = Number(hoy[`${id}:p`]) || 0
+  const capital = Number(hoy[`${id}:c`]) || 0
+  return puntos.map((p) => (p.fecha < today ? { ...p, [`${id}:p`]: patrimonio, [`${id}:c`]: capital } : p))
+}
+
 /** Evolución de un único producto (capital vs. valor). */
 export function buildProductTimeline(p: Producto, movimientos: Movimiento[], today: string): TimelinePoint[] {
   const own = movimientos.filter((m) => involvesProduct(m, p.id))

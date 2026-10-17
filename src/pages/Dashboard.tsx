@@ -19,7 +19,7 @@ import { currentDataset, useData } from '../store/data'
 import { editMovement, openAccount, openCuenta, openProduct, openTitular } from '../store/ui'
 import { accion } from '../store/deshacer'
 import { anadirDinero, programarMensual } from '../store/acciones'
-import { buildTimelineMulti, type MultiTimelinePoint } from '../lib/finance'
+import { buildTimelineMulti, lineaAlDineroDeHoy } from '../lib/finance'
 import { buildFlowGraph } from '../lib/flow'
 import { PRODUCT_META, kindMeta } from '../lib/meta'
 import { entityName, movementKind, ownerOf, sortMovementsDesc } from '../lib/movements'
@@ -409,24 +409,19 @@ export function Dashboard() {
   const hidden = useHidden()
   const isDesktop = useMediaQuery('(min-width: 1024px)')
   const withData = fin.titulares.filter((tf) => tf.ws.movimientos.length > 0)
-  // La línea del titular principal empieza hoy: el dinero que ya se fue al «Fondo ahorro» no se
-  // dibuja hacia atrás (solo cuenta a partir de hoy). Con un único titular no se recorta: se
-  // quedaría sin historia.
+  // La línea del titular principal no dibuja el pasado: va plana al dinero real que hay hoy en sus
+  // cuentas (así no se ve hacia atrás el dinero que ya se fue al «Fondo ahorro»), desde el mismo
+  // día en que empieza la del Fondo ahorro. A partir de hoy sigue los datos. Con un único titular
+  // no se recorta: se quedaría sin historia.
   const timeline = useMemo(() => {
     const puntos = buildTimelineMulti(
       fin.titulares.filter((tf) => tf.ws.movimientos.length > 0).map((tf) => ({ id: tf.titular.id, ws: tf.ws })),
       fin.ws.movimientos,
       fin.today,
     )
-    const principalId = fin.titulares[0]?.titular.id
-    if (!principalId || fin.titulares.length < 2) return puntos
-    return puntos.map((p) => {
-      if (p.fecha >= fin.today) return p
-      const copia: MultiTimelinePoint = { ...p }
-      delete copia[`${principalId}:p`]
-      delete copia[`${principalId}:c`]
-      return copia
-    })
+    const principalTf = fin.titulares[0]
+    if (!principalTf || fin.titulares.length < 2) return puntos
+    return lineaAlDineroDeHoy(puntos, principalTf.titular.id, fin.today)
   }, [fin])
   const graph = useMemo(() => buildFlowGraph(ds, positions, { from: null, to: null }), [ds, positions])
   const multi = ds.titulares.length > 1
@@ -490,7 +485,8 @@ export function Dashboard() {
               />
               {multi && principal && (
                 <p className="mt-2 px-2 text-xs text-slate-500">
-                  La línea de {principal.titular.nombre} empieza hoy: cuenta a partir de ahora.
+                  La línea de {principal.titular.nombre} no cuenta el pasado: va al dinero real que hay hoy en sus
+                  cuentas{hidden ? '' : ` (${fmtEUR(principal.totals.patrimonio)})`}. Desde hoy sigue tus datos.
                 </p>
               )}
             </div>
