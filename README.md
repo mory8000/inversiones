@@ -110,8 +110,8 @@ Sustituye al antiguo `Inversiones.xlsx` y mantiene sus mismos conceptos: titular
   pierda después), sino solo para quien lo recibe. Pero **el dinero sale de su bolsillo**: de su cuenta con saldo
   (MyInvestor), aunque la transferencia esté puesta en una cuenta externa suya (p. ej. la «Cuenta Nómina»). Así un
   ingreso de 1.000 € deja 547 € en MyInvestor cuando ese mes se van 453 € al «Fondo ahorro», y el saldo de
-  MyInvestor es el real (nunca se queda en negativo por esto: si no hay dinero, se paga solo lo que hay). Si el
-  dinero entró de fuera y se fue, no engorda el «Aportado». En la lista de MyInvestor no sale (solo la
+  MyInvestor es el real (puede quedar en negativo si ha salido más de lo que entró). Si el dinero entró de fuera y
+  se fue, no engorda el «Aportado». En la lista de MyInvestor no sale (solo la
   transferencia mensual, para poder cambiarla); en «Todos» los movimientos sale como «Aportación a Fondo ahorro» y
   en el flujo del dinero como «Aportaciones · Fondo ahorro». Se aplica a
   todo, **también a los meses ya apuntados**.
@@ -175,8 +175,8 @@ Aportado   = lo que ha entrado desde fuera (cuentas externas u otros titulares) 
 El dinero que va **de paso** a otro titular (p. ej. al «Fondo ahorro») no cuenta como aportado suyo y tampoco
 figura como entrada ni como salida de la cuenta, pero **sí baja el saldo de su cuenta con saldo** (MyInvestor): el
 mismo importe se resta de las dos cifras. Si la transferencia está puesta en una cuenta externa suya (la «Cuenta
-Nómina»), se paga igual con el dinero de MyInvestor. Nunca deja el saldo en negativo por este motivo: se paga solo
-lo que hay. Ese dinero, y lo que gane o pierda después, cuenta solo para quien lo recibe. Como todo se calcula
+Nómina»), se paga igual con el dinero de MyInvestor. El saldo es siempre el real: puede quedar en negativo si ha
+salido más de lo que entró. Ese dinero, y lo que gane o pierda después, cuenta solo para quien lo recibe. Como todo se calcula
 desde el primer movimiento, vale también para lo que ya estaba apuntado.
 
 Las cifras de cada titular van por separado: cada uno ve solo lo suyo. Solo la ventana **Total** (debajo del

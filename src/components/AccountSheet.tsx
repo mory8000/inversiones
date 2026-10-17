@@ -116,7 +116,7 @@ export function AccountSheet({ modalId, cuentaId }: { modalId: string; cuentaId:
             </p>
           ) : (
             <p className="mt-3 text-[13px] text-slate-600">
-              Es el saldo real: lo que ha entrado menos lo que ha salido (también lo que ha pasado de camino a otro titular). Suma en el patrimonio de {titular?.nombre ?? 'su titular'}.
+              Es el saldo real: lo que ha entrado menos lo que ha salido, contando también lo que se ha ido a otro titular (aunque la transferencia esté puesta en otra cuenta). Suma en el patrimonio de {titular?.nombre ?? 'su titular'}.
             </p>
           )}
         </div>

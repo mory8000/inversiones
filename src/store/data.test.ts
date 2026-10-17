@@ -198,7 +198,9 @@ describe('entre titulares', () => {
     const f = finance()
     const a = f.byTitular.get(t1.id)!
     const b = f.byTitular.get(t2.id)!
-    expect(a.totals).toMatchObject({ patrimonio: 700, aportado: 700 })
+    // Los 200 € del «Fondo T2» salen de su bolsillo: se los quita de su MyInvestor (que se queda en
+    // −200), aunque el movimiento esté apuntado desde la «Nómina». No engordan su «Aportado».
+    expect(a.totals).toMatchObject({ patrimonio: 500, aportado: 700, efectivo: -200 })
     expect(b.totals).toMatchObject({ patrimonio: 200, aportado: 200 })
     expect(b.recibidoTotal).toBe(200)
     expect(b.recibido).toEqual([{ titularId: t1.id, importe: 200 }])

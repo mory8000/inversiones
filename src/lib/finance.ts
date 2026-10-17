@@ -453,18 +453,23 @@ function flujoDeCuentas(lk: Lookup, movs: Movimiento[], esPaso: DePaso, hasta?: 
 /**
  * El saldo real de una cuenta: lo que ha entrado menos lo que ha salido, menos el dinero que se ha
  * ido «de paso» a otro titular (lo apunte la cuenta que lo apunte: si se apunta desde una cuenta
- * externa suya, lo paga igual el dinero del titular). Nunca baja de 0 por lo «de paso»: si no hay
- * dinero, no se puede pagar. Devuelve también lo que no cuenta como entrada (`excluido`: entró y se
- * fue) para que no engorde lo aportado, y la cuenta tal y como la deja el apunte.
+ * externa suya, lo paga igual el dinero del titular). Puede quedar en negativo, como cualquier saldo
+ * real. Devuelve también lo que no cuenta como entrada (`excluido`: entró y se fue) para que no
+ * engorde lo aportado, y la cuenta tal y como la deja el apunte.
  */
 function saldoReal(f: FlujoCuenta): { saldo: number; excluido: number; entradas: number; salidas: number } {
   // Lo apuntado desde la propia cuenta: entra y se va (o se va de lo que ya había).
   const propios = Math.min(f.entradas, f.dePaso)
-  const entradas = f.entradas - propios
-  const salidas = f.salidas + f.dePaso - propios
-  // Lo apuntado desde otra cuenta suya: se paga con el dinero que hay, sin dejarlo en negativo.
-  const cargo = Math.min(f.extra, Math.max(0, entradas - salidas))
-  return { saldo: entradas - salidas - cargo, excluido: propios + cargo, entradas: entradas - cargo, salidas }
+  // Lo apuntado desde otra cuenta suya: sale de su dinero igual. De lo que entró y se fue, solo
+  // cuenta lo que de verdad llegó a entrar (si faltaba apuntar una entrada, no se resta dos veces).
+  const delExtra = Math.min(f.extra, Math.max(0, f.entradas - propios))
+  return {
+    // El saldo es el real: puede quedar en negativo si ha salido más de lo que entró.
+    saldo: f.entradas - f.salidas - f.dePaso - f.extra,
+    excluido: propios + delExtra,
+    entradas: f.entradas - propios - delExtra,
+    salidas: f.salidas + (f.dePaso - propios) + (f.extra - delExtra),
+  }
 }
 
 /**
