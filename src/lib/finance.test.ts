@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Cuenta, Dataset, EntityRef, Movimiento, Producto, Valoracion, Workspace } from '../types'
-import { buildTimeline, buildTimelineMulti, computeAccountStats, computePositions, computeTotals, evaluateProduct, interesEntre, lineaAlDineroDeHoy, summarizeByType, taeEn, valorEn } from './finance'
+import { buildTimeline, buildTimelineMulti, computeAccountStats, computePositions, computeTotals, evaluateProduct, interesEntre, recortarDesde, summarizeByType, taeEn, valorEn } from './finance'
 import { titularWorkspace } from './titulares'
 import { faltaDinero, saldoEn, saldoMinimoDesde } from './saldo'
 import { buildFlowGraph } from './flow'
@@ -405,6 +405,69 @@ describe('formato', () => {
     expect(fmtEUR(-12.5)).toBe('\u221212,50\u00a0€')
     expect(fmtPct(-0.031, { sign: true })).toBe('\u22123,10\u00a0%')
   })
+
+  describe('las líneas del gráfico', () => {
+    const dsBase = (): Dataset => ({
+      titulares: [
+        { id: 'T1', codigo: '', nombre: 'Luis', createdAt: '' },
+        { id: 'T2', codigo: '', nombre: 'Fondo ahorro', createdAt: '' },
+      ],
+      cuentas: [
+        { id: 'MY', titularId: 'T1', nombre: 'MyInvestor', entidad: '', iban: '', color: '#000', notas: '', externa: false, createdAt: '' },
+        { id: 'BBVA', titularId: 'T1', nombre: 'Banco', entidad: '', iban: '', color: '#000', notas: '', externa: true, createdAt: '' },
+        { id: 'C2', titularId: 'T2', nombre: 'Cuenta ahorro', entidad: '', iban: '', color: '#000', notas: '', externa: false, createdAt: '' },
+      ],
+      productos: [prod('F', 'fondo', { titularId: 'T1' }), prod('F2', 'fondo', { titularId: 'T2' })],
+      movimientos: [mov('2026-01-01', C('BBVA'), C('MY'), 5000), mov('2026-01-05', C('MY'), P('F2'), 300)],
+      programadas: [],
+    })
+    const cifras = (ds: Dataset) => {
+      const positions = computePositions(ds, '2026-10-15')
+      const accounts = computeAccountStats(ds)
+      const de = (titularId: string) => {
+        const ws = titularWorkspace(ds, titularId)
+        const own = new Map([...positions].filter(([id]) => ws.productos.some((p) => p.id === id)))
+        const ownAccounts = new Map([...accounts].filter(([id]) => ws.cuentas.some((c) => c.id === id)))
+        return computeTotals(ws, own, ownAccounts)
+      }
+      return { luis: de('T1'), ahorro: de('T2') }
+    }
+    const puntos = [
+      { fecha: '2026-01-01', 'T1:p': 5000, 'T1:c': 5000, 'T2:p': 0, 'T2:c': 0 },
+      { fecha: '2026-09-30', 'T1:p': 4700, 'T1:c': 4700, 'T2:p': 300, 'T2:c': 300 },
+      { fecha: '2026-10-16', 'T1:p': 4600, 'T1:c': 4600, 'T2:p': 500, 'T2:c': 500 },
+      { fecha: '2026-11-30', 'T1:p': 5000, 'T1:c': 4800, 'T2:p': 650, 'T2:c': 650 },
+    ]
+
+    it('empiezan a marcar en la fecha acordada: lo anterior no se dibuja', () => {
+      const ds = dsBase()
+      const visibles = ['T1', 'T2'].map((id) => ({ id, ws: titularWorkspace(ds, id) }))
+      const out = recortarDesde(puntos, '2026-10-17', visibles, ds.movimientos, buildLookup(ds))
+      // El primer punto es ayer (aunque no estuviera en el gráfico) y ya no queda nada de antes.
+      expect(out.map((p) => p.fecha)).toEqual(['2026-10-17', '2026-11-30'])
+      // El punto de ayer lleva lo que había ese día: lo mismo que su tarjeta.
+      expect(out[0]['T1:p']).toBeCloseTo(cifras(ds).luis.patrimonio, 6)
+      expect(out[0]['T2:p']).toBeCloseTo(cifras(ds).ahorro.patrimonio, 6)
+      expect(out[1]['T1:p']).toBe(5000)
+    })
+
+    it('si la fecha ya estaba en el gráfico, se queda tal cual', () => {
+      const ds = dsBase()
+      const visibles = ['T1', 'T2'].map((id) => ({ id, ws: titularWorkspace(ds, id) }))
+      const out = recortarDesde(puntos, '2026-10-16', visibles, ds.movimientos, buildLookup(ds))
+      expect(out.map((p) => p.fecha)).toEqual(['2026-10-16', '2026-11-30'])
+      expect(out[0]['T2:p']).toBe(500)
+    })
+
+    it('el valor del día de arranque es el mismo que el de la tarjeta', () => {
+      const ds = dsBase()
+      const v = valorEn(titularWorkspace(ds, 'T1'), '2026-10-15', ds.movimientos, buildLookup(ds))
+      const luis = cifras(ds).luis
+      expect(v.patrimonio).toBeCloseTo(luis.patrimonio, 6)
+      expect(v.capital).toBeCloseTo(luis.patrimonio - luis.ganancia, 6)
+    })
+  })
+
 })
 
 describe('el principal y el «Fondo ahorro», cada uno por su lado', () => {
@@ -665,29 +728,3 @@ describe('el principal y el «Fondo ahorro», cada uno por su lado', () => {
 })
 
 
-describe('la línea del titular principal', () => {
-  const puntos = [
-    { fecha: '2025-01-02', 'T1:p': 39966, 'T1:c': 0, 'T2:p': 0, 'T2:c': 0 },
-    { fecha: '2026-01-31', 'T1:p': 38500, 'T1:c': 29901.9, 'T2:p': 9000, 'T2:c': 8000 },
-    { fecha: '2026-10-16', 'T1:p': 28938.37, 'T1:c': 29901.9, 'T2:p': 9011.1, 'T2:c': 9966 },
-    { fecha: '2026-11-30', 'T1:p': 29000, 'T1:c': 30400, 'T2:p': 9500, 'T2:c': 10419 },
-  ]
-
-  it('el día en que empieza va plana al dinero real, desde el primer día del gráfico', () => {
-    const out = lineaAlDineroDeHoy(puntos, 'T1', '2026-10-16', { patrimonio: 28938.37, capital: 29901.9 })
-    // El pasado, plano al dinero real de ese día (el mismo que la tarjeta), desde el primer día.
-    expect(out.map((p) => p['T1:p'])).toEqual([28938.37, 28938.37, 28938.37, 29000])
-    expect(out.map((p) => p['T1:c'])).toEqual([29901.9, 29901.9, 29901.9, 30400])
-    expect(out[0].fecha).toBe(puntos[0].fecha)
-    // Lo de los demás titulares no se toca.
-    expect(out.map((p) => p['T2:p'])).toEqual([0, 9000, 9011.1, 9500])
-    expect(out.map((p) => p['T2:c'])).toEqual([0, 8000, 9966, 10419])
-  })
-
-  it('al día siguiente ya cuenta lo que se aporta o se gana: del día de arranque en adelante, datos de verdad', () => {
-    // Arrancó el 31 de enero: lo de antes va plano a lo de ese día y lo de después ya se mueve solo.
-    const out = lineaAlDineroDeHoy(puntos, 'T1', '2026-01-31', { patrimonio: 38500, capital: 29901.9 })
-    expect(out.map((p) => p['T1:p'])).toEqual([38500, 38500, 28938.37, 29000])
-    expect(out.map((p) => p['T1:c'])).toEqual([29901.9, 29901.9, 29901.9, 30400])
-  })
-})

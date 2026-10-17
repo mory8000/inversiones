@@ -45,11 +45,10 @@ Sustituye al antiguo `Inversiones.xlsx` y mantiene sus mismos conceptos: titular
     **Traspasar**, **Programar transferencia mensual** y ver sus movimientos (con **Editar** y **Borrar**).
   - **Ordenar**: pon las ventanillas en el orden que quieras, arrastrándolas o con «Antes» / «Después». El orden
     se guarda y se usa también en *Inversiones*.
-  - Debajo: la evolución (una línea por titular; la del titular principal no cuenta el pasado: va plana al
-    dinero real de sus cuentas, desde el mismo día en que empieza la del «Fondo ahorro», y desde el día en que
-    se estrena esa función —la app lo guarda sola— cuenta lo que se aporta y lo que ganan o pierdan las
-    inversiones), dónde está el dinero de cada uno, el diagrama del flujo del dinero, el resumen por tipo de
-    cada titular (como el Excel), los últimos movimientos y las cuentas.
+  - Debajo: la evolución de cada titular (las líneas empiezan a marcar **ayer**: lo anterior no se dibuja, y
+    desde ahí cuentan lo que se aporta, lo que se saca y lo que ganan o pierdan las inversiones), dónde está el
+    dinero de cada uno, el diagrama del flujo del dinero, el resumen por tipo de cada titular (como el Excel),
+    los últimos movimientos y las cuentas.
 - **Poner los valores de hoy**: en Inicio, el botón **«Valores»** (y en Ajustes, la fila «Poner los valores de
   hoy») abre una ventana con **una casilla por inversión**: se escribe lo que vale hoy cada fondo, cartera o
   depósito, tal como se ve en la app del banco, y al guardar se actualizan todos de una vez (quedan como su

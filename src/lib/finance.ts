@@ -800,18 +800,26 @@ export function valorEn(
 }
 
 /**
- * La línea del titular principal no dibuja el pasado: los puntos anteriores a `desde` van planos al
- * dinero real de sus cuentas (`dinero`, el del día `desde`), y desde ese día los puntos quedan como
- * están. Así la línea empieza el mismo día que la del «Fondo ahorro» y, a partir de `desde`, cuenta
- * lo que se aporta y lo que ganan o pierden las inversiones.
+ * Recorta la línea para que empiece a marcar en `desde`: se quitan los puntos anteriores y, si ese
+ * día no estaba (p. ej. ayer), se añade uno con lo que había en ese momento (patrimonio y capital
+ * de cada titular, los mismos que salen en su tarjeta). Así todas las líneas empiezan el mismo día.
  */
-export function lineaAlDineroDeHoy(
+export function recortarDesde(
   puntos: MultiTimelinePoint[],
-  id: string,
   desde: string,
-  dinero: { patrimonio: number; capital: number },
+  series: { id: string; ws: Workspace & { titulares?: Titular[] } }[],
+  all: Movimiento[] = [],
+  lk?: Lookup,
 ): MultiTimelinePoint[] {
-  return puntos.map((p) => (p.fecha < desde ? { ...p, [`${id}:p`]: dinero.patrimonio, [`${id}:c`]: dinero.capital } : p))
+  const dentro = puntos.filter((p) => p.fecha >= desde)
+  if (dentro.length > 0 && dentro[0].fecha === desde) return dentro
+  const punto: MultiTimelinePoint = { fecha: desde }
+  for (const s of series) {
+    const v = valorEn(s.ws, desde, all, lk)
+    punto[`${s.id}:p`] = v.patrimonio
+    punto[`${s.id}:c`] = v.capital
+  }
+  return [punto, ...dentro]
 }
 
 /** Evolución de un único producto (capital vs. valor). */

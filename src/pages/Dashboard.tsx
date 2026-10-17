@@ -19,7 +19,8 @@ import { currentDataset, useData } from '../store/data'
 import { editMovement, openAccount, openCuenta, openProduct, openTitular } from '../store/ui'
 import { accion } from '../store/deshacer'
 import { anadirDinero, programarMensual } from '../store/acciones'
-import { buildTimelineMulti, lineaAlDineroDeHoy, valorEn } from '../lib/finance'
+import { buildTimelineMulti, recortarDesde } from '../lib/finance'
+import { addDays } from '../lib/dates'
 import { buildFlowGraph } from '../lib/flow'
 import { PRODUCT_META, kindMeta } from '../lib/meta'
 import { entityName, movementKind, ownerOf, sortMovementsDesc } from '../lib/movements'
@@ -409,28 +410,26 @@ export function Dashboard() {
   const hidden = useHidden()
   const isDesktop = useMediaQuery('(min-width: 1024px)')
   const withData = fin.titulares.filter((tf) => tf.ws.movimientos.length > 0)
-  // La línea del titular principal no dibuja el pasado: va plana al dinero real de sus cuentas
-  // (así no se ve hacia atrás el dinero que ya se fue al «Fondo ahorro»), desde el primer día del
-  // gráfico (el mismo en que empieza la del Fondo ahorro). Desde `lineaDesde` (el día en que se
-  // estrenó esta función) sigue los datos: cuenta lo que se aporta y lo que ganan o pierden las
-  // inversiones. Con un único titular no se recorta: se quedaría sin historia.
-  const lineaBase = useMemo(() => {
-    const principalTf = fin.titulares[0]
-    const desde = ds.lineaDesde ?? fin.today
-    const dinero = principalTf ? valorEn(principalTf.ws, desde, fin.ws.movimientos, fin.lookup) : null
-    return { desde, dinero }
-  }, [fin, ds.lineaDesde])
+  // Las líneas empiezan a marcar en `lineaDesde` (ayer): lo anterior no se dibuja. Así no se ve
+  // hacia atrás el dinero que ya se fue al «Fondo ahorro». Desde ese día cuentan los datos: lo que
+  // se aporta y lo que ganan o pierden las inversiones.
+  const desde = ds.lineaDesde ?? fin.today
   const timeline = useMemo(() => {
+    const visibles = fin.titulares.filter((tf) => tf.ws.movimientos.length > 0)
     const puntos = buildTimelineMulti(
-      fin.titulares.filter((tf) => tf.ws.movimientos.length > 0).map((tf) => ({ id: tf.titular.id, ws: tf.ws })),
+      visibles.map((tf) => ({ id: tf.titular.id, ws: tf.ws })),
       fin.ws.movimientos,
       fin.today,
       fin.lookup,
     )
-    const principalTf = fin.titulares[0]
-    if (!principalTf || fin.titulares.length < 2 || !lineaBase.dinero) return puntos
-    return lineaAlDineroDeHoy(puntos, principalTf.titular.id, lineaBase.desde, lineaBase.dinero)
-  }, [fin, lineaBase])
+    return recortarDesde(
+      puntos,
+      desde,
+      visibles.map((tf) => ({ id: tf.titular.id, ws: tf.ws })),
+      fin.ws.movimientos,
+      fin.lookup,
+    )
+  }, [fin, desde])
   const graph = useMemo(() => buildFlowGraph(ds, positions, { from: null, to: null }), [ds, positions])
   const multi = ds.titulares.length > 1
   const empty = ws.movimientos.length === 0
@@ -493,9 +492,9 @@ export function Dashboard() {
               />
               {multi && principal && (
                 <p className="mt-2 px-2 text-xs text-slate-500">
-                  La línea de {principal.titular.nombre} no cuenta el pasado: hasta el {fmtDate(lineaBase.desde)} va
-                  plana al dinero real de sus cuentas{hidden || !lineaBase.dinero ? '' : ` (${fmtEUR(lineaBase.dinero.patrimonio)})`};
-                  desde ahí cuenta lo que aportes y lo que ganen o pierdan tus inversiones.
+                  Las dos líneas empiezan el {fmtDate(desde)}
+                  {desde === addDays(fin.today, -1) ? ' (ayer)' : ''}: antes no se dibuja. Desde ahí cuentan lo que
+                  aportes, lo que saques y lo que ganen o pierdan tus inversiones.
                 </p>
               )}
             </div>
