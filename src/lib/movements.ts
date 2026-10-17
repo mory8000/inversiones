@@ -92,6 +92,22 @@ export function isDePaso(lookup: Lookup, m: Pick<Movimiento, 'origen' | 'destino
 export const detectorDePaso = (lookup: Lookup): DePaso => (m) => isDePaso(lookup, m)
 
 /**
+ * La cuenta que paga de verdad el dinero «de paso»: el que se va de su bolsillo. Si el movimiento
+ * sale de una cuenta con saldo, esa; si sale de una cuenta externa del mismo titular (p. ej. su
+ * «Cuenta Nómina»), la que lleva su saldo (su «MyInvestor»): el dinero sale de su bolsillo igual, así
+ * que un ingreso de 1.000 € deja 547 € cuando 453 € se van al «Fondo ahorro». Sin cuenta con saldo,
+ * se queda en la de origen.
+ */
+export function cuentaQuePaga(lookup: Lookup, origen: EntityRef): string | undefined {
+  if (origen.kind !== 'cuenta') return undefined
+  const c = lookup.cuentas.get(origen.id)
+  if (!c) return undefined
+  if (c.externa === false) return c.id
+  if (c.titularId) for (const otra of lookup.cuentas.values()) if (otra.titularId === c.titularId && otra.externa === false) return otra.id
+  return c.id
+}
+
+/**
  * ¿Se ve el movimiento en esta cuenta o producto? El dinero desviado desde una cuenta del principal
  * no figura en ella (no cuenta ni al entrar ni al salir): solo se ve en lo de quien lo recibe.
  */

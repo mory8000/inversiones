@@ -33,7 +33,7 @@ export function ownerOf(ws: Workspace, ref: EntityRef): string | undefined {
  * suya camino de otro titular, como la transferencia mensual al «Fondo ahorro»): no dejan
  * constancia en lo suyo.
  */
-export function titularWorkspace(ds: Workspace & { titulares?: Titular[] }, titularId: string): Workspace {
+export function titularWorkspace(ds: Workspace & { titulares?: Titular[] }, titularId: string): Workspace & { titulares?: Titular[] } {
   const cuentas = ds.cuentas.filter((c) => c.titularId === titularId)
   const productos = ds.productos.filter((p) => p.titularId === titularId)
   const ids = new Set<string>()
@@ -43,7 +43,7 @@ export function titularWorkspace(ds: Workspace & { titulares?: Titular[] }, titu
   const movimientos = ds.movimientos.filter(
     (m) => (ids.has(`${m.origen.kind}:${m.origen.id}`) || ids.has(`${m.destino.kind}:${m.destino.id}`)) && !(lookup && isDePaso(lookup, m)),
   )
-  return { cuentas, productos, movimientos }
+  return { cuentas, productos, movimientos, titulares: ds.titulares }
 }
 
 export const emptyDataset = (titulares: Titular[]): Dataset => ({ titulares, cuentas: [], productos: [], movimientos: [], programadas: [] })

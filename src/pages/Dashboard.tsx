@@ -418,6 +418,7 @@ export function Dashboard() {
       fin.titulares.filter((tf) => tf.ws.movimientos.length > 0).map((tf) => ({ id: tf.titular.id, ws: tf.ws })),
       fin.ws.movimientos,
       fin.today,
+      fin.lookup,
     )
     const principalTf = fin.titulares[0]
     if (!principalTf || fin.titulares.length < 2) return puntos

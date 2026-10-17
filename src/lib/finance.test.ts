@@ -583,7 +583,7 @@ describe('el principal y el «Fondo ahorro», cada uno por su lado', () => {
     expect(ver({})).toHaveLength(6)
   })
 
-  it('lo que va desde una cuenta externa del principal (ING) al «Fondo ahorro» también es de paso: no deja constancia en ella ni en Luis', () => {
+  it('lo que va desde una cuenta externa del principal (ING) al «Fondo ahorro» es de paso: no cuenta como inversión, pero sale de su dinero', () => {
     const ds = base()
     const desdeIng = mov('2026-02-15', C('BBVA'), P('F2'), 453)
     ds.movimientos.push(desdeIng)
@@ -594,13 +594,50 @@ describe('el principal y el «Fondo ahorro», cada uno por su lado', () => {
     expect(ext).toMatchObject({ salidas: 5453, dePaso: 453, numMovimientos: 1, enviadoOtros: 0 })
     expect(titularWorkspace(ds, 'T1').movimientos.includes(desdeIng)).toBe(false)
     const { luis, ahorro } = totales(ds)
-    // Para Luis no cambia nada más: ese movimiento nunca contó como aportación suya, y los 500
-    // que salieron de su MyInvestor (los que se fueron antes al «Fondo ahorro») siguen saliendo.
-    expect(luis).toMatchObject({ patrimonio: 4600, aportadoTotal: 4500, numMovimientos: 4 })
+    // Los 453 salen de su bolsillo igual: de lo que le quedaba en su «MyInvestor» (1.000), así que
+    // le quedan 547. No engorda su «Aportado» (ese dinero no es inversión suya).
+    expect(luis).toMatchObject({ patrimonio: 4147, efectivo: 547, aportadoTotal: 4047, numMovimientos: 4 })
     expect(ahorro.patrimonio).toBe(953)
     expect(ahorro.aportadoTotal).toBe(953)
     // Desde el «Fondo ahorro» (no es el principal), lo que sale de sus cuentas no es de paso.
     expect(isDePaso(lookup, mov('2026-03-01', C('C2'), C('MY'), 10))).toBe(false)
+  })
+
+  it('un ingreso de 1.000 € deja 547 € en la cuenta principal cuando ese mes se van 453 al «Fondo ahorro» (aunque la transferencia esté puesta en la cuenta externa)', () => {
+    const ds = base()
+    const antes = totales(ds)
+    // Ese mes: entran 1.000 € a MyInvestor desde el banco y la transferencia de 453 € sale de la
+    // cuenta externa (la «Cuenta Nómina») camino del «Fondo ahorro».
+    ds.movimientos.push(mov('2026-02-15', C('BBVA'), P('F2'), 453))
+    ds.movimientos.push(mov('2026-02-20', C('BBVA'), C('MY'), 1000))
+    const despues = totales(ds)
+    expect(despues.luis.efectivo - antes.luis.efectivo).toBeCloseTo(547, 6)
+    expect(despues.luis.aportadoTotal - antes.luis.aportadoTotal).toBeCloseTo(547, 6)
+    // El «Fondo ahorro» recibe sus 453 igual.
+    expect(despues.ahorro.patrimonio - antes.ahorro.patrimonio).toBe(453)
+  })
+
+  it('un ingreso puntual al «Fondo ahorro» sale de la cuenta principal aunque se apunte desde la cuenta externa', () => {
+    const ds = base()
+    const antes = totales(ds).luis
+    ds.movimientos.push(mov('2026-02-16', C('BBVA'), P('F2'), 500))
+    const despues = totales(ds).luis
+    expect(antes.efectivo).toBe(1000)
+    expect(despues.efectivo).toBe(500)
+    // No engorda su «Aportado»: es dinero que pasa al «Fondo ahorro».
+    expect(despues.aportadoTotal).toBe(antes.aportadoTotal - 500)
+    expect(totales(ds).ahorro.patrimonio).toBe(1000)
+  })
+
+  it('la línea del gráfico acaba en el mismo dinero que la tarjeta', () => {
+    const ds = base()
+    ds.movimientos.push(mov('2026-02-15', C('BBVA'), P('F2'), 453))
+    const luis = totales(ds).luis
+    const tl = buildTimelineMulti([{ id: 'T1', ws: titularWorkspace(ds, 'T1') }], ds.movimientos, '2026-10-15', buildLookup(ds))
+    const ultimo = tl[tl.length - 1]
+    expect(ultimo['T1:p']).toBeCloseTo(luis.patrimonio, 6)
+    // El capital de la línea lleva también el dinero sin invertir (lo que se ve en «En cuentas»).
+    expect(ultimo['T1:c']).toBeCloseTo(luis.patrimonio - luis.ganancia, 6)
   })
 
   it('en el flujo del dinero, lo de paso sale como «Aportaciones» del «Fondo ahorro», no de MyInvestor', () => {

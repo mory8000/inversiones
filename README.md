@@ -38,8 +38,8 @@ Sustituye al antiguo `Inversiones.xlsx` y mantiene sus mismos conceptos: titular
     cuenta externa), **Invertir**, **Programar transferencia mensual**, **Sacar dinero**, sus transferencias
     mensuales (con **Editar**: es el único sitio donde se cambian) y el **dinero añadido desde bancos externos**,
     cada movimiento con sus botones **Editar** y **Borrar**. Lo que va **de paso** camino del «Fondo ahorro» **no
-    cuenta en ella** (ni lo que entra ni lo que sale) y no figura en su lista de movimientos (solo la transferencia
-    mensual, para poder cambiarla). El saldo que se ve es el real.
+    cuenta como inversión suya** (ni lo que entra ni lo que sale) y no figura en su lista de movimientos (solo la
+    transferencia mensual, para poder cambiarla), **pero el dinero sí sale de ella**: el saldo que se ve es el real.
   - **Ventanillas**: al tocar una se abre con su saldo, su **% de rentabilidad** (o su **interés**, en los
     depósitos) con el botón para cambiarlo, y con lo que se puede hacer: **Aportar**, **Retirar** (reembolso),
     **Traspasar**, **Programar transferencia mensual** y ver sus movimientos (con **Editar** y **Borrar**).
@@ -105,15 +105,15 @@ Sustituye al antiguo `Inversiones.xlsx` y mantiene sus mismos conceptos: titular
   Un mes concreto se puede cambiar o borrar sin tocar los demás.
 - **El dinero cuenta para quien lo recibe**: si sale de la cuenta del titular 1 y entra en un producto o en una
   cuenta con saldo del titular 2, cuenta solo para el titular 2, no para el titular 1.
-- **Dinero de paso** (p. ej. la transferencia mensual al «Fondo ahorro»): lo que llega desde fuera (p. ej. desde
-  ING), pasa por MyInvestor del titular principal y se va a otro titular es **un mero paso: no cuenta en lo del
-  principal**. No cuenta en su patrimonio ni en su aportado (tampoco lo que ese dinero gane o pierda después), y
-  en la cuenta de la que sale **no cuenta ni lo que entra ni lo que sale** (así las cifras cuadran con el banco),
-  y **no sale** en su ventana de MyInvestor, en el detalle de sus cuentas ni en sus movimientos. Lo mismo si sale
-  de una cuenta externa suya (ING) hacia el «Fondo ahorro». Si falta apuntar la entrada de ese dinero, la parte
-  que no estaba sale del saldo igual (el saldo es siempre el real). Se ve y cuenta solo en quien lo recibe (en
-  «Todos» los movimientos sale como «Aportación a Fondo ahorro» y en el flujo del dinero como «Aportaciones ·
-  Fondo ahorro»). Se aplica a
+- **Dinero de paso** (p. ej. la transferencia mensual al «Fondo ahorro»): lo que se va a otro titular **no cuenta
+  como inversión para quien lo manda** (ni en su patrimonio ni en su aportado, tampoco lo que ese dinero gane o
+  pierda después), sino solo para quien lo recibe. Pero **el dinero sale de su bolsillo**: de su cuenta con saldo
+  (MyInvestor), aunque la transferencia esté puesta en una cuenta externa suya (p. ej. la «Cuenta Nómina»). Así un
+  ingreso de 1.000 € deja 547 € en MyInvestor cuando ese mes se van 453 € al «Fondo ahorro», y el saldo de
+  MyInvestor es el real (nunca se queda en negativo por esto: si no hay dinero, se paga solo lo que hay). Si el
+  dinero entró de fuera y se fue, no engorda el «Aportado». En la lista de MyInvestor no sale (solo la
+  transferencia mensual, para poder cambiarla); en «Todos» los movimientos sale como «Aportación a Fondo ahorro» y
+  en el flujo del dinero como «Aportaciones · Fondo ahorro». Se aplica a
   todo, **también a los meses ya apuntados**.
 - **Ocultar importes** con un toque (icono del ojo).
 - **Copia de seguridad** (descargar / restaurar) y **datos de ejemplo** para probarla sin miedo.
@@ -135,9 +135,10 @@ Una transferencia de una **cuenta externa** a una **cuenta con saldo** (como MyI
 
 Si el origen y el destino son de **titulares distintos**, el movimiento se ve como **«Entre titulares»**. Para
 quien lo recibe en un producto o en una cuenta con saldo es dinero suyo (una aportación); para quien lo envía, no.
-Si sale de una cuenta del titular principal (MyInvestor o una externa), es **de paso**: en lo del principal no
-cuenta (ni en su lista de movimientos, ni en su aportado, ni en el saldo de la cuenta de la que sale), y en
-«Todos» se ve como **«Aportación a …»** de quien lo recibe.
+Si sale de una cuenta del titular principal (MyInvestor o una externa), es **de paso**: no cuenta como inversión
+para él (ni en su lista de movimientos ni en su aportado), pero el dinero sí sale de su cuenta con saldo
+(MyInvestor), aunque la transferencia esté puesta en una externa. En «Todos» se ve como **«Aportación a …»** de
+quien lo recibe.
 
 ## Cómo se calcula
 
@@ -166,16 +167,17 @@ resultado final es lo que has recuperado menos lo que invertiste.
 Y para cada titular:
 
 ```
-Saldo de una cuenta con saldo = lo que ha entrado − lo que ha salido      (real: positivo o negativo)
+Saldo de una cuenta con saldo = lo que ha entrado − lo que ha salido − lo que se ha ido de paso
 Patrimonio = saldo de sus productos + saldo de sus cuentas con saldo (MyInvestor)
 Aportado   = lo que ha entrado desde fuera (cuentas externas u otros titulares) − lo que se ha ido de paso
 ```
 
-El dinero que va **de paso** por MyInvestor hacia otro titular (llega de fuera y se va) no cuenta como aportado
-suyo, y tampoco cuenta en la cuenta de la que sale (ni como entrada ni como salida): el mismo importe se resta de
-las dos. Así, lo que entra y se va no engorda lo del principal y su saldo sigue siendo el real (baja solo si
-faltaba apuntar la entrada). Ese dinero, y lo que gane o pierda después, cuenta solo para quien lo recibe.
-Como todo se calcula desde el primer movimiento, vale también para lo que ya estaba apuntado.
+El dinero que va **de paso** a otro titular (p. ej. al «Fondo ahorro») no cuenta como aportado suyo y tampoco
+figura como entrada ni como salida de la cuenta, pero **sí baja el saldo de su cuenta con saldo** (MyInvestor): el
+mismo importe se resta de las dos cifras. Si la transferencia está puesta en una cuenta externa suya (la «Cuenta
+Nómina»), se paga igual con el dinero de MyInvestor. Nunca deja el saldo en negativo por este motivo: se paga solo
+lo que hay. Ese dinero, y lo que gane o pierda después, cuenta solo para quien lo recibe. Como todo se calcula
+desde el primer movimiento, vale también para lo que ya estaba apuntado.
 
 Las cifras de cada titular van por separado: cada uno ve solo lo suyo. Solo la ventana **Total** (debajo del
 «Fondo ahorro») suma el patrimonio de todos, tal como se ve en cada tarjeta (al céntimo):

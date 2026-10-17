@@ -30,7 +30,7 @@
 import type { Movimiento, Producto, ProductType, Titular, Valoracion, Workspace } from '../types'
 import { addMonths, daysBetween, endOfMonth, maxDate, minDate } from './dates'
 import { PRODUCT_TYPES } from './meta'
-import { buildLookup, detectorDePaso, type DePaso } from './movements'
+import { buildLookup, cuentaQuePaga, detectorDePaso, type DePaso, type Lookup } from './movements'
 
 export const EPS = 0.005
 
@@ -412,12 +412,72 @@ export function isBetweenTitulares(m: Movimiento, owner: (ref: Movimiento['orige
 }
 
 /**
- * Estadísticas de cada cuenta. Con los titulares en los datos (o con `dePaso`), el dinero que se
- * desvía «de paso» de una cuenta del principal a otro titular no cuenta en ella: ni como salida, ni
- * como parte del dinero que había entrado y se fue con él (`dePaso` y `dePasoNoCuenta`). El saldo,
- * en cambio, es el real: si lo desviado no se cubre con lo que había entrado, sale del saldo.
+ * Lo que entra y lo que sale por cada cuenta, y el dinero «de paso» que se va a otro titular: el
+ * apuntado desde la propia cuenta (`dePaso`) y el que se apunta desde otra cuenta del mismo titular
+ * (p. ej. su «Cuenta Nómina») y paga la que lleva el saldo (`extra`). Ver `saldoReal`.
  */
-export function computeAccountStats(ws: Workspace & { titulares?: Titular[] }, dePaso: DePaso = detectorDePaso(buildLookup(ws))): Map<string, AccountStats> {
+interface FlujoCuenta {
+  entradas: number
+  salidas: number
+  dePaso: number
+  extra: number
+}
+
+function flujoDeCuentas(lk: Lookup, movs: Movimiento[], esPaso: DePaso, hasta?: string): Map<string, FlujoCuenta> {
+  const map = new Map<string, FlujoCuenta>()
+  const get = (id: string) => {
+    let f = map.get(id)
+    if (!f) {
+      f = { entradas: 0, salidas: 0, dePaso: 0, extra: 0 }
+      map.set(id, f)
+    }
+    return f
+  }
+  for (const m of movs) {
+    if (hasta && m.fecha > hasta) continue
+    const paso = m.origen.kind === 'cuenta' && esPaso(m)
+    if (m.origen.kind === 'cuenta') {
+      const f = get(m.origen.id)
+      if (paso) f.dePaso += m.importe
+      else f.salidas += m.importe
+    }
+    if (m.destino.kind === 'cuenta') get(m.destino.id).entradas += m.importe
+    if (paso) {
+      const paga = cuentaQuePaga(lk, m.origen)
+      if (paga && paga !== m.origen.id) get(paga).extra += m.importe
+    }
+  }
+  return map
+}
+
+/**
+ * El saldo real de una cuenta: lo que ha entrado menos lo que ha salido, menos el dinero que se ha
+ * ido «de paso» a otro titular (lo apunte la cuenta que lo apunte: si se apunta desde una cuenta
+ * externa suya, lo paga igual el dinero del titular). Nunca baja de 0 por lo «de paso»: si no hay
+ * dinero, no se puede pagar. Devuelve también lo que no cuenta como entrada (`excluido`: entró y se
+ * fue) para que no engorde lo aportado, y la cuenta tal y como la deja el apunte.
+ */
+function saldoReal(f: FlujoCuenta): { saldo: number; excluido: number; entradas: number; salidas: number } {
+  // Lo apuntado desde la propia cuenta: entra y se va (o se va de lo que ya había).
+  const propios = Math.min(f.entradas, f.dePaso)
+  const entradas = f.entradas - propios
+  const salidas = f.salidas + f.dePaso - propios
+  // Lo apuntado desde otra cuenta suya: se paga con el dinero que hay, sin dejarlo en negativo.
+  const cargo = Math.min(f.extra, Math.max(0, entradas - salidas))
+  return { saldo: entradas - salidas - cargo, excluido: propios + cargo, entradas: entradas - cargo, salidas }
+}
+
+/**
+ * Estadísticas de cada cuenta. El dinero que se desvía «de paso» a otro titular no cuenta como
+ * inversión en la cuenta del principal: ni como salida suya, ni como parte del dinero que había
+ * entrado y se fue con él (`dePaso` y `dePasoNoCuenta`). Pero sí sale de su dinero: el saldo es el
+ * real, y también baja cuando la transferencia está puesta en una cuenta externa suya (p. ej. la
+ * «Cuenta Nómina»), porque el dinero sale de su bolsillo igual.
+ */
+export function computeAccountStats(ws: Workspace & { titulares?: Titular[] }, dePaso?: DePaso): Map<string, AccountStats> {
+  const lk = buildLookup(ws)
+  const esPaso = dePaso ?? detectorDePaso(lk)
+  const flujo = flujoDeCuentas(lk, ws.movimientos, esPaso)
   const map = new Map<string, AccountStats>()
   const perProduct = new Map<string, Map<string, { enviado: number; recibido: number }>>()
   const owner = ownerLookup(ws)
@@ -460,7 +520,7 @@ export function computeAccountStats(ws: Workspace & { titulares?: Titular[] }, d
     const cross = isBetweenTitulares(m, owner)
     // Dinero desviado (de una cuenta del principal a otro titular): en esa cuenta no cuenta como
     // salida, y en su ventana tampoco figura. Se suma aparte, en `dePaso` (ver el final).
-    const paso = m.origen.kind === 'cuenta' && dePaso(m)
+    const paso = m.origen.kind === 'cuenta' && esPaso(m)
     if (m.origen.kind === 'cuenta') {
       // Saldo: lo que entra menos lo que sale.
       const s = map.get(m.origen.id)
@@ -513,13 +573,16 @@ export function computeAccountStats(ws: Workspace & { titulares?: Titular[] }, d
   }
 
   for (const [id, s] of map) {
-    // Lo desviado no cuenta en la cuenta: la parte que había entrado de verdad deja de contar como
-    // entrada y como salida; la que no llegó a entrar (faltaba apuntarla) sale del saldo igual.
-    s.dePasoNoCuenta = Math.min(s.entradas, s.dePaso)
-    s.entradas -= s.dePasoNoCuenta
-    s.salidas += s.dePaso - s.dePasoNoCuenta
-    s.aportaciones = Math.max(0, s.aportaciones - s.dePasoNoCuenta)
-    s.saldo = s.entradas - s.salidas
+    // Lo desviado no cuenta como inversión en la cuenta: la parte que había entrado de verdad deja
+    // de contar como entrada y como salida; la que no llegó a entrar (faltaba apuntarla) sale del
+    // saldo igual. Y si se apuntó desde una cuenta externa suya, lo paga la cuenta que lleva su
+    // dinero: el saldo baja igual (nunca por debajo de 0).
+    const r = saldoReal(flujo.get(id) ?? { entradas: 0, salidas: 0, dePaso: 0, extra: 0 })
+    s.dePasoNoCuenta = r.excluido
+    s.entradas = r.entradas
+    s.salidas = r.salidas
+    s.aportaciones = Math.max(0, s.aportaciones - r.excluido)
+    s.saldo = r.saldo
     if (Math.abs(s.saldo) < EPS) s.saldo = 0
     s.netoInvertido = s.enviado - s.recibido
     s.porProducto = [...(perProduct.get(id) ?? new Map()).entries()]
@@ -669,7 +732,12 @@ export function timelineDates(movimientos: Movimiento[], today: string, maxPoint
  * `todos` los movimientos de sus cuentas (también el dinero desviado, que sale de ellas aunque no
  * figure en su lista): es lo que hace que el saldo sea el real.
  */
-function valueAt(ws: Workspace, fecha: string, todos: Movimiento[] = ws.movimientos): { capital: number; patrimonio: number } {
+function valueAt(
+  ws: Workspace & { titulares?: Titular[] },
+  fecha: string,
+  todos: Movimiento[] = ws.movimientos,
+  lk: Lookup = buildLookup(ws),
+): { capital: number; patrimonio: number } {
   let capital = 0
   let patrimonio = 0
   for (const p of ws.productos) {
@@ -677,15 +745,11 @@ function valueAt(ws: Workspace, fecha: string, todos: Movimiento[] = ws.movimien
     capital += pos.capital
     patrimonio += pos.saldo
   }
+  // El saldo real de cada cuenta con saldo (el mismo que sale en su ventana y en la tarjeta).
+  const flujo = flujoDeCuentas(lk, todos, detectorDePaso(lk), fecha)
   for (const c of ws.cuentas) {
     if (c.externa) continue
-    let saldo = 0
-    for (const m of todos) {
-      if (m.fecha > fecha) continue
-      if (m.destino.kind === 'cuenta' && m.destino.id === c.id) saldo += m.importe
-      if (m.origen.kind === 'cuenta' && m.origen.id === c.id) saldo -= m.importe
-    }
-    // El saldo real (puede ser negativo si ha salido más de lo que ha entrado).
+    const saldo = saldoReal(flujo.get(c.id) ?? { entradas: 0, salidas: 0, dePaso: 0, extra: 0 }).saldo
     capital += saldo
     patrimonio += saldo
   }
@@ -699,12 +763,20 @@ export function buildTimeline(ws: Workspace, today: string, maxPoints = 48): Tim
 /** Un punto del gráfico con varios titulares: `${id}:p` (patrimonio) y `${id}:c` (capital) de cada uno. */
 export type MultiTimelinePoint = { fecha: string } & Record<string, number | string>
 
-/** Evolución de varios titulares en las mismas fechas, cada uno por separado (no se suman). */
-export function buildTimelineMulti(series: { id: string; ws: Workspace }[], all: Movimiento[], today: string): MultiTimelinePoint[] {
+/**
+ * Evolución de varios titulares en las mismas fechas, cada uno por separado (no se suman). Con el
+ * `lookup` de todos los datos se reconoce el dinero «de paso» (que va de un titular a otro).
+ */
+export function buildTimelineMulti(
+  series: { id: string; ws: Workspace }[],
+  all: Movimiento[],
+  today: string,
+  lk?: Lookup,
+): MultiTimelinePoint[] {
   return timelineDates(all, today).map((fecha) => {
     const point: MultiTimelinePoint = { fecha }
     for (const s of series) {
-      const v = valueAt(s.ws, fecha, all)
+      const v = valueAt(s.ws, fecha, all, lk ?? buildLookup(s.ws))
       point[`${s.id}:p`] = v.patrimonio
       point[`${s.id}:c`] = v.capital
     }

@@ -365,7 +365,7 @@ export function ProductForm({
               return c && from && to && c.titularId !== titularId ? (
                 <p className="mt-2 rounded-xl bg-fuchsia-50 px-3 py-2 text-[13px] text-fuchsia-900">
                   {primeraDePaso
-                    ? `Sale de «${c.nombre}» (de ${from.nombre}) de paso: no cuenta en ella ni para ${from.nombre}, y cuenta como inversión de ${to.nombre}.`
+                    ? `Sale de «${c.nombre}» (de ${from.nombre}) de paso: no cuenta como inversión para ${from.nombre} (el dinero sale igual de su cuenta), y cuenta como inversión de ${to.nombre}.`
                     : `Sale de una cuenta de ${from.nombre}: cuenta como inversión de ${to.nombre}, no de ${from.nombre}.`}
                 </p>
               ) : null

@@ -49,10 +49,10 @@ function explain(tipo: MovementType, o: string, d: string, oExterna: boolean, dE
 function explainCross(o: string, d: string, from: Titular, to: Titular, destino: EntityRef, lookup: Lookup, dePaso: boolean): string {
   if (dePaso) {
     const pasa = `Sale de «${o}» (de ${from.nombre}) de paso`
-    const noQueda = `No cuenta en «${o}» (ni lo que entra ni lo que sale) ni para ${from.nombre}`
-    if (destino.kind === 'producto') return `${pasa} y se invierte en «${d}» (de ${to.nombre}). ${noQueda}: cuenta solo para ${to.nombre}.`
-    if (isConSaldo(lookup, destino)) return `${pasa} y llega a «${d}» (de ${to.nombre}). ${noQueda}: cuenta solo para ${to.nombre}.`
-    return `${pasa} y llega a «${d}» (de ${to.nombre}, cuenta externa). ${noQueda}; para ${to.nombre} contará cuando lo invierta.`
+    const noCuenta = `No cuenta como inversión para ${from.nombre}, pero el dinero sale igual de su cuenta`
+    if (destino.kind === 'producto') return `${pasa} y se invierte en «${d}» (de ${to.nombre}). ${noCuenta}: cuenta solo para ${to.nombre}.`
+    if (isConSaldo(lookup, destino)) return `${pasa} y llega a «${d}» (de ${to.nombre}). ${noCuenta}: cuenta solo para ${to.nombre}.`
+    return `${pasa} y llega a «${d}» (de ${to.nombre}, cuenta externa). ${noCuenta}; para ${to.nombre} contará cuando lo invierta.`
   }
   if (destino.kind === 'producto') return `Sale dinero de «${o}» (de ${from.nombre}) y se invierte en «${d}» (de ${to.nombre}). Cuenta solo para ${to.nombre}, no para ${from.nombre}.`
   if (isConSaldo(lookup, destino)) return `Pasa dinero de «${o}» (de ${from.nombre}) a «${d}» (de ${to.nombre}). Cuenta solo para ${to.nombre}, no para ${from.nombre}.`
@@ -516,7 +516,7 @@ export function MovementForm({
             hint={
               [
                 multi && fromT ? `De ${fromT.nombre}` : null,
-                vaDePaso ? 'De paso: no cuenta en ella' : null,
+                vaDePaso ? 'De paso: no cuenta como inversión suya (el dinero sale igual)' : null,
                 disponible !== null && !hidden ? `Disponible: ${fmtEUR(disponible)}${fecha < today ? ` (el ${fmtDate(fecha)})` : ''}` : null,
                 saldoProducto !== null && !hidden ? `Saldo actual: ${fmtEUR(saldoProducto)}` : null,
                 nuevaExterna ? `Se creará la cuenta «${NOMBRE_EXTERNA}» (luego puedes cambiarle el nombre en Cuentas)` : null,

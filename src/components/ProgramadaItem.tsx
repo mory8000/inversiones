@@ -57,7 +57,7 @@ export function ProgramadaItem({ p, fin }: { p: Programada; fin: FinanceData }) 
           {cross && to && from && (
             <span className="block text-xs font-medium text-fuchsia-800">
               {dePaso
-                ? `De paso: no cuenta en «${entityName(lookup, p.origen)}» ni para ${from.nombre}. ${countsForOwner(lookup, p.destino) ? `Cuenta solo para ${to.nombre}.` : `Va a una cuenta externa de ${to.nombre}.`}`
+                ? `De paso: no es inversión de ${from.nombre} (el dinero sale de su cuenta), así que cuenta solo para ${to.nombre}.${countsForOwner(lookup, p.destino) ? '' : ` Va a una cuenta externa de ${to.nombre}.`}`
                 : countsForOwner(lookup, p.destino)
                   ? `Cuenta solo para ${to.nombre}, no para ${from.nombre}`
                   : `Va a una cuenta externa de ${to.nombre}`}
