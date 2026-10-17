@@ -215,7 +215,7 @@ function stylesXml(specs: Record<string, StyleSpec>): string {
   const fills: string[] = ['<fill><patternFill patternType="none"/></fill>', '<fill><patternFill patternType="gray125"/></fill>']
   const borders: string[] = ['<border/>']
   const numFmts = [MONEY, PCT]
-  const fmtId = (f: string) => 160 + numFmts.indexOf(f)
+  const fmtId = (f: string) => 164 + numFmts.indexOf(f) // los formatos propios empiezan en 164
 
   const index = (arr: string[], xml: string) => {
     const at = arr.indexOf(xml)
@@ -224,7 +224,7 @@ function stylesXml(specs: Record<string, StyleSpec>): string {
     return arr.length - 1
   }
   const fontId = (f?: StyleSpec['font']) =>
-    index(fonts, `<font>${f?.b ? '<b/>' : ''}<color rgb="${argb(f?.color ?? INK)}"/><sz val="${f?.sz ?? 11}"/><name val="Calibri"/></font>`)
+    index(fonts, `<font>${f?.b ? '<b/>' : ''}<sz val="${f?.sz ?? 11}"/><color rgb="${argb(f?.color ?? INK)}"/><name val="Calibri"/></font>`)
   const fillId = (fill?: string) =>
     fill ? index(fills, `<fill><patternFill patternType="solid"><fgColor rgb="${argb(fill)}"/><bgColor rgb="${argb(fill)}"/></patternFill></fill>`) : 0
   const borderId = (b?: StyleSpec['border']) =>
@@ -274,7 +274,7 @@ function sheetXml(sheet: Sheet, styles: Record<string, number>): string {
           return `<c r="${ref}" s="${s}" t="inlineStr"><is><t xml:space="preserve">${esc(String(v))}</t></is></c>`
         })
         .join('')
-      return `<row r="${ri + 1}"${r.h ? ` ht="${r.h}"` : ''}>${cells}</row>`
+      return `<row r="${ri + 1}"${r.h ? ` ht="${r.h}" customHeight="1"` : ''}>${cells}</row>`
     })
     .join('')
   const pane = sheet.freeze
@@ -282,8 +282,8 @@ function sheetXml(sheet: Sheet, styles: Record<string, number>): string {
     : ''
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
     `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">` +
-    `<cols>${cols}</cols>` +
     `<sheetViews><sheetView workbookViewId="0">${pane}</sheetView></sheetViews>` +
+    `<cols>${cols}</cols>` +
     `<sheetData>${rows}</sheetData>` +
     `${sheet.filter ? `<autoFilter ref="${sheet.filter}"/>` : ''}` +
     `</worksheet>`
