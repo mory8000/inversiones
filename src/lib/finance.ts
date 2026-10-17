@@ -789,18 +789,29 @@ export function buildTimelineMulti(
   })
 }
 
+/** El dinero de un titular en una fecha (patrimonio y capital), como en los puntos del gráfico. */
+export function valorEn(
+  ws: Workspace & { titulares?: Titular[] },
+  fecha: string,
+  todos: Movimiento[] = ws.movimientos,
+  lk?: Lookup,
+): { patrimonio: number; capital: number } {
+  return valueAt(ws, fecha, todos, lk ?? buildLookup(ws))
+}
+
 /**
- * La línea del titular principal no dibuja el pasado: los puntos anteriores a hoy van planos al
- * dinero real que hay hoy en sus cuentas (el punto de hoy, el mismo que su tarjeta), desde el
- * primer día del gráfico (el mismo en que empieza la del «Fondo ahorro»). Desde hoy los puntos
- * quedan como están, así que la línea sigue los datos a partir de ahora.
+ * La línea del titular principal no dibuja el pasado: los puntos anteriores a `desde` van planos al
+ * dinero real de sus cuentas (`dinero`, el del día `desde`), y desde ese día los puntos quedan como
+ * están. Así la línea empieza el mismo día que la del «Fondo ahorro» y, a partir de `desde`, cuenta
+ * lo que se aporta y lo que ganan o pierden las inversiones.
  */
-export function lineaAlDineroDeHoy(puntos: MultiTimelinePoint[], id: string, today: string): MultiTimelinePoint[] {
-  const hoy = [...puntos].reverse().find((p) => p.fecha <= today)
-  if (!hoy) return puntos
-  const patrimonio = Number(hoy[`${id}:p`]) || 0
-  const capital = Number(hoy[`${id}:c`]) || 0
-  return puntos.map((p) => (p.fecha < today ? { ...p, [`${id}:p`]: patrimonio, [`${id}:c`]: capital } : p))
+export function lineaAlDineroDeHoy(
+  puntos: MultiTimelinePoint[],
+  id: string,
+  desde: string,
+  dinero: { patrimonio: number; capital: number },
+): MultiTimelinePoint[] {
+  return puntos.map((p) => (p.fecha < desde ? { ...p, [`${id}:p`]: dinero.patrimonio, [`${id}:c`]: dinero.capital } : p))
 }
 
 /** Evolución de un único producto (capital vs. valor). */

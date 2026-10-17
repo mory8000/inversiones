@@ -166,6 +166,8 @@ function sanitizeDataset(raw: unknown): Dataset | null {
     productos: uniqueById(arr(raw.productos).map((p) => sanitizeProducto(p, owner(p.titularId)))),
     movimientos: uniqueById(sanitizeMovimientos(raw.movimientos)),
     programadas: uniqueById(sanitizeProgramadas(raw.programadas)),
+    // Día desde el que la línea del titular principal cuenta el pasado (si ya estaba guardado).
+    ...(typeof raw.lineaDesde === 'string' && isValidISODate(raw.lineaDesde) ? { lineaDesde: raw.lineaDesde } : {}),
   }
 }
 

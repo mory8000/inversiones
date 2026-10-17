@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Cuenta, Dataset, EntityRef, Movimiento, Producto, Valoracion, Workspace } from '../types'
-import { buildTimeline, buildTimelineMulti, computeAccountStats, computePositions, computeTotals, evaluateProduct, interesEntre, lineaAlDineroDeHoy, summarizeByType, taeEn } from './finance'
+import { buildTimeline, buildTimelineMulti, computeAccountStats, computePositions, computeTotals, evaluateProduct, interesEntre, lineaAlDineroDeHoy, summarizeByType, taeEn, valorEn } from './finance'
 import { titularWorkspace } from './titulares'
 import { faltaDinero, saldoEn, saldoMinimoDesde } from './saldo'
 import { buildFlowGraph } from './flow'
@@ -654,24 +654,40 @@ describe('el principal y el «Fondo ahorro», cada uno por su lado', () => {
     // La transferencia a la cuenta del «Fondo ahorro» va a la lista de transferencias (como antes).
     expect(g.transfers.map((m) => m.importe)).toEqual([5000, 200])
   })
+
+  it('el valor del día de arranque es el mismo que el de la tarjeta', () => {
+    const ds = base()
+    const v = valorEn(titularWorkspace(ds, 'T1'), '2026-10-15', ds.movimientos, buildLookup(ds))
+    const luis = totales(ds).luis
+    expect(v.patrimonio).toBeCloseTo(luis.patrimonio, 6)
+    expect(v.capital).toBeCloseTo(luis.patrimonio - luis.ganancia, 6)
+  })
 })
 
 
 describe('la línea del titular principal', () => {
-  it('va plana al dinero de hoy hasta hoy y desde hoy sigue los datos', () => {
-    const puntos = [
-      { fecha: '2025-01-02', 'T1:p': 39966, 'T1:c': 0, 'T2:p': 0, 'T2:c': 0 },
-      { fecha: '2026-01-31', 'T1:p': 38500, 'T1:c': 29901.9, 'T2:p': 9000, 'T2:c': 8000 },
-      { fecha: '2026-10-16', 'T1:p': 28938.37, 'T1:c': 29901.9, 'T2:p': 9011.1, 'T2:c': 9966 },
-      { fecha: '2026-11-30', 'T1:p': 29000, 'T1:c': 30400, 'T2:p': 9500, 'T2:c': 10419 },
-    ]
-    const out = lineaAlDineroDeHoy(puntos, 'T1', '2026-10-16')
-    // El pasado, plano al dinero real de hoy (el mismo que la tarjeta), desde el primer día.
+  const puntos = [
+    { fecha: '2025-01-02', 'T1:p': 39966, 'T1:c': 0, 'T2:p': 0, 'T2:c': 0 },
+    { fecha: '2026-01-31', 'T1:p': 38500, 'T1:c': 29901.9, 'T2:p': 9000, 'T2:c': 8000 },
+    { fecha: '2026-10-16', 'T1:p': 28938.37, 'T1:c': 29901.9, 'T2:p': 9011.1, 'T2:c': 9966 },
+    { fecha: '2026-11-30', 'T1:p': 29000, 'T1:c': 30400, 'T2:p': 9500, 'T2:c': 10419 },
+  ]
+
+  it('el día en que empieza va plana al dinero real, desde el primer día del gráfico', () => {
+    const out = lineaAlDineroDeHoy(puntos, 'T1', '2026-10-16', { patrimonio: 28938.37, capital: 29901.9 })
+    // El pasado, plano al dinero real de ese día (el mismo que la tarjeta), desde el primer día.
     expect(out.map((p) => p['T1:p'])).toEqual([28938.37, 28938.37, 28938.37, 29000])
     expect(out.map((p) => p['T1:c'])).toEqual([29901.9, 29901.9, 29901.9, 30400])
     expect(out[0].fecha).toBe(puntos[0].fecha)
-    // No toca lo de los demás titulares.
+    // Lo de los demás titulares no se toca.
     expect(out.map((p) => p['T2:p'])).toEqual([0, 9000, 9011.1, 9500])
     expect(out.map((p) => p['T2:c'])).toEqual([0, 8000, 9966, 10419])
+  })
+
+  it('al día siguiente ya cuenta lo que se aporta o se gana: del día de arranque en adelante, datos de verdad', () => {
+    // Arrancó el 31 de enero: lo de antes va plano a lo de ese día y lo de después ya se mueve solo.
+    const out = lineaAlDineroDeHoy(puntos, 'T1', '2026-01-31', { patrimonio: 38500, capital: 29901.9 })
+    expect(out.map((p) => p['T1:p'])).toEqual([38500, 38500, 28938.37, 29000])
+    expect(out.map((p) => p['T1:c'])).toEqual([29901.9, 29901.9, 29901.9, 30400])
   })
 })

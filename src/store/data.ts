@@ -102,7 +102,8 @@ function initialDataset(): Dataset {
     { id: uid(), codigo: '', nombre: defaultTitularName(1), createdAt: stamp },
     { id: uid(), codigo: '', nombre: defaultTitularName(2), createdAt: stamp },
   ])
-  return conCuentaPrincipal(ds, uid, stamp)
+  // La línea del titular principal empieza a contar hoy.
+  return { ...conCuentaPrincipal(ds, uid, stamp), lineaDesde: todayISO() }
 }
 
 function initialData(): PersistedData {
@@ -513,7 +514,12 @@ export const useData = create<DataState>()(
         },
         importData: (data) => {
           useHistorial.getState().olvidar('datos')
-          set({ version: DATA_VERSION, datos: data.datos, verEjemplo: false, hideAmounts: data.hideAmounts })
+          set({
+            version: DATA_VERSION,
+            datos: { ...data.datos, lineaDesde: data.datos.lineaDesde ?? todayISO() },
+            verEjemplo: false,
+            hideAmounts: data.hideAmounts,
+          })
         },
 
         deshacer: () => moverHistorial('deshacer'),
@@ -544,6 +550,13 @@ export const useData = create<DataState>()(
 
 // Al abrir la app se apuntan las transferencias mensuales que hayan tocado desde la última vez.
 useData.getState().aplicarProgramadas()
+
+// La primera vez que se abre con esta función, la línea del titular principal empieza a contar ese
+// mismo día (los días anteriores van planos, al dinero real). Se guarda, para que desde mañana la
+// línea siga creciendo con lo que se aporte y con lo que ganen o pierdan las inversiones.
+if (!useData.getState().datos.lineaDesde) {
+  useData.setState({ datos: { ...useData.getState().datos, lineaDesde: todayISO() } })
+}
 
 /** Los datos que se están viendo (todos los titulares). */
 export function useDataset(): Dataset {

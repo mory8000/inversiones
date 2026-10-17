@@ -219,5 +219,8 @@ export function buildDemoDataset(today: string): Dataset {
       },
     ],
   }
-  return aplicarProgramadas(ds, today)
+  // El ejemplo sí enseña su historia entera: su línea del titular principal empieza el primer día.
+  const apuntado = aplicarProgramadas(ds, today)
+  const primera = apuntado.movimientos.reduce((min, m) => (m.fecha < min ? m.fecha : min), today)
+  return { ...apuntado, lineaDesde: primera }
 }

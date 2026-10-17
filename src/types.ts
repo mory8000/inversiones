@@ -163,6 +163,12 @@ export interface Workspace {
 export interface Dataset extends Workspace {
   titulares: Titular[]
   programadas: Programada[]
+  /**
+   * Día desde el que la línea del titular principal cuenta el pasado en el gráfico de evolución.
+   * Antes de ese día la línea va plana, al dinero real que había. La app lo pone sola la primera
+   * vez (el día en que se abre con esta función), así que no hay que tocarlo.
+   */
+  lineaDesde?: string
 }
 
 export interface PersistedData {
