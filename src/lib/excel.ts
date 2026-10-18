@@ -246,7 +246,7 @@ function stylesXml(specs: Record<string, StyleSpec>): string {
       `${s.align ? ` applyAlignment="1"><alignment horizontal="${s.align}"/></xf>` : '/>'}`
   })
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">` +
-    `<numFmts count="${numFmts.length}">${numFmts.map((f, i) => `<numFmt numFmtId="${160 + i}" formatCode="${esc(f)}"/>`).join('')}</numFmts>` +
+    `<numFmts count="${numFmts.length}">${numFmts.map((f, i) => `<numFmt numFmtId="${164 + i}" formatCode="${esc(f)}"/>`).join('')}</numFmts>` +
     `<fonts count="${fonts.length}">${fonts.join('')}</fonts>` +
     `<fills count="${fills.length}">${fills.join('')}</fills>` +
     `<borders count="${borders.length}">${borders.join('')}</borders>` +
@@ -573,6 +573,8 @@ export function buildExcel(fin: FinanceData): Uint8Array {
           `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">` +
           `<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>` +
           `<Default Extension="xml" ContentType="application/xml"/>` +
+          `<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>` +
+          `<Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>` +
           `<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>` +
           `<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>` +
           sheets.map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('') +
@@ -585,7 +587,44 @@ export function buildExcel(fin: FinanceData): Uint8Array {
         `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
           `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
           `<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>` +
+          `<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>` +
+          `<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/>` +
           `</Relationships>`,
+      ),
+    },
+    {
+      name: 'docProps/core.xml',
+      data: utf8(
+        `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+          `<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">` +
+          `<dc:title>Mis inversiones</dc:title>` +
+          `<dc:creator>Mis inversiones</dc:creator>` +
+          `<cp:lastModifiedBy>Mis inversiones</cp:lastModifiedBy>` +
+          `<dcterms:created xsi:type="dcterms:W3CDTF">${new Date().toISOString()}</dcterms:created>` +
+          `<dcterms:modified xsi:type="dcterms:W3CDTF">${new Date().toISOString()}</dcterms:modified>` +
+          `</cp:coreProperties>`,
+      ),
+    },
+    {
+      name: 'docProps/app.xml',
+      data: utf8(
+        `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+          `<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">` +
+          `<Application>Mis inversiones</Application>` +
+          `<DocSecurity>0</DocSecurity>` +
+          `<ScaleCrop>false</ScaleCrop>` +
+          `<HeadingPairs>` +
+          `<vt:vector size="2" baseType="variant"><vt:variant><vt:lpstr>Hojas</vt:lpstr></vt:variant><vt:variant><vt:i4>${sheets.length}</vt:i4></vt:variant></vt:vector>` +
+          `</HeadingPairs>` +
+          `<TitlesOfParts>` +
+          `<vt:vector size="${sheets.length}" baseType="lpstr">${sheets.map((s2) => `<vt:lpstr>${esc(s2.name)}</vt:lpstr>`).join('')}</vt:vector>` +
+          `</TitlesOfParts>` +
+          `<Company>Mis inversiones</Company>` +
+          `<LinksUpToDate>false</LinksUpToDate>` +
+          `<SharedDoc>false</SharedDoc>` +
+          `<HyperlinksChanged>false</HyperlinksChanged>` +
+          `<AppVersion>1.0</AppVersion>` +
+          `</Properties>`,
       ),
     },
     {

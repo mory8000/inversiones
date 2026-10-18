@@ -745,6 +745,17 @@ describe('el principal y el «Fondo ahorro», cada uno por su lado', () => {
     expect(texto).toContain('Fondo ahorro')
     expect(texto).toContain('<f>SUM(')
     expect(texto).toContain('Mis inversiones')
+    // Los formatos de número que usan las celdas están todos declarados (si no, Excel
+    // dice que el archivo está dañado).
+    const declarados = new Set([...texto.matchAll(/<numFmt numFmtId="(\d+)"/g)].map((m) => m[1]))
+    for (const m of texto.matchAll(/<xf numFmtId="(\d+)"/g)) {
+      const id = Number(m[1])
+      if (id >= 164) expect(declarados.has(m[1]), `formato ${id} sin declarar`).toBe(true)
+    }
+    // Y las piezas del archivo están todas (Excel también pide los docProps).
+    for (const parte of ['[Content_Types].xml', '_rels/.rels', 'docProps/core.xml', 'docProps/app.xml', 'xl/styles.xml']) {
+      expect(texto).toContain(parte)
+    }
   })
 
 })
