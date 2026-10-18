@@ -20,7 +20,6 @@ import { useFinance, type TitularFinance } from '../store/useFinance'
 import { confirmDialog, openTitular, openValores, toast } from '../store/ui'
 import { accion } from '../store/deshacer'
 import { movementsToCSV } from '../lib/movements'
-import { buildExcel } from '../lib/excel'
 import { downloadFile } from '../lib/download'
 import { isStandalone, useInstallPrompt } from '../lib/install'
 import { cn } from '../lib/cn'
@@ -117,14 +116,20 @@ export function Settings() {
     toast('Movimientos exportados')
   }
 
-  const exportExcel = () => {
-    const bytes = buildExcel(fin)
-    downloadFile(
-      `mis-inversiones-${today}.xlsx`,
-      new Blob([bytes.buffer as ArrayBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    )
-    toast('Excel descargado')
+  const exportExcel = async () => {
+    try {
+      // Se carga solo al pulsarlo: es la parte pesada (la que escribe el Excel).
+      const { buildExcel } = await import('../lib/excel')
+      const buf = await buildExcel(fin)
+      downloadFile(
+        `mis-inversiones-${today}.xlsx`,
+        new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      )
+      toast('Excel descargado')
+    } catch {
+      toast('No se ha podido hacer el Excel')
+    }
   }
 
   const restore = async (file: File) => {

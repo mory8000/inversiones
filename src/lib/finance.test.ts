@@ -731,31 +731,22 @@ describe('el principal y el «Fondo ahorro», cada uno por su lado', () => {
     const ds = base()
     ds.lineaDesde = '2026-10-14'
     const fin = computeFinance(ds, '2026-10-15')
-    const bytes = buildExcel(fin)
-    // Un zip (todo .xlsx es un zip).
+    const buf = await buildExcel(fin)
+    // Un zip (todo .xlsx es un zip): empieza por «PK».
+    const bytes = new Uint8Array(buf)
     expect(bytes[0]).toBe(0x50) // «P»
     expect(bytes[1]).toBe(0x4b) // «K»
-    const texto = new TextDecoder().decode(bytes)
-    // Las pestañas, con los nombres de la app.
-    for (const hoja of ['Inicio', 'Evolución', 'Inversiones', 'Cuentas', 'Movimientos', 'Flujo', 'Transferencias']) {
-      expect(texto).toContain(hoja)
-    }
-    // Las cifras de Luis y del «Fondo ahorro», y las fórmulas que calculan solas.
-    expect(texto).toContain('Luis')
-    expect(texto).toContain('Fondo ahorro')
-    expect(texto).toContain('<f>SUM(')
-    expect(texto).toContain('Mis inversiones')
-    // Los formatos de número que usan las celdas están todos declarados (si no, Excel
-    // dice que el archivo está dañado).
-    const declarados = new Set([...texto.matchAll(/<numFmt numFmtId="(\d+)"/g)].map((m) => m[1]))
-    for (const m of texto.matchAll(/<xf numFmtId="(\d+)"/g)) {
-      const id = Number(m[1])
-      if (id >= 164) expect(declarados.has(m[1]), `formato ${id} sin declarar`).toBe(true)
-    }
-    // Y las piezas del archivo están todas (Excel también pide los docProps).
-    for (const parte of ['[Content_Types].xml', '_rels/.rels', 'docProps/core.xml', 'docProps/app.xml', 'xl/styles.xml']) {
-      expect(texto).toContain(parte)
-    }
+    // Se vuelve a abrir (como haría Excel) y tiene las hojas y las cifras.
+    const ExcelJS = await import('exceljs')
+    const wb = new ExcelJS.Workbook()
+    await wb.xlsx.load(buf)
+    expect(wb.worksheets.map((h) => h.name)).toEqual(['Inicio', 'Evolución', 'Inversiones', 'Cuentas', 'Movimientos', 'Flujo', 'Transferencias'])
+    const inicio = wb.getWorksheet('Inicio')!
+    expect(inicio.getCell('A1').value).toBe('Mis inversiones')
+    // Las fórmulas calculan lo mismo que la app (con su resultado guardado).
+    const patrimonio = inicio.getCell('B7').value as { formula: string; result: number }
+    expect(patrimonio.formula).toBe('B5+B6')
+    expect(patrimonio.result).toBeCloseTo(totales(ds).luis.patrimonio, 6)
   })
 
 })
