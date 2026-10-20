@@ -1,7 +1,7 @@
 import type { Cuenta, EntityRef, Movimiento, MovementKind, Producto, ProductType, Titular, Workspace } from '../types'
 import { addDays, addMonths, monthKey, yearOf } from './dates'
 import { fmtDateNumeric } from './format'
-import { importeEnCuenta } from './finance'
+import { importeDeCuenta, importeEnCuenta } from './finance'
 import { MOVEMENT_META, PRODUCT_META } from './meta'
 
 export interface Lookup {
@@ -301,7 +301,7 @@ function csvNumber(n: number): string {
 }
 
 export function movementsToCSV(movs: Movimiento[], lookup: Lookup): string {
-  const header = ['Fecha', 'Tipo', 'Titular (de)', 'De', 'Tipo de origen', 'Titular (a)', 'A', 'Tipo de destino', 'Importe (€)', 'Comisión (€)', 'Llega a la cuenta (€)', 'Concepto']
+  const header = ['Fecha', 'Tipo', 'Titular (de)', 'De', 'Tipo de origen', 'Titular (a)', 'A', 'Tipo de destino', 'Importe (€)', 'Comisión (€)', 'En la cuenta (€)', 'Concepto']
   const rows = sortMovementsDesc(movs).map((m) => [
     fmtDateNumeric(m.fecha),
     isCross(lookup, m) ? 'Entre titulares' : MOVEMENT_META[m.tipo].label,
@@ -313,7 +313,8 @@ export function movementsToCSV(movs: Movimiento[], lookup: Lookup): string {
     entityTypeLabel(lookup, m.destino),
     csvNumber(m.importe),
     csvNumber(m.comision ?? 0),
-    csvNumber(importeEnCuenta(m)),
+    // Lo que se mueve en la cuenta: al vender lo que entra, al comprar lo que sale.
+    csvNumber(m.destino.kind === 'cuenta' ? importeEnCuenta(m) : importeDeCuenta(m)),
     m.concepto,
   ])
   return '\ufeff' + [header, ...rows].map((r) => r.map((c) => csvCell(String(c))).join(';')).join('\r\n')

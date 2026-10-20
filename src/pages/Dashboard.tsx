@@ -44,11 +44,12 @@ import { PrincipalBadge, TitularAvatar, TitularTag } from '../components/Titular
 /** Color del dinero sin invertir (en cuentas con saldo, como MyInvestor). */
 const EFECTIVO_COLOR = '#6366F1'
 
-function HeroStat({ label, value, hint }: { label: string; value: number; hint: string }) {
+function HeroStat({ label, value, hint, tone }: { label: string; value: number; hint: string; tone?: boolean }) {
+  const color = !tone ? '' : value > 0.005 ? 'text-emerald-300' : value < -0.005 ? 'text-rose-300' : ''
   return (
     <div className="min-w-0">
       <div className="truncate text-[11px] font-medium text-white/60 sm:text-xs">{label}</div>
-      <Amount value={value} className={cn('mt-0.5 block truncate text-[15px] font-semibold sm:text-lg', value < -0.005 && 'text-rose-300')} />
+      <Amount value={value} sign={tone} className={cn('mt-0.5 block truncate text-[15px] font-semibold sm:text-lg', color || (value < -0.005 && 'text-rose-300'))} />
       <div className="hidden truncate text-[11px] text-white/40 sm:block">{hint}</div>
     </div>
   )
@@ -194,15 +195,26 @@ function TitularHero({ tf, fin }: { tf: TitularFinance; fin: FinanceData }) {
           </div>
         ) : (
           <div className="mt-1 flex flex-wrap items-center gap-2">
-            <GainBadge onDark ganancia={totals.ganancia} rentabilidad={totals.rentabilidad} />
+            <GainBadge onDark ganancia={totals.resultado} rentabilidad={totals.resultadoPct} />
             <span className="text-sm text-white/55">rentabilidad</span>
           </div>
         )}
         {!empty && (
-          <div className="mt-4 grid grid-cols-3 gap-3 border-t border-white/10 pt-4">
-            <HeroStat label="Invertido" value={totals.capital} hint="En fondos, carteras…" />
-            <HeroStat label="En cuentas" value={totals.efectivo} hint="Sin invertir (MyInvestor)" />
-            <HeroStat label="Aportado" value={totals.aportadoTotal} hint={tf.recibidoTotal > 0 ? 'Incluye lo recibido' : 'Desde fuera'} />
+          <div className="mt-4 border-t border-white/10 pt-4">
+            {/* Cómo se llega al patrimonio: lo que has puesto + lo que ha ganado (o perdido). */}
+            <div className="grid grid-cols-3 gap-3">
+              <HeroStat
+                label="Aportado"
+                value={totals.aportadoNeto}
+                hint={tf.recibidoTotal > 0 ? 'Tuyo y lo recibido, neto' : 'Lo que has puesto, neto'}
+              />
+              <HeroStat label="Beneficio / pérdida" value={totals.resultado} tone hint="Ganado o perdido desde el principio" />
+              <HeroStat label="Total" value={totals.patrimonio} hint="Lo que tienes hoy" />
+            </div>
+            <p className="mt-2.5 text-[11px] leading-snug text-white/45 sm:text-xs">
+              <Amount value={totals.invertidoValor} className="font-semibold text-white/70" /> en inversiones ·{' '}
+              <Amount value={totals.efectivo} className="font-semibold text-white/70" /> en cuentas
+            </p>
           </div>
         )}
         <CuentasBox tf={tf} />

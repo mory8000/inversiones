@@ -65,7 +65,7 @@ export interface Position {
   /** Dinero enviado por traspaso a otros productos. */
   traspasoSalida: number
   /**
-   * Comisiones de las ventas de este producto: positivo si te las han cobrado (dinero que se
+   * Comisiones de este producto (al comprar y al vender): positivo si te las han cobrado (dinero que se
    * queda el broker y no llega a la cuenta), negativo si te las han devuelto.
    */
   comisiones: number
@@ -151,8 +151,17 @@ export interface Totals {
   aportado: number
   /** Reembolsado de productos a cuentas. */
   reembolsado: number
-  /** Comisiones cobradas al vender (positivo) o devueltas (negativo). */
+  /** Comisiones cobradas al comprar y al vender (positivo) o devueltas (negativo). */
   comisiones: number
+  /**
+   * Lo que has puesto tú: el dinero que ha entrado desde fuera (otra banco u otro titular) menos
+   * el que ha salido hacia fuera. Sin contar lo que han ganado o perdido las inversiones.
+   */
+  aportadoNeto: number
+  /** Beneficio (o pérdida) de verdad: lo que tienes hoy menos lo que has puesto. */
+  resultado: number
+  /** Resultado en tanto por uno sobre lo aportado (0.1 = 10 %). `null` si no se puede calcular. */
+  resultadoPct: number | null
   /**
    * Dinero que ha entrado desde fuera a sus productos y cuentas con saldo: desde cuentas
    * externas o desde otros titulares. Lo que se mueve entre sus cosas no cuenta dos veces.
@@ -206,14 +215,19 @@ export function latestValuation(p: Producto, upTo?: string): Valoracion | null {
 
 // ── Comisiones ─────────────────────────────────────────────────────────────
 //
-// Al vender (un producto suelta dinero hacia una cuenta) puede haber comisión: la que cobra el
-// broker por la operación, o la que devuelve. Se guarda con signo: negativa si te la cobran,
-// positiva si te la dan. El producto suelta el importe íntegro (lo que se vende), y la comisión
-// es lo que se queda o lo que añade el broker: a la cuenta llega el importe con la comisión ya
-// aplicada. Esa diferencia ni se invierte ni se guarda en ningún sitio: es un gasto (o un ingreso).
+// Al comprar (una cuenta paga y un producto recibe) y al vender (un producto suelta dinero hacia
+// una cuenta) puede haber comisión: la que cobra el broker por la operación, o la que devuelve.
+// Se guarda con signo: negativa si te la cobran, positiva si te la devuelven.
+//
+// El importe del movimiento es SIEMPRE lo que se invierte o lo que se vende (lo que entra en el
+// producto o lo que sale de él); la comisión es lo que se queda o lo que añade el broker por el
+// camino. Así, al comprar, la cuenta paga el importe MÁS la comisión; al vender, recibe el
+// importe MENOS la comisión. Esa diferencia no se invierte ni se guarda en ningún sitio: es un
+// gasto (o un ingreso).
 
-/** ¿El movimiento puede llevar comisión? (solo ventas: dinero que sale de un producto hacia una cuenta). */
-export const conComision = (m: Movimiento): boolean => m.origen.kind === 'producto' && m.destino.kind === 'cuenta'
+/** ¿El movimiento puede llevar comisión? (compras y ventas: entre una cuenta y un producto). */
+export const conComision = (m: Movimiento): boolean =>
+  (m.origen.kind === 'producto' && m.destino.kind === 'cuenta') || (m.origen.kind === 'cuenta' && m.destino.kind === 'producto')
 
 /** La comisión de un movimiento, con su signo (negativa: te la cobran). 0 si no lleva. */
 export const comisionDe = (m: Movimiento): number => (conComision(m) ? round2(m.comision ?? 0) : 0)
@@ -222,6 +236,12 @@ export const comisionDe = (m: Movimiento): number => (conComision(m) ? round2(m.
 export function importeEnCuenta(m: Movimiento): number {
   if (m.destino.kind !== 'cuenta') return m.importe
   return round2(m.importe + comisionDe(m))
+}
+
+/** El dinero que de verdad sale de la cuenta: al comprar, el importe más lo que te cobran. */
+export function importeDeCuenta(m: Movimiento): number {
+  if (m.origen.kind !== 'cuenta') return m.importe
+  return round2(m.importe - comisionDe(m))
 }
 
 /** Efecto de un movimiento sobre el capital de un producto (+ entra, − sale). */
@@ -470,8 +490,8 @@ function flujoDeCuentas(lk: Lookup, movs: Movimiento[], esPaso: DePaso, hasta?: 
     const paso = m.origen.kind === 'cuenta' && esPaso(m)
     if (m.origen.kind === 'cuenta') {
       const f = get(m.origen.id)
-      if (paso) f.dePaso += m.importe
-      else f.salidas += m.importe
+      if (paso) f.dePaso += importeDeCuenta(m)
+      else f.salidas += importeDeCuenta(m)
     }
     // A la cuenta llega el importe con la comisión ya aplicada (si la venta la lleva).
     if (m.destino.kind === 'cuenta') get(m.destino.id).entradas += importeEnCuenta(m)
@@ -563,8 +583,8 @@ export function computeAccountStats(ws: Workspace & { titulares?: Titular[] }, d
       // Saldo: lo que entra menos lo que sale.
       const s = map.get(m.origen.id)
       if (s) {
-        if (paso) s.dePaso += m.importe
-        else s.salidas += m.importe
+        if (paso) s.dePaso += importeDeCuenta(m)
+        else s.salidas += importeDeCuenta(m)
       }
     }
     if (m.destino.kind === 'cuenta') {
@@ -578,16 +598,17 @@ export function computeAccountStats(ws: Workspace & { titulares?: Titular[] }, d
       const s = touch(m.origen.id, m.fecha)
       if (s) {
         if (m.destino.kind === 'producto') {
-          if (cross) s.enviadoOtros += m.importe
-          else s.enviado += m.importe
+          // La cuenta paga el importe más la comisión: eso es lo que sale de verdad.
+          if (cross) s.enviadoOtros += importeDeCuenta(m)
+          else s.enviado += importeDeCuenta(m)
           const pp = perProduct.get(m.origen.id)!
           const e = pp.get(m.destino.id) ?? { enviado: 0, recibido: 0 }
-          e.enviado += m.importe
+          e.enviado += importeDeCuenta(m)
           pp.set(m.destino.id, e)
         } else if (cross) {
-          s.enviadoOtros += m.importe
+          s.enviadoOtros += importeDeCuenta(m)
         } else {
-          s.transferenciasEnviadas += m.importe
+          s.transferenciasEnviadas += importeDeCuenta(m)
         }
       }
     }
@@ -679,6 +700,11 @@ export function computeTotals(ws: Workspace, positions: Map<string, Position>, a
   // El dinero que había entrado en una cuenta con saldo y se fue desviado a otro titular (p. ej. al
   // «Fondo ahorro») no engorda lo aportado: para este titular fue dinero que entró y se fue.
   if (accounts) for (const c of ws.cuentas) if (!c.externa) aportadoTotal -= accounts.get(c.id)?.dePasoNoCuenta ?? 0
+  // Lo que has puesto de verdad: lo que entró desde fuera menos lo que se fue hacia fuera. Y el
+  // resultado es la diferencia con lo que hay hoy: lo que han ganado (o perdido) tus inversiones,
+  // menos las comisiones, que es dinero que se queda el banco por el camino.
+  const aportadoNeto = round2(aportadoTotal - retiradoTotal)
+  const resultado = round2(patrimonio - aportadoNeto)
   return {
     patrimonio,
     efectivo,
@@ -689,6 +715,9 @@ export function computeTotals(ws: Workspace, positions: Map<string, Position>, a
     aportado,
     reembolsado,
     comisiones,
+    aportadoNeto,
+    resultado,
+    resultadoPct: aportadoNeto > EPS ? resultado / aportadoNeto : null,
     aportadoTotal,
     retiradoTotal,
     productosActivos,

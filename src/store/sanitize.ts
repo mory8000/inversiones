@@ -116,8 +116,14 @@ function sanitizeMovimientos(raw: unknown): Movimiento[] {
         createdAt: str(m.createdAt, nowStamp()),
         updatedAt: str(m.updatedAt, nowStamp()),
       }
-      // Comisión de la venta (con signo: negativa si te la cobran). Solo de producto a cuenta.
-      if (typeof m.comision === 'number' && Number.isFinite(m.comision) && m.comision !== 0 && origen.kind === 'producto' && destino.kind === 'cuenta') {
+      // Comisión de la compra o de la venta (con signo: negativa si te la cobran). Solo entre
+      // una cuenta y un producto.
+      if (
+        typeof m.comision === 'number' &&
+        Number.isFinite(m.comision) &&
+        m.comision !== 0 &&
+        origen.kind !== destino.kind
+      ) {
         mov.comision = Math.round(m.comision * 100) / 100
       }
       if (typeof m.programadaId === 'string' && isMonth(m.programadaMes)) {

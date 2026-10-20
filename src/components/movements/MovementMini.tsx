@@ -2,7 +2,7 @@ import { CalendarSync, Pencil, Trash2 } from 'lucide-react'
 import type { Dataset, EntityRef, Movimiento } from '../../types'
 import { entityName, movementKind, ownerOf, sameRef, type Lookup } from '../../lib/movements'
 import { fmtDate, fmtEUR } from '../../lib/format'
-import { comisionDe, importeEnCuenta } from '../../lib/finance'
+import { comisionDe, importeDeCuenta, importeEnCuenta } from '../../lib/finance'
 import { useHidden } from '../ui/Amount'
 import { cn } from '../../lib/cn'
 import { editMovement } from '../../store/ui'
@@ -20,7 +20,8 @@ export function MovementMini({ m, perspective, lookup, ds }: { m: Movimiento; pe
   // En una cuenta se ve lo que entra de verdad: el importe con la comisión ya aplicada.
   const comision = comisionDe(m)
   const hidden = useHidden()
-  const valor = incoming && perspective.kind === 'cuenta' ? importeEnCuenta(m) : m.importe
+  const valor =
+    perspective.kind === 'cuenta' ? (incoming ? importeEnCuenta(m) : importeDeCuenta(m)) : m.importe
   const other = incoming ? m.origen : m.destino
   const viewer = perspective.kind === 'cuenta' ? lookup.cuentas.get(perspective.id)?.titularId : lookup.productos.get(perspective.id)?.titularId
   const otherOwner = ownerOf(lookup, other)

@@ -196,3 +196,27 @@ export async function borrarMovimiento(ds: Dataset, m: Movimiento): Promise<bool
   accion(`Borrar movimiento (${etiquetaMovimiento(lookup, m, hidden)})`, () => useData.getState().removeMovimiento(m.id), 'Movimiento borrado')
   return true
 }
+
+/**
+ * Borrar una inversión que ya está a cero (todo vendido o sin movimientos): no queda dinero en
+ * ella, así que se puede quitar sin que cuadren mal las cuentas. Pide confirmación y se puede
+ * deshacer.
+ */
+export async function borrarProducto(ds: Dataset, p: Producto): Promise<boolean> {
+  const usan = ds.movimientos.filter((m) => m.origen.kind === 'producto' && m.origen.id === p.id).length
+  const ok = await confirmDialog({
+    title: `¿Borrar «${p.nombre}»?`,
+    message: [
+      'Está a cero: ya no queda dinero en ella, así que no cambia ningún saldo.',
+      usan > 0 ? `Se borran también sus ${usan} movimiento${usan === 1 ? '' : 's'}.` : null,
+      'Si te equivocas, pulsa «Deshacer».',
+    ]
+      .filter(Boolean)
+      .join(' '),
+    confirmLabel: 'Borrar',
+    danger: true,
+  })
+  if (!ok) return false
+  accion(`Borrar inversión «${p.nombre}»`, () => useData.getState().removeProducto(p.id), 'Inversión borrada')
+  return true
+}

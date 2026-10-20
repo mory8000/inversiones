@@ -128,10 +128,12 @@ export function MovementForm({
     const n = parseNumber(comision)
     return n === null || n === 0 ? 0 : signoComision * Math.abs(n)
   })()
-  /** Solo se puede poner comisión al vender: dinero que sale de un producto y llega a una cuenta. */
-  const admiteComision = tipo === 'reembolso' && !repetir
-  /** Lo que llega de verdad a la cuenta: el importe con la comisión aplicada. */
-  const llegaACuenta = amount === null ? null : Math.round((amount + comisionValor) * 100) / 100
+  /** Se puede poner comisión al comprar y al vender: entre una cuenta y un producto. */
+  const admiteComision = (tipo === 'reembolso' || tipo === 'inversion') && !repetir
+  /** Vender: el producto suelta dinero y la cuenta lo recibe. Comprar: al revés. */
+  const esVenta = tipo === 'reembolso'
+  /** Dinero que se mueve en la cuenta: al vender lo que llega, al comprar lo que sale. */
+  const enLaCuenta = amount === null ? null : Math.round((esVenta ? amount + comisionValor : amount - comisionValor) * 100) / 100
   const fromT = nuevaExterna ? lookup.titulares.get(externaNuevaT) : origenRef ? lookup.titulares.get(owner(origenRef) ?? '') : undefined
   const toT = destinoRef ? lookup.titulares.get(owner(destinoRef) ?? '') : undefined
   const cross = !!fromT && !!toT && fromT.id !== toT.id
@@ -151,7 +153,7 @@ export function MovementForm({
     if (o && d && o.kind !== d.kind && o.kind === m.to && d.kind === m.from) [o, d] = [d, o]
     setOrigen(o && o.kind === m.from ? refKey(o) : '')
     setDestino(d && d.kind === m.to ? refKey(d) : '')
-    if (t !== 'reembolso') setComision('')
+    if (t !== 'reembolso' && t !== 'inversion') setComision('')
     setTipo(t)
   }
 
@@ -620,10 +622,12 @@ export function MovementForm({
                 <HandCoins className="size-[18px]" />
               </span>
               <div className="min-w-0">
-                <p className="text-sm font-semibold text-slate-900">Comisión de la venta</p>
+                <p className="text-sm font-semibold text-slate-900">Comisión de la {esVenta ? 'venta' : 'compra'}</p>
                 <p className="mt-0.5 text-[13px] text-slate-500">
-                  Lo que se queda el banco o el broker por vender (o lo que te devuelve). No sale del producto: sube o baja el dinero que te
-                  llega a la cuenta.
+                  Lo que se queda el banco o el broker por {esVenta ? 'vender' : 'comprar'} (o lo que te devuelve).{' '}
+                  {esVenta
+                    ? 'No sale del producto: sube o baja el dinero que te llega a la cuenta.'
+                    : 'No entra en el producto: sube o baja el dinero que sale de tu cuenta.'}
                 </p>
               </div>
             </div>
@@ -669,16 +673,32 @@ export function MovementForm({
             </div>
             {comisionValor !== 0 && amount !== null && amount > 0 && (
               <p className="mt-3 text-[13px] text-slate-600" data-comision-resumen>
-                Vendes {hidden ? '•••••• €' : fmtEUR(amount)} y{' '}
+                {esVenta ? 'Vendes' : 'Inviertes'} {hidden ? '•••••• €' : fmtEUR(amount)} y{' '}
                 {signoComision < 0 ? (
                   <>
-                    te cobran {hidden ? '•••••• €' : fmtEUR(Math.abs(comisionValor))}: a «{dName ?? 'la cuenta'}» llegan{' '}
-                    <strong>{hidden ? '•••••• €' : fmtEUR(llegaACuenta ?? 0)}</strong>
+                    te cobran {hidden ? '•••••• €' : fmtEUR(Math.abs(comisionValor))}:{' '}
+                    {esVenta ? (
+                      <>
+                        a «{dName ?? 'la cuenta'}» llegan <strong>{hidden ? '•••••• €' : fmtEUR(enLaCuenta ?? 0)}</strong>
+                      </>
+                    ) : (
+                      <>
+                        de «{oName ?? 'la cuenta'}» salen <strong>{hidden ? '•••••• €' : fmtEUR(enLaCuenta ?? 0)}</strong>
+                      </>
+                    )}
                   </>
                 ) : (
                   <>
-                    te devuelven {hidden ? '•••••• €' : fmtEUR(comisionValor)}: a «{dName ?? 'la cuenta'}» llegan{' '}
-                    <strong>{hidden ? '•••••• €' : fmtEUR(llegaACuenta ?? 0)}</strong>
+                    te devuelven {hidden ? '•••••• €' : fmtEUR(comisionValor)}:{' '}
+                    {esVenta ? (
+                      <>
+                        a «{dName ?? 'la cuenta'}» llegan <strong>{hidden ? '•••••• €' : fmtEUR(enLaCuenta ?? 0)}</strong>
+                      </>
+                    ) : (
+                      <>
+                        de «{oName ?? 'la cuenta'}» salen <strong>{hidden ? '•••••• €' : fmtEUR(enLaCuenta ?? 0)}</strong>
+                      </>
+                    )}
                   </>
                 )}
                 .
@@ -817,8 +837,15 @@ export function MovementForm({
           )}
           {admiteComision && comisionValor !== 0 && amount !== null && amount > 0 && (
             <p className="mt-2 text-[13px] text-slate-600">
-              {signoComision < 0 ? 'De lo que suelta el producto, la comisión se la queda el banco' : 'A lo que suelta el producto se le suma lo que te devuelven'}: en
-              la cuenta entran <strong>{hidden ? '•••••• €' : fmtEUR(llegaACuenta ?? 0)}</strong> de los {hidden ? '•••••• €' : fmtEUR(amount)} vendidos.
+              {esVenta
+                ? signoComision < 0
+                  ? 'De lo que suelta el producto, la comisión se la queda el banco'
+                  : 'A lo que suelta el producto se le suma lo que te devuelven'
+                : signoComision < 0
+                  ? 'Además de lo que se invierte, la comisión la pagas tú'
+                  : 'De lo que cuesta, te devuelven parte'}
+              : {esVenta ? 'en' : 'de'} la cuenta {esVenta ? 'entran' : 'salen'} <strong>{hidden ? '•••••• €' : fmtEUR(enLaCuenta ?? 0)}</strong>,{' '}
+              {esVenta ? 'de los' : 'para los'} {hidden ? '•••••• €' : fmtEUR(amount)} {esVenta ? 'vendidos' : 'invertidos'}.
             </p>
           )}
         </div>

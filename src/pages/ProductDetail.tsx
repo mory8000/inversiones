@@ -178,10 +178,10 @@ export function ProductDetail({ id }: { id: string }) {
               <Line label="Invertido" value={pos.invertido} strong />
               <Line label="Reembolsado a cuentas" value={pos.reembolsado} sign="−" />
               <Line label="Enviado por traspasos" value={pos.traspasoSalida} sign="−" />
-              {/* Las comisiones no salen del producto: se quedan (o se añaden) por el camino, así que
-                  no tocan el capital. Se enseñan aparte, como lo que han costado las ventas. */}
+              {/* Las comisiones no entran ni salen del producto: las cobra (o las devuelve) el banco
+                  por el camino, así que no tocan el capital. Se enseñan aparte. */}
               {Math.abs(pos.comisiones) > 0.005 && (
-                <Line label={pos.comisiones > 0 ? 'Comisiones de las ventas' : 'Comisiones devueltas'} value={pos.comisiones} sub />
+                <Line label={pos.comisiones > 0 ? 'Comisiones pagadas' : 'Comisiones devueltas'} value={pos.comisiones} sub />
               )}
               <div className="my-1 border-t border-dashed border-slate-200" />
               <Line label="Capital invertido" value={pos.capital} sign="=" strong />

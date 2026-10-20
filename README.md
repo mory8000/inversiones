@@ -71,14 +71,23 @@ Sustituye al antiguo `Inversiones.xlsx` y mantiene sus mismos conceptos: titular
   transferencia mensual que empieza en el pasado, se comprueba que haya dinero para las que ya tocan. Vale
   también para lo que va **de paso** a otro titular (como la transferencia mensual al «Fondo ahorro»): sale de la
   cuenta, así que se comprueba igual.
-- **Comisiones al vender**: al **reembolsar** (vender) un producto se puede apuntar la comisión y si **resta** (te la
-  cobran: llega menos dinero a la cuenta) o **suma** (te la devuelven: llega más). El producto suelta el importe
-  íntegro —la comisión no es dinero del fondo—, así que el capital no cambia: lo que se queda el bróker simplemente
-  no llega a la cuenta, y eso se ve en el saldo real de la cuenta, en el movimiento («Comisión −5,00 €»), en el
-  cálculo del saldo del producto y en el CSV.
+- **Comisiones al comprar y al vender**: al **invertir** y al **reembolsar** (vender) se puede apuntar la comisión y si
+  **resta** (te la cobran) o **suma** (te la devuelven). El importe es siempre lo que se invierte o lo que se vende
+  —la comisión no es dinero del producto—, así que su capital no cambia:
+  - Al **comprar**: el producto recibe el importe y la cuenta paga el importe **más** la comisión.
+  - Al **vender**: el producto suelta el importe y la cuenta recibe el importe **menos** la comisión.
+
+  Ese dinero se ve en el saldo real de la cuenta, en el movimiento («Comisión −5,00 €»), en el cálculo del saldo del
+  producto («Comisiones pagadas») y en el CSV. Conta también para no dejar gastar más de lo que hay.
 - **Movimientos**: todos los movimientos de todos los titulares, con su origen (**De**) y destino (**A**) y de quién
   es cada uno, agrupados por meses. Filtros por titular, tipo, cuenta o producto, tipo de producto y periodo;
   buscador; y exportación a Excel (CSV).
+- **De dónde sale lo que tienes**: en la tarjeta de cada titular, el patrimonio se desglosa en tres cifras que
+  suman: **Aportado** (lo que has puesto tú, desde fuera, menos lo que te has llevado fuera: sin ganancias),
+  **Beneficio / pérdida** (lo que han ganado o perdido tus inversiones, ya descontadas las comisiones) y
+  **Total** (lo que tienes hoy). Debajo se ve cuánto hay en inversiones y cuánto en cuentas.
+- **Borrar inversiones que están a cero**: en *Mis inversiones*, las que ya no tienen dinero (vendidas del todo o
+  recién creadas) llevan un botón **«Borrar»** en la esquina; pide confirmación y se puede deshacer.
 - **Desde cuándo cuenta la evolución** (en *Ajustes*): las líneas del gráfico empiezan un día fijo (por defecto, el
   **19/10/2026**, el de los valores reales del banco): lo anterior no se dibuja. Desde ese día cuentan lo que
   aportes, lo que saques y lo que ganen o pierdan tus inversiones. Se puede cambiar a cualquier otra fecha.

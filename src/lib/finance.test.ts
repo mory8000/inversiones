@@ -813,6 +813,117 @@ describe('comisiones al vender', () => {
     expect(pos.comisiones).toBe(10)
   })
 
+  it('al comprar te la cobran también: la cuenta paga el importe más la comisión', () => {
+    // Se invierten 1.000 € en el fondo con 5 € de comisión: el fondo recibe 1.000 y salen 1.005.
+    const m = mov('2026-10-20', C('MI'), P('F'), 1000)
+    const movs = [{ ...m, comision: -5 }]
+    const pos = evaluateProduct(ws(movs).productos[0], movs, { asOf: '2026-10-20', mode: 'actual' })
+    // Lo que se invierte es lo que entra en el producto: la comisión no cuenta como inversión.
+    expect(pos.aportado).toBe(1000)
+    expect(pos.capital).toBe(1000)
+    expect(pos.comisiones).toBe(5)
+
+    const acc = computeAccountStats(ws(movs)).get('MI')!
+    expect(acc.salidas).toBe(1005)
+    expect(acc.enviado).toBe(1005)
+    expect(acc.saldo).toBe(-1005)
+    expect(acc.porProducto).toEqual([{ productoId: 'F', enviado: 1005, recibido: 0 }])
+    // El patrimonio: 1.000 en el fondo y 1.005 menos en la cuenta → los 5 € de comisión se pierden.
+    const totals = computeTotals(ws(movs), computePositions(ws(movs), '2026-10-20'), computeAccountStats(ws(movs)))
+    expect(totals.comisiones).toBe(5)
+    expect(totals.patrimonio).toBe(-5)
+  })
+
+  it('al comprar, lo que te devuelven hace que la cuenta pague menos', () => {
+    const m = mov('2026-10-20', C('MI'), P('F'), 1000)
+    const movs = [{ ...m, comision: 3 }]
+    const acc = computeAccountStats(ws(movs)).get('MI')!
+    expect(acc.salidas).toBe(997)
+    expect(acc.saldo).toBe(-997)
+    const pos = evaluateProduct(ws(movs).productos[0], movs, { asOf: '2026-10-20', mode: 'actual' })
+    expect(pos.aportado).toBe(1000)
+    expect(pos.comisiones).toBe(-3)
+  })
+
+  it('no se puede invertir más dinero del que hay: la comisión también cuenta', () => {
+    // En la cuenta hay 1.000 (traídos de fuera). Invertir 1.000 con 5 € de comisión no cabe.
+    const externa = { id: 'EXT', titularId: 'T', nombre: 'Nómina', entidad: '', iban: '', color: '#0EA5E9', notas: '', externa: true, createdAt: '' }
+    const base: Workspace = {
+      cuentas: [
+        { id: 'MI', titularId: 'T', nombre: 'MyInvestor', entidad: '', iban: '', color: '#2447B8', notas: '', externa: false, createdAt: '' },
+        externa,
+      ],
+      productos: ws([]).productos,
+      movimientos: [mov('2026-10-01', C('EXT'), C('MI'), 1000)],
+    }
+    const compra = { ...mov('2026-10-20', C('MI'), P('F'), 1000), comision: -5 }
+    const conComision = [...base.movimientos, compra]
+    expect(saldoEn(base.movimientos, 'MI', '2026-10-20')).toBe(1000)
+    expect(saldoEn(conComision, 'MI', '2026-10-20')).toBe(-5)
+    expect(faltaDinero(base.movimientos, conComision, 'MI', '2026-10-20')).toMatchObject({ falta: 5 })
+    // Sin comisión sí cabe justo.
+    const sinComision = [...base.movimientos, mov('2026-10-20', C('MI'), P('F'), 1000)]
+    expect(faltaDinero(base.movimientos, sinComision, 'MI', '2026-10-20')).toBeNull()
+  })
+
+  it('Aportado + Beneficio/pérdida = Total: el desglose de la tarjeta cuadra', () => {
+    // 1.000 € traídos de una cuenta externa a un fondo que ha ganado un 10 %.
+    const externa: Cuenta = {
+      id: 'EXT',
+      titularId: 'T',
+      nombre: 'Nómina',
+      entidad: '',
+      iban: '',
+      color: '#0EA5E9',
+      notas: '',
+      externa: true,
+      createdAt: '2025-01-01T00:00:00.000Z',
+    }
+    const base = ws([mov('2026-10-01', C('EXT'), P('F'), 1000)])
+    const escenario: Workspace = {
+      cuentas: [...base.cuentas, externa],
+      productos: [prod('F', 'fondo', { valoraciones: [val('2026-10-19', 'porcentaje', 10)] })],
+      movimientos: [mov('2026-10-01', C('EXT'), P('F'), 1000)],
+    }
+    const accounts = computeAccountStats(escenario)
+    const totals = computeTotals(escenario, computePositions(escenario, '2026-10-19'), accounts)
+    expect(totals.patrimonio).toBeCloseTo(1100, 6)
+    expect(totals.aportadoNeto).toBeCloseTo(1000, 6)
+    expect(totals.resultado).toBeCloseTo(100, 6)
+    expect(totals.resultadoPct).toBeCloseTo(0.1, 6)
+    // Y cuadra: lo aportado más el resultado es lo que hay hoy.
+    expect(totals.aportadoNeto + totals.resultado).toBeCloseTo(totals.patrimonio, 6)
+  })
+
+  it('el dinero que sale hacia fuera baja lo aportado (y el resultado no lo cuenta como pérdida)', () => {
+    const externa: Cuenta = {
+      id: 'EXT',
+      titularId: 'T',
+      nombre: 'Nómina',
+      entidad: '',
+      iban: '',
+      color: '#0EA5E9',
+      notas: '',
+      externa: true,
+      createdAt: '2025-01-01T00:00:00.000Z',
+    }
+    const escenario: Workspace = {
+      cuentas: [ws([]).cuentas[0], externa],
+      productos: [prod('F', 'fondo', { valoraciones: [val('2026-10-19', 'porcentaje', 10)] })],
+      movimientos: [
+        mov('2026-10-01', C('EXT'), C('MI'), 1000), // traigo 1.000
+        mov('2026-10-02', C('MI'), P('F'), 600), // invierto 600
+        mov('2026-10-03', C('MI'), C('EXT'), 100), // me llevo 100 fuera
+      ],
+    }
+    const accounts = computeAccountStats(escenario)
+    const totals = computeTotals(escenario, computePositions(escenario, '2026-10-19'), accounts)
+    // Aportado 1.000 − 100 que saqué = 900. El fondo (600) ha ganado 60.
+    expect(totals.aportadoNeto).toBeCloseTo(900, 6)
+    expect(totals.resultado).toBeCloseTo(60, 6)
+    expect(totals.patrimonio).toBeCloseTo(960, 6)
+  })
+
   it('la comisión viaja en el CSV: lo que se vende, la comisión y lo que llega', () => {
     const movs = [venta(1000, -5)]
     const csv = movementsToCSV(movs, buildLookup({ ...ws(movs), titulares: [], programadas: [] } as Dataset))

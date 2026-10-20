@@ -3,7 +3,7 @@ import type { EntityRef, Movimiento } from '../../types'
 import { entityName, isConSaldo, isCross, isDePaso, isExterna, movementKind, ownerId, ownerOf, sameRef, type Lookup } from '../../lib/movements'
 import { MOVEMENT_META, PRODUCT_META, kindMeta } from '../../lib/meta'
 import { fmtDate, fmtEUR } from '../../lib/format'
-import { comisionDe, importeEnCuenta } from '../../lib/finance'
+import { comisionDe, importeDeCuenta, importeEnCuenta } from '../../lib/finance'
 import { useHidden } from '../ui/Amount'
 import { cn } from '../../lib/cn'
 import { Amount } from '../ui/Amount'
@@ -104,10 +104,11 @@ export function MovementRow({ m, lookup, perspective, titularId }: { m: Movimien
   const label = movementLabel(m, lookup, perspective, titularId)
   let sign = 0
   if (perspective) sign = sameRef(m.destino, perspective) ? 1 : sameRef(m.origen, perspective) ? -1 : 0
-  // En una cuenta se ve lo que entra de verdad: el importe con la comisión ya restada o sumada.
+  // En una cuenta se ve el dinero que se mueve de verdad: el importe con la comisión ya aplicada.
   const comision = comisionDe(m)
-  const entraEnCuenta = !!perspective && perspective.kind === 'cuenta' && sameRef(m.destino, perspective)
-  const amountValue = sign === 0 ? m.importe : sign * (entraEnCuenta ? importeEnCuenta(m) : m.importe)
+  const valorEnCuenta =
+    perspective?.kind === 'cuenta' ? (sameRef(m.destino, perspective) ? importeEnCuenta(m) : importeDeCuenta(m)) : m.importe
+  const amountValue = sign === 0 ? m.importe : sign * valorEnCuenta
   const amountClass = sign > 0 ? 'text-emerald-600' : 'text-slate-900'
   const origenName = entityName(lookup, m.origen)
   const destinoName = entityName(lookup, m.destino)

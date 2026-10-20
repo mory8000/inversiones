@@ -1,9 +1,12 @@
-import { CalendarClock } from 'lucide-react'
+import { CalendarClock, Trash2 } from 'lucide-react'
 import type { Cuenta, Producto } from '../types'
 import type { AccountStats, DepositInfo, Position } from '../lib/finance'
 import { PRODUCT_META } from '../lib/meta'
 import { fmtDate, fmtPct, maskIban } from '../lib/format'
+import { cn } from '../lib/cn'
 import { navigate, paths } from '../lib/router'
+import { useDataset } from '../store/data'
+import { borrarProducto } from '../store/acciones'
 import { Amount, GainBadge } from './ui/Amount'
 import { AccountAvatar, ProductAvatar } from './ui/icons'
 
@@ -43,41 +46,61 @@ export function StatusBadge({ pos }: { pos: Position }) {
 }
 
 export function ProductCard({ p, pos }: { p: Producto; pos: Position }) {
+  const ds = useDataset()
   const meta = PRODUCT_META[p.tipo]
   const subtitle = [p.entidad, p.isin].filter(Boolean).join(' · ')
   const closed = pos.estado === 'cerrado'
+  // Solo se puede borrar la inversión si está a cero: si queda dinero, no tiene sentido.
+  const borrable = pos.estado !== 'activo'
   return (
-    <button
-      type="button"
-      onClick={() => navigate(paths.producto(p.id))}
-      className="group flex w-full flex-col rounded-2xl border border-slate-200/80 bg-white p-4 text-left shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md focus-visible:outline-2 focus-visible:outline-brand-500"
-    >
-      <div className="flex items-start gap-3">
-        <ProductAvatar tipo={p.tipo} />
-        <div className="min-w-0 flex-1">
-          <div className="truncate font-semibold text-slate-900">{p.nombre}</div>
-          <div className="truncate text-xs text-slate-500">{subtitle || meta.label}</div>
+    <div className="group relative transition hover:-translate-y-0.5">
+      {/* La tarjeta entera abre la inversión; el botón de borrar va aparte, encima. */}
+      <button
+        type="button"
+        onClick={() => navigate(paths.producto(p.id))}
+        aria-label={`Abrir «${p.nombre}»`}
+        className="absolute inset-0 z-0 rounded-2xl focus-visible:outline-2 focus-visible:outline-brand-500"
+      />
+      <div className="pointer-events-none flex flex-col rounded-2xl border border-slate-200/80 bg-white p-4 text-left shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition group-hover:border-slate-300 group-hover:shadow-md">
+        <div className="flex items-start gap-3">
+          <ProductAvatar tipo={p.tipo} />
+          <div className="min-w-0 flex-1">
+            <div className="truncate font-semibold text-slate-900">{p.nombre}</div>
+            <div className="truncate text-xs text-slate-500">{subtitle || meta.label}</div>
+          </div>
+          <StatusBadge pos={pos} />
         </div>
-        <StatusBadge pos={pos} />
-      </div>
-      <div className="mt-4 flex flex-wrap items-end justify-between gap-2">
-        <div className="min-w-0">
-          <div className="text-xs text-slate-500">{closed ? 'Resultado final' : 'Saldo'}</div>
-          <Amount value={closed ? pos.ganancia : pos.saldo} sign={closed} tone={closed} className="text-xl font-bold text-slate-900" />
+        <div className="mt-4 flex flex-wrap items-end justify-between gap-2">
+          <div className="min-w-0">
+            <div className="text-xs text-slate-500">{closed ? 'Resultado final' : 'Saldo'}</div>
+            <Amount value={closed ? pos.ganancia : pos.saldo} sign={closed} tone={closed} className="text-xl font-bold text-slate-900" />
+          </div>
+          {!closed && <GainBadge size="sm" ganancia={pos.ganancia} rentabilidad={pos.rentabilidad} />}
         </div>
-        {!closed && <GainBadge size="sm" ganancia={pos.ganancia} rentabilidad={pos.rentabilidad} />}
+        {p.tipo === 'deposito' && pos.deposito && !closed && pos.estado !== 'sin-movimientos' && <DepositProgress info={pos.deposito} compact />}
+        <div className={cn('mt-3 flex items-center justify-between gap-2 border-t border-slate-100 pt-3 text-xs text-slate-500', borrable && 'pr-9')}>
+          <span>
+            {closed ? 'Invertido ' : 'Capital '}
+            <Amount value={closed ? pos.invertido : pos.capital} className="font-semibold text-slate-700" />
+          </span>
+          <span>
+            {pos.numMovimientos} movimiento{pos.numMovimientos === 1 ? '' : 's'}
+          </span>
+        </div>
       </div>
-      {p.tipo === 'deposito' && pos.deposito && !closed && pos.estado !== 'sin-movimientos' && <DepositProgress info={pos.deposito} compact />}
-      <div className="mt-3 flex items-center justify-between gap-2 border-t border-slate-100 pt-3 text-xs text-slate-500">
-        <span>
-          {closed ? 'Invertido ' : 'Capital '}
-          <Amount value={closed ? pos.invertido : pos.capital} className="font-semibold text-slate-700" />
-        </span>
-        <span>
-          {pos.numMovimientos} movimiento{pos.numMovimientos === 1 ? '' : 's'}
-        </span>
-      </div>
-    </button>
+      {borrable && (
+        <button
+          type="button"
+          data-borrar-producto={p.id}
+          aria-label={`Borrar «${p.nombre}»`}
+          title="Borrar esta inversión (está a cero)"
+          onClick={() => void borrarProducto(ds, p)}
+          className="absolute right-3 bottom-3 z-10 inline-flex size-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-400 transition-colors hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 focus-visible:outline-2 focus-visible:outline-brand-500"
+        >
+          <Trash2 className="size-4" />
+        </button>
+      )}
+    </div>
   )
 }
 
