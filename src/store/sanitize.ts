@@ -4,7 +4,7 @@
 // crearse, así que estas funciones tienen que estar inicializadas antes.
 
 import type { CambioTae, Cuenta, Dataset, EntityRef, Movimiento, PersistedData, Producto, Programada, Titular, Workspace } from '../types'
-import { isValidISODate, todayISO } from '../lib/dates'
+import { isValidISODate, LINEA_DESDE_POR_DEFECTO, todayISO } from '../lib/dates'
 import { buildDemoDataset } from '../lib/demo'
 import { nowStamp, uid } from '../lib/id'
 import { inferMovementType } from '../lib/meta'
@@ -22,7 +22,7 @@ import { conCuentaPrincipal, defaultTitularName } from '../lib/titulares'
  * - 5: los depósitos pueden cambiar de interés (`cambiosTae`). (Durante un tiempo también se
  *      guardó `fueraDelTotal`, para un TOTAL de Inicio que ya no existe: se ignora).
  */
-export const DATA_VERSION = 5
+export const DATA_VERSION = 6
 
 /** Nombre del único titular que creaba la versión 1. */
 const V1_DEFAULT_NAME = 'Titular principal'
@@ -115,6 +115,10 @@ function sanitizeMovimientos(raw: unknown): Movimiento[] {
         concepto: str(m.concepto),
         createdAt: str(m.createdAt, nowStamp()),
         updatedAt: str(m.updatedAt, nowStamp()),
+      }
+      // Comisión de la venta (con signo: negativa si te la cobran). Solo de producto a cuenta.
+      if (typeof m.comision === 'number' && Number.isFinite(m.comision) && m.comision !== 0 && origen.kind === 'producto' && destino.kind === 'cuenta') {
+        mov.comision = Math.round(m.comision * 100) / 100
       }
       if (typeof m.programadaId === 'string' && isMonth(m.programadaMes)) {
         mov.programadaId = m.programadaId
@@ -248,6 +252,7 @@ export function sanitizeData(raw: unknown): PersistedData | null {
   const version = typeof raw.version === 'number' ? raw.version : 0
   if (version < 4) data = upgradeV4(data)
   if (version < 5) data = upgradeV5(data)
+  if (version < 6) data = upgradeV6(data)
   return { version: DATA_VERSION, ...data, hideAmounts }
 }
 
@@ -270,6 +275,16 @@ function upgradeV4(data: Omit<PersistedData, 'version' | 'hideAmounts'>): Omit<P
  */
 function upgradeV5(data: Omit<PersistedData, 'version' | 'hideAmounts'>): Omit<PersistedData, 'version' | 'hideAmounts'> {
   return { ...data, ejemplo: data.ejemplo ? buildDemoDataset(todayISO()) : null }
+}
+
+/**
+ * Versión 6: la evolución pasa a contar desde un día fijo (el de los valores reales del banco)
+ * en vez de desde «ayer», así que el día guardado se mueve a ese si estaba antes. Los datos del
+ * usuario no cambian.
+ */
+function upgradeV6(data: Omit<PersistedData, 'version' | 'hideAmounts'>): Omit<PersistedData, 'version' | 'hideAmounts'> {
+  const fijar = (ds: Dataset): Dataset => (!ds.lineaDesde || ds.lineaDesde < LINEA_DESDE_POR_DEFECTO ? { ...ds, lineaDesde: LINEA_DESDE_POR_DEFECTO } : ds)
+  return { ...data, datos: fijar(data.datos), ejemplo: data.ejemplo ? fijar(data.ejemplo) : null }
 }
 
 /** Resumen de un conjunto de datos (para confirmar antes de restaurar una copia). */

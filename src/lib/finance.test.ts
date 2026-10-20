@@ -727,3 +727,98 @@ describe('el principal y el «Fondo ahorro», cada uno por su lado', () => {
   })
 
 })
+
+describe('comisiones al vender', () => {
+  // Una cuenta con saldo (MyInvestor) y un fondo del mismo titular.
+  const ws = (movs: Movimiento[], valor: number | null = null): Workspace => {
+    const cuenta: Cuenta = {
+      id: 'MI',
+      titularId: 'T',
+      nombre: 'MyInvestor',
+      entidad: '',
+      iban: '',
+      color: '#2447B8',
+      notas: '',
+      externa: false,
+      createdAt: '2025-01-01T00:00:00.000Z',
+    }
+    return {
+      cuentas: [cuenta],
+      productos: [prod('F', 'fondo', { valoraciones: valor === null ? [] : [val('2026-10-19', 'valor', valor)] })],
+      movimientos: movs,
+    }
+  }
+  const venta = (importe: number, comision?: number): Movimiento => {
+    const m = mov('2026-10-20', P('F'), C('MI'), importe)
+    return comision === undefined ? m : { ...m, comision }
+  }
+
+  it('lo que te cobran no llega a la cuenta, pero el producto suelta el importe íntegro', () => {
+    // Se compra por 1.000 y se vende todo por 1.000 con 5 € de comisión.
+    const movs = [mov('2026-01-10', C('MI'), P('F'), 1000), venta(1000, -5)]
+    const pos = evaluateProduct(ws(movs).productos[0], movs, { asOf: '2026-10-20', mode: 'actual' })
+    // El producto suelta los 1.000: la comisión no es dinero del fondo.
+    expect(pos.reembolsado).toBe(1000)
+    expect(pos.capital).toBe(0)
+    // Y se apunta lo que ha costado vender.
+    expect(pos.comisiones).toBe(5)
+
+    const acc = computeAccountStats(ws(movs)).get('MI')!
+    // Entran 1.000 (la compra no, que salió del saldo): la venta deja 995, no 1.000.
+    expect(acc.entradas).toBe(995)
+    expect(acc.recibido).toBe(995)
+    expect(acc.salidas).toBe(1000)
+    expect(acc.saldo).toBe(-5)
+    expect(acc.porProducto).toEqual([{ productoId: 'F', enviado: 1000, recibido: 995 }])
+
+    const totals = computeTotals(ws(movs), computePositions(ws(movs), '2026-10-20'), computeAccountStats(ws(movs)))
+    expect(totals.comisiones).toBe(5)
+    // Los 5 € de comisión se han perdido por el camino: el dinero total baja.
+    expect(totals.patrimonio).toBe(-5)
+  })
+
+  it('lo que te devuelven llega de más a la cuenta', () => {
+    const movs = [mov('2026-01-10', C('MI'), P('F'), 1000), venta(1000, 3)]
+    const acc = computeAccountStats(ws(movs)).get('MI')!
+    expect(acc.entradas).toBe(1003)
+    expect(acc.saldo).toBe(3)
+    const pos = evaluateProduct(ws(movs).productos[0], movs, { asOf: '2026-10-20', mode: 'actual' })
+    expect(pos.reembolsado).toBe(1000)
+    expect(pos.comisiones).toBe(-3)
+  })
+
+  it('sin comisión, todo llega igual que antes', () => {
+    const movs = [mov('2026-01-10', C('MI'), P('F'), 1000), venta(400)]
+    const acc = computeAccountStats(ws(movs)).get('MI')!
+    expect(acc.entradas).toBe(400)
+    expect(acc.saldo).toBe(-600)
+    const pos = evaluateProduct(ws(movs).productos[0], movs, { asOf: '2026-10-20', mode: 'actual' })
+    expect(pos.comisiones).toBe(0)
+  })
+
+  it('el saldo día a día de la cuenta cuenta lo que llega de verdad (para no dejar gastar de más)', () => {
+    const sinComision = [mov('2026-01-10', C('MI'), P('F'), 1000), venta(600)]
+    const conComision = [mov('2026-01-10', C('MI'), P('F'), 1000), venta(600, -20)]
+    expect(saldoEn(sinComision, 'MI', '2026-10-20')).toBe(-400)
+    expect(saldoEn(conComision, 'MI', '2026-10-20')).toBe(-420)
+    expect(saldoMinimoDesde(conComision, 'MI', '2026-10-20')).toBe(-420)
+  })
+
+  it('vender con comisión deja el saldo del producto como estaba (la comisión no es del fondo)', () => {
+    // Valor de 900 el 19/10 y venta de todo el fondo el 20/10 con 10 € de comisión.
+    const movs = [mov('2026-01-10', C('MI'), P('F'), 1000), venta(900, -10)]
+    const pos = evaluateProduct(ws(movs, 900).productos[0], movs, { asOf: '2026-10-20', mode: 'actual' })
+    expect(pos.saldo).toBe(0)
+    expect(pos.ganancia).toBe(-100)
+    expect(pos.comisiones).toBe(10)
+  })
+
+  it('la comisión viaja en el CSV: lo que se vende, la comisión y lo que llega', () => {
+    const movs = [venta(1000, -5)]
+    const csv = movementsToCSV(movs, buildLookup({ ...ws(movs), titulares: [], programadas: [] } as Dataset))
+    const fila = csv.split('\r\n')[1].split(';')
+    expect(fila[8]).toBe('1000,00') // Importe
+    expect(fila[9]).toBe('-5,00') // Comisión
+    expect(fila[10]).toBe('995,00') // Llega a la cuenta
+  })
+})

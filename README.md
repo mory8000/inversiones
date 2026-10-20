@@ -71,9 +71,17 @@ Sustituye al antiguo `Inversiones.xlsx` y mantiene sus mismos conceptos: titular
   transferencia mensual que empieza en el pasado, se comprueba que haya dinero para las que ya tocan. Vale
   también para lo que va **de paso** a otro titular (como la transferencia mensual al «Fondo ahorro»): sale de la
   cuenta, así que se comprueba igual.
+- **Comisiones al vender**: al **reembolsar** (vender) un producto se puede apuntar la comisión y si **resta** (te la
+  cobran: llega menos dinero a la cuenta) o **suma** (te la devuelven: llega más). El producto suelta el importe
+  íntegro —la comisión no es dinero del fondo—, así que el capital no cambia: lo que se queda el bróker simplemente
+  no llega a la cuenta, y eso se ve en el saldo real de la cuenta, en el movimiento («Comisión −5,00 €»), en el
+  cálculo del saldo del producto y en el CSV.
 - **Movimientos**: todos los movimientos de todos los titulares, con su origen (**De**) y destino (**A**) y de quién
   es cada uno, agrupados por meses. Filtros por titular, tipo, cuenta o producto, tipo de producto y periodo;
   buscador; y exportación a Excel (CSV).
+- **Desde cuándo cuenta la evolución** (en *Ajustes*): las líneas del gráfico empiezan un día fijo (por defecto, el
+  **19/10/2026**, el de los valores reales del banco): lo anterior no se dibuja. Desde ese día cuentan lo que
+  aportes, lo que saques y lo que ganen o pierdan tus inversiones. Se puede cambiar a cualquier otra fecha.
 - **Flujo del dinero**: diagrama de bandas en tres columnas — *de dónde viene* (tus cuentas, traspasos y la
   rentabilidad), *dónde está* (tus productos) y *a dónde va* (reembolsos, traspasos y lo que sigue invertido).
   Toca una caja para ver su recorrido. Se puede ver todo el histórico o un periodo concreto.

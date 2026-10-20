@@ -1,6 +1,7 @@
 import { useRef, type ReactNode } from 'react'
 import {
   Calculator,
+  CalendarClock,
   Check,
   Crown,
   Download,
@@ -19,6 +20,7 @@ import { exportBackup, sanitizeData, useData } from '../store/data'
 import { useFinance, type TitularFinance } from '../store/useFinance'
 import { confirmDialog, openTitular, openValores, toast } from '../store/ui'
 import { accion } from '../store/deshacer'
+import { isValidISODate, LINEA_DESDE_POR_DEFECTO } from '../lib/dates'
 import { movementsToCSV } from '../lib/movements'
 import { downloadFile } from '../lib/download'
 import { isStandalone, useInstallPrompt } from '../lib/install'
@@ -103,6 +105,8 @@ export function Settings() {
   const clearData = useData((s) => s.clearData)
   const resetAll = useData((s) => s.resetAll)
   const importData = useData((s) => s.importData)
+  const lineaDesde = useData((s) => s.datos.lineaDesde) ?? LINEA_DESDE_POR_DEFECTO
+  const setLineaDesde = useData((s) => s.setLineaDesde)
   const install = useInstallPrompt()
   const fileRef = useRef<HTMLInputElement>(null)
 
@@ -224,6 +228,27 @@ export function Settings() {
                     }}
                   />
                 </>
+              }
+            />
+            <Row
+              icon={<CalendarClock className="size-[18px]" />}
+              title="Desde cuándo cuenta la evolución"
+              text="Las líneas del gráfico empiezan ese día: antes no se dibuja nada. Cuentan desde ahí lo que aportes, lo que saques y lo que ganen o pierdan tus inversiones."
+              action={
+                <input
+                  id="ajustes-linea-desde"
+                  type="date"
+                  value={lineaDesde}
+                  max={today}
+                  aria-label="Día desde el que cuenta la evolución"
+                  className="h-9 rounded-xl border border-slate-300 bg-white px-3 text-[15px] text-slate-900 outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-100"
+                  onChange={(e) => {
+                    const v = e.target.value
+                    if (!isValidISODate(v)) return
+                    setLineaDesde(v)
+                    toast(`La evolución cuenta desde el ${v.slice(8, 10)}/${v.slice(5, 7)}/${v.slice(0, 4)}`)
+                  }}
+                />
               }
             />
             <Row

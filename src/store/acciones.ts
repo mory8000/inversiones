@@ -143,7 +143,11 @@ export function sacarDinero(ds: Dataset, cuentaId: string) {
 }
 
 /** Nombre de un movimiento para el historial («Deshacer») y los avisos. */
-export function etiquetaMovimiento(lookup: Lookup, m: Pick<Movimiento, 'origen' | 'destino' | 'importe'>, hidden = false): string {
+export function etiquetaMovimiento(
+  lookup: Lookup,
+  m: Pick<Movimiento, 'origen' | 'destino' | 'importe' | 'comision'>,
+  hidden = false,
+): string {
   const imp = hidden ? '' : ` ${fmtEUR(m.importe)}`
   const o = `«${entityName(lookup, m.origen)}»`
   const d = `«${entityName(lookup, m.destino)}»`
@@ -153,7 +157,11 @@ export function etiquetaMovimiento(lookup: Lookup, m: Pick<Movimiento, 'origen' 
     return `Transferencia:${imp} de ${o} a ${d}`
   }
   if (m.destino.kind === 'producto' && m.origen.kind === 'cuenta') return `Aportación:${imp} a ${d}`
-  if (m.origen.kind === 'producto' && m.destino.kind === 'cuenta') return `Retirada:${imp} de ${o}`
+  // Al retirar, si hay comisión se dice lo que llega de verdad a la cuenta.
+  if (m.origen.kind === 'producto' && m.destino.kind === 'cuenta') {
+    const c = m.comision ?? 0
+    return c === 0 || hidden ? `Retirada:${imp} de ${o}` : `Retirada:${imp} de ${o} (con comisión, llegan ${fmtEUR(m.importe + c)})`
+  }
   return `Traspaso:${imp} de ${o} a ${d}`
 }
 

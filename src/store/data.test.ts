@@ -130,7 +130,7 @@ describe('datos guardados', () => {
     expect(f.byTitular.get('t2')!.totals.patrimonio).toBe(300)
     expect(f.byTitular.get('t1')!.totals.patrimonio).toBeGreaterThan(20000)
 
-    expect(saved(storage).version).toBe(5)
+    expect(saved(storage).version).toBe(6)
     expect(saved(storage).state.datos.titulares).toHaveLength(2)
   })
 
@@ -152,6 +152,9 @@ describe('datos guardados', () => {
     expect(s.datos.cuentas).toHaveLength(1)
     expect(s.datos.cuentas[0]).toMatchObject({ nombre: 'MyInvestor', externa: false, titularId: s.datos.titulares[0].id })
     expect(s.ejemplo).toBeNull()
+    // La evolución empieza a contar en el día fijo de los valores reales (no en «ayer»).
+    const { LINEA_DESDE_POR_DEFECTO } = await import('../lib/dates')
+    expect(s.datos.lineaDesde).toBe(LINEA_DESDE_POR_DEFECTO)
   })
 
   it('los cambios se guardan y sobreviven a una recarga', async () => {
@@ -180,7 +183,23 @@ describe('datos guardados', () => {
     const v1 = sanitizeData({ version: 1, titulares: [{ id: 't1', codigo: '7', nombre: 'Titular principal' }], activeTitularId: 't1', workspaces: {} })
     // Tiene código, así que se respeta el nombre que tenía.
     expect(v1?.datos.titulares.map((t) => t.nombre)).toEqual(['Titular principal', 'Titular 2'])
-    expect(v1?.version).toBe(5)
+    expect(v1?.version).toBe(6)
+  })
+
+  it('versión 6: la evolución pasa a contar desde el día fijo (si empezaba antes); lo puesto a mano se respeta', async () => {
+    const { sanitizeData } = await import('./sanitize')
+    const { LINEA_DESDE_POR_DEFECTO } = await import('../lib/dates')
+    const datos = { titulares: [{ id: 't1', codigo: '', nombre: 'Ana', createdAt: '' }], cuentas: [], productos: [], movimientos: [], programadas: [] }
+    const copia = (lineaDesde: string, version: number) => sanitizeData({ version, datos: { ...datos, lineaDesde }, ejemplo: null, verEjemplo: false, hideAmounts: false })
+    // Empezaba antes (ayer de cuando se abrió por primera vez): se mueve al día fijo.
+    expect(copia('2026-10-10', 5)?.datos.lineaDesde).toBe(LINEA_DESDE_POR_DEFECTO)
+    // Si no estaba, se pone.
+    const sinFecha = sanitizeData({ version: 5, datos, ejemplo: null, verEjemplo: false, hideAmounts: false })
+    expect(sinFecha?.datos.lineaDesde).toBe(LINEA_DESDE_POR_DEFECTO)
+    // Un día elegido a mano (posterior) se respeta, también al volver a pasar por la migración.
+    expect(copia('2026-12-01', 5)?.datos.lineaDesde).toBe('2026-12-01')
+    // Y los datos que ya están en la versión 6 no se tocan.
+    expect(copia('2026-10-10', 6)?.datos.lineaDesde).toBe('2026-10-10')
   })
 })
 
@@ -486,7 +505,7 @@ describe('cuenta principal «MyInvestor» y cuentas externas (versión 4)', () =
     expect(f.accounts.get('c1')).toMatchObject({ saldo: 400, entradas: 400, salidas: 0, aportaciones: 400, dePaso: 600, dePasoNoCuenta: 600 })
     expect(luis().totals).toMatchObject({ efectivo: 400, patrimonio: 400, aportadoTotal: 400, capital: 0 })
     expect(ahorro().totals.patrimonio).toBe(600)
-    expect(saved(storage).version).toBe(5)
+    expect(saved(storage).version).toBe(6)
     s = useData.getState()
     expect(s.datos.cuentas.map((c) => [c.nombre, c.externa])).toEqual([
       ['MyInvestor', false],
@@ -644,7 +663,7 @@ describe('versión 5: interés que cambia', () => {
     // Al guardar el siguiente cambio, la marca ya no se guarda.
     useData.getState().updateTitular('t1', { nombre: 'Luis' })
     const guardado = saved(storage).state.datos
-    expect(saved(storage).version).toBe(5)
+    expect(saved(storage).version).toBe(6)
     expect(JSON.stringify(guardado)).not.toContain('fueraDelTotal')
     expect(guardado.titulares.map((t: { nombre: string }) => t.nombre)).toEqual(['Luis', 'Fondo ahorro'])
   })

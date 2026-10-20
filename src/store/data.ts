@@ -7,7 +7,7 @@ import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
 import type { Cuenta, Dataset, EntityRef, Movimiento, PersistedData, Producto, Programada, Titular, Valoracion } from '../types'
 import { buildDemoDataset } from '../lib/demo'
-import { addDays, todayISO } from '../lib/dates'
+import { LINEA_DESDE_POR_DEFECTO, todayISO } from '../lib/dates'
 import { round2 } from '../lib/format'
 import { nowStamp, uid } from '../lib/id'
 import { inferMovementType } from '../lib/meta'
@@ -27,6 +27,8 @@ export interface MovimientoInput {
   origen: EntityRef
   destino: EntityRef
   importe: number
+  /** Comisión de la venta, con signo: negativa si te la cobran, positiva si te la devuelven. */
+  comision?: number
   concepto: string
 }
 export type ProgramadaInput = Pick<Programada, 'origen' | 'destino' | 'importe' | 'inicio' | 'fin' | 'concepto'>
@@ -76,6 +78,9 @@ interface Actions {
   /** Apunta los movimientos de las transferencias mensuales que tocan hasta hoy. */
   aplicarProgramadas: () => void
 
+  /** Cambia el día desde el que cuentan las líneas del gráfico de evolución. */
+  setLineaDesde: (fecha: string) => void
+
   loadDemo: () => void
   setVerEjemplo: (v: boolean) => void
   removeDemo: () => void
@@ -102,12 +107,9 @@ function initialDataset(): Dataset {
     { id: uid(), codigo: '', nombre: defaultTitularName(1), createdAt: stamp },
     { id: uid(), codigo: '', nombre: defaultTitularName(2), createdAt: stamp },
   ])
-  // Las líneas del gráfico empiezan a marcar ayer.
-  return { ...conCuentaPrincipal(ds, uid, stamp), lineaDesde: ayer() }
+  // La evolución empieza a contar desde el día de los valores reales (fijo, no «ayer»).
+  return { ...conCuentaPrincipal(ds, uid, stamp), lineaDesde: LINEA_DESDE_POR_DEFECTO }
 }
-
-/** Ayer (el día en que empiezan a marcar las líneas del gráfico). */
-const ayer = () => addDays(todayISO(), -1)
 
 function initialData(): PersistedData {
   return { version: DATA_VERSION, datos: initialDataset(), ejemplo: null, verEjemplo: false, hideAmounts: false }
@@ -402,6 +404,7 @@ export const useData = create<DataState>()(
                 origen: { ...data.origen },
                 destino: { ...data.destino },
                 importe: round2(data.importe),
+                ...(data.comision ? { comision: round2(data.comision) } : {}),
                 concepto: data.concepto.trim(),
                 createdAt: stamp,
                 updatedAt: stamp,
@@ -426,6 +429,7 @@ export const useData = create<DataState>()(
                       origen: { ...data.origen },
                       destino: { ...data.destino },
                       importe: round2(data.importe),
+                      ...(data.comision ? { comision: round2(data.comision) } : {}),
                       concepto: data.concepto.trim(),
                       // Si era de una transferencia mensual, se queda con los cambios hechos a mano.
                       ...(m.programadaId ? { editado: true } : {}),
@@ -503,6 +507,11 @@ export const useData = create<DataState>()(
           set({ ejemplo: buildDemoDataset(todayISO()), verEjemplo: true })
         },
         setVerEjemplo: (v) => set((s) => ({ verEjemplo: v && !!s.ejemplo })),
+        setLineaDesde: (fecha) =>
+          updateDs(
+            (ds) => (ds.lineaDesde === fecha ? ds : { ...ds, lineaDesde: fecha }),
+            `Desde cuándo cuenta la evolución: ${fecha}`,
+          ),
         removeDemo: () => {
           useHistorial.getState().olvidar('ejemplo')
           set({ ejemplo: null, verEjemplo: false })
@@ -519,7 +528,7 @@ export const useData = create<DataState>()(
           useHistorial.getState().olvidar('datos')
           set({
             version: DATA_VERSION,
-            datos: { ...data.datos, lineaDesde: data.datos.lineaDesde ?? ayer() },
+            datos: { ...data.datos, lineaDesde: data.datos.lineaDesde ?? LINEA_DESDE_POR_DEFECTO },
             verEjemplo: false,
             hideAmounts: data.hideAmounts,
           })
@@ -554,13 +563,12 @@ export const useData = create<DataState>()(
 // Al abrir la app se apuntan las transferencias mensuales que hayan tocado desde la última vez.
 useData.getState().aplicarProgramadas()
 
-// Las líneas del gráfico empiezan a marcar ayer: lo anterior no se dibuja. La primera vez se
-// guarda ese día (y, si venía de una versión que lo puso en hoy, se pasa a ayer), para que desde
-// ahí sigan creciendo con lo que se aporte y con lo que ganen o pierdan las inversiones.
+// El gráfico de evolución empieza a contar en `lineaDesde`: lo anterior no se dibuja. Si no está
+// guardado (datos de antes), se pone el día de partida de los valores reales.
 {
   const ds = useData.getState().datos
-  if (!ds.lineaDesde || ds.lineaDesde > ayer()) {
-    useData.setState({ datos: { ...ds, lineaDesde: ayer() } })
+  if (!ds.lineaDesde) {
+    useData.setState({ datos: { ...ds, lineaDesde: LINEA_DESDE_POR_DEFECTO } })
   }
 }
 

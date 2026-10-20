@@ -72,3 +72,10 @@ export function minDate(a: string | null, b: string): string {
 export function maxDate(a: string | null, b: string): string {
   return a === null || b > a ? b : a
 }
+
+/**
+ * Día desde el que la evolución (y la rentabilidad que se dibuja) empieza a contar: lo anterior
+ * no se dibuja. Es un día fijo (no «ayer»), el de los valores reales del banco, para que las
+ * líneas no se muevan cada día. Se puede cambiar en *Ajustes*.
+ */
+export const LINEA_DESDE_POR_DEFECTO = '2026-10-19'

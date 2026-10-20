@@ -9,7 +9,7 @@
 // que quien decide no lo mira. El saldo que sale de aquí es el real de todas formas.
 
 import type { Movimiento } from '../types'
-import { EPS } from './finance'
+import { EPS, importeEnCuenta } from './finance'
 
 /** Saldo de una cuenta al final de cada día con movimientos, en orden de fecha. */
 export function saldosPorDia(movs: Movimiento[], cuentaId: string): { fecha: string; saldo: number }[] {
@@ -18,7 +18,8 @@ export function saldosPorDia(movs: Movimiento[], cuentaId: string): { fecha: str
     const entra = m.destino.kind === 'cuenta' && m.destino.id === cuentaId
     const sale = m.origen.kind === 'cuenta' && m.origen.id === cuentaId
     if (!entra && !sale) continue
-    delta.set(m.fecha, (delta.get(m.fecha) ?? 0) + (entra ? m.importe : 0) - (sale ? m.importe : 0))
+    // Lo que entra en la cuenta ya lleva la comisión aplicada: es el dinero que llega de verdad.
+    delta.set(m.fecha, (delta.get(m.fecha) ?? 0) + (entra ? importeEnCuenta(m) : 0) - (sale ? m.importe : 0))
   }
   let saldo = 0
   return [...delta.keys()].sort().map((fecha) => {

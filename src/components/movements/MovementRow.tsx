@@ -2,7 +2,9 @@ import { ArrowRight, CalendarSync, ChevronRight } from 'lucide-react'
 import type { EntityRef, Movimiento } from '../../types'
 import { entityName, isConSaldo, isCross, isDePaso, isExterna, movementKind, ownerId, ownerOf, sameRef, type Lookup } from '../../lib/movements'
 import { MOVEMENT_META, PRODUCT_META, kindMeta } from '../../lib/meta'
-import { fmtDate } from '../../lib/format'
+import { fmtDate, fmtEUR } from '../../lib/format'
+import { comisionDe, importeEnCuenta } from '../../lib/finance'
+import { useHidden } from '../ui/Amount'
 import { cn } from '../../lib/cn'
 import { Amount } from '../ui/Amount'
 import { EntityAvatar, MovementAvatar } from '../ui/icons'
@@ -77,6 +79,24 @@ function MonthlyMark() {
   )
 }
 
+/** «Comisión −5,00 €»: lo que se queda (o devuelve) el broker al vender. */
+function ComisionMark({ comision }: { comision: number }) {
+  const hidden = useHidden()
+  const texto = `Comisión ${comision < 0 ? '−' : '+'}${hidden ? '•••••• €' : fmtEUR(Math.abs(comision))}`
+  return (
+    <span
+      className={cn(
+        'inline-flex shrink-0 items-center rounded px-1.5 py-px text-[10px] font-semibold whitespace-nowrap',
+        comision < 0 ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600',
+      )}
+      title={comision < 0 ? 'Comisión que te han cobrado: no llega a la cuenta' : 'Comisión que te han devuelto: llega de más a la cuenta'}
+      data-comision
+    >
+      {texto}
+    </span>
+  )
+}
+
 export function MovementRow({ m, lookup, perspective, titularId }: { m: Movimiento; lookup: Lookup; perspective?: EntityRef; titularId?: string }) {
   const viewer = titularId ?? (perspective ? ownerId(lookup, perspective) : undefined)
   const kind = movementKind(lookup, m, viewer)
@@ -84,7 +104,10 @@ export function MovementRow({ m, lookup, perspective, titularId }: { m: Movimien
   const label = movementLabel(m, lookup, perspective, titularId)
   let sign = 0
   if (perspective) sign = sameRef(m.destino, perspective) ? 1 : sameRef(m.origen, perspective) ? -1 : 0
-  const amountValue = sign === 0 ? m.importe : sign * m.importe
+  // En una cuenta se ve lo que entra de verdad: el importe con la comisión ya restada o sumada.
+  const comision = comisionDe(m)
+  const entraEnCuenta = !!perspective && perspective.kind === 'cuenta' && sameRef(m.destino, perspective)
+  const amountValue = sign === 0 ? m.importe : sign * (entraEnCuenta ? importeEnCuenta(m) : m.importe)
   const amountClass = sign > 0 ? 'text-emerald-600' : 'text-slate-900'
   const origenName = entityName(lookup, m.origen)
   const destinoName = entityName(lookup, m.destino)
@@ -125,6 +148,7 @@ export function MovementRow({ m, lookup, perspective, titularId }: { m: Movimien
               {fmtDate(m.fecha)}
               {m.concepto && <> · {m.concepto}</>}
             </span>
+            {comision !== 0 && <ComisionMark comision={comision} />}
           </div>
         </div>
       </div>
@@ -144,7 +168,10 @@ export function MovementRow({ m, lookup, perspective, titularId }: { m: Movimien
         <EntityChip lookup={lookup} refe={m.origen} />
         <ArrowRight className="size-4 text-slate-300" aria-hidden />
         <EntityChip lookup={lookup} refe={m.destino} />
-        <span className="truncate text-sm text-slate-500">{m.concepto || '—'}</span>
+        <span className="flex min-w-0 items-center gap-1.5">
+          <span className="truncate text-sm text-slate-500">{m.concepto || '—'}</span>
+          {comision !== 0 && <ComisionMark comision={comision} />}
+        </span>
         <Amount value={amountValue} sign={sign !== 0} className={cn('text-right text-[15px] font-semibold', amountClass)} />
         <ChevronRight className="size-4 text-slate-300 transition-colors group-hover:text-slate-500" aria-hidden />
       </div>

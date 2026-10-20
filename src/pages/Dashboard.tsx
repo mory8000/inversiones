@@ -20,7 +20,6 @@ import { editMovement, openAccount, openCuenta, openProduct, openTitular } from 
 import { accion } from '../store/deshacer'
 import { anadirDinero, programarMensual } from '../store/acciones'
 import { buildTimelineMulti, recortarDesde } from '../lib/finance'
-import { addDays } from '../lib/dates'
 import { buildFlowGraph } from '../lib/flow'
 import { PRODUCT_META, kindMeta } from '../lib/meta'
 import { entityName, movementKind, ownerOf, sortMovementsDesc } from '../lib/movements'
@@ -410,9 +409,9 @@ export function Dashboard() {
   const hidden = useHidden()
   const isDesktop = useMediaQuery('(min-width: 1024px)')
   const withData = fin.titulares.filter((tf) => tf.ws.movimientos.length > 0)
-  // Las líneas empiezan a marcar en `lineaDesde` (ayer): lo anterior no se dibuja. Así no se ve
-  // hacia atrás el dinero que ya se fue al «Fondo ahorro». Desde ese día cuentan los datos: lo que
-  // se aporta y lo que ganan o pierden las inversiones.
+  // Las líneas empiezan a marcar en `lineaDesde` (un día fijo que se puede cambiar en Ajustes):
+  // lo anterior no se dibuja. Así no se ve hacia atrás el dinero que ya se fue al «Fondo ahorro».
+  // Desde ese día cuentan los datos: lo que se aporta y lo que ganan o pierden las inversiones.
   const desde = ds.lineaDesde ?? fin.today
   const timeline = useMemo(() => {
     const visibles = fin.titulares.filter((tf) => tf.ws.movimientos.length > 0)
@@ -492,9 +491,8 @@ export function Dashboard() {
               />
               {multi && principal && (
                 <p className="mt-2 px-2 text-xs text-slate-500">
-                  Las dos líneas empiezan el {fmtDate(desde)}
-                  {desde === addDays(fin.today, -1) ? ' (ayer)' : ''}: antes no se dibuja. Desde ahí cuentan lo que
-                  aportes, lo que saques y lo que ganen o pierdan tus inversiones.
+                  Las dos líneas empiezan el {fmtDate(desde)}: antes no se dibuja. Desde ahí cuentan lo que aportes, lo que saques y lo que
+                  ganen o pierdan tus inversiones. Puedes cambiar ese día en <em>Ajustes</em>.
                 </p>
               )}
             </div>

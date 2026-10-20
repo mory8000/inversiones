@@ -1,5 +1,5 @@
 import { useMemo, useState, type CSSProperties } from 'react'
-import { ArrowDown, ArrowRight, Ban, CalendarSync, Info, Plus, Trash2, TriangleAlert } from 'lucide-react'
+import { ArrowDown, ArrowRight, Ban, CalendarSync, HandCoins, Info, Plus, Trash2, TriangleAlert } from 'lucide-react'
 import type { EntityKind, EntityRef, Movimiento, MovementType, Programada, Titular } from '../../types'
 import { Sheet } from '../ui/Sheet'
 import { Field, NumberInput, SelectInput, TextInput } from '../ui/Field'
@@ -110,6 +110,10 @@ export function MovementForm({
   const [importe, setImporte] = useState(startImporte ? fmtNumberInput(startImporte, 'fixed') : '')
   const [fecha, setFecha] = useState(existing?.fecha ?? prog?.inicio ?? today)
   const [concepto, setConcepto] = useState(existing?.concepto ?? prog?.concepto ?? preset?.concepto ?? '')
+  // Comisión de la venta: cuánto y si se resta (te la cobran) o se suma (te la devuelven).
+  const [comision, setComision] = useState(existing?.comision ? fmtNumberInput(Math.abs(existing.comision), 'max') : '')
+  // Por defecto «Resta»: lo normal es que te la cobren (llega menos dinero a la cuenta).
+  const [signoComision, setSignoComision] = useState<-1 | 1>(existing && existing.comision !== undefined && existing.comision > 0 ? 1 : -1)
   const [repetir, setRepetir] = useState(!!prog || (!existing && !!preset?.repetir))
   const [fin, setFin] = useState(prog?.fin ?? '')
   const [submitted, setSubmitted] = useState(false)
@@ -119,6 +123,15 @@ export function MovementForm({
   const origenRef = parseRefKey(origen)
   const destinoRef = parseRefKey(destino)
   const amount = parseNumber(importe)
+  /** Comisión con su signo: negativa si te la cobran, positiva si te la devuelven. */
+  const comisionValor = (() => {
+    const n = parseNumber(comision)
+    return n === null || n === 0 ? 0 : signoComision * Math.abs(n)
+  })()
+  /** Solo se puede poner comisión al vender: dinero que sale de un producto y llega a una cuenta. */
+  const admiteComision = tipo === 'reembolso' && !repetir
+  /** Lo que llega de verdad a la cuenta: el importe con la comisión aplicada. */
+  const llegaACuenta = amount === null ? null : Math.round((amount + comisionValor) * 100) / 100
   const fromT = nuevaExterna ? lookup.titulares.get(externaNuevaT) : origenRef ? lookup.titulares.get(owner(origenRef) ?? '') : undefined
   const toT = destinoRef ? lookup.titulares.get(owner(destinoRef) ?? '') : undefined
   const cross = !!fromT && !!toT && fromT.id !== toT.id
@@ -138,6 +151,7 @@ export function MovementForm({
     if (o && d && o.kind !== d.kind && o.kind === m.to && d.kind === m.from) [o, d] = [d, o]
     setOrigen(o && o.kind === m.from ? refKey(o) : '')
     setDestino(d && d.kind === m.to ? refKey(d) : '')
+    if (t !== 'reembolso') setComision('')
     setTipo(t)
   }
 
@@ -254,7 +268,14 @@ export function MovementForm({
         () => {
           const from = crearOrigen()
           if (!from) return
-          const data = { fecha, origen: from, destino: destinoRef, importe: amount, concepto }
+          const data = {
+            fecha,
+            origen: from,
+            destino: destinoRef,
+            importe: amount,
+            ...(admiteComision && comisionValor !== 0 ? { comision: comisionValor } : {}),
+            concepto,
+          }
           if (existing) updateMovimiento(existing.id, data)
           else addMovimiento(data)
         },
@@ -591,6 +612,81 @@ export function MovementForm({
           </Field>
         </div>
 
+        {/* Comisión de la venta: lo que se queda el broker (resta) o lo que te devuelve (suma). */}
+        {admiteComision && (
+          <div className="rounded-2xl border border-slate-200 p-3.5 sm:p-4">
+            <div className="flex items-start gap-2.5">
+              <span className="mt-0.5 inline-flex size-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+                <HandCoins className="size-[18px]" />
+              </span>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-slate-900">Comisión de la venta</p>
+                <p className="mt-0.5 text-[13px] text-slate-500">
+                  Lo que se queda el banco o el broker por vender (o lo que te devuelve). No sale del producto: sube o baja el dinero que te
+                  llega a la cuenta.
+                </p>
+              </div>
+            </div>
+            <div className="mt-3 flex items-center gap-2">
+              {/* Resta: te la cobran (llega menos). Suma: te la devuelven (llega más). */}
+              <div className="flex shrink-0 overflow-hidden rounded-xl border border-slate-300" role="group" aria-label="La comisión resta o suma">
+                <button
+                  type="button"
+                  onClick={() => setSignoComision(-1)}
+                  aria-pressed={signoComision === -1}
+                  className={cn(
+                    'px-3 py-2.5 text-sm font-semibold transition-colors',
+                    signoComision === -1 ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 hover:bg-slate-50',
+                  )}
+                >
+                  Resta
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSignoComision(1)}
+                  aria-pressed={signoComision === 1}
+                  className={cn(
+                    'border-l border-slate-300 px-3 py-2.5 text-sm font-semibold transition-colors',
+                    signoComision === 1 ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 hover:bg-slate-50',
+                  )}
+                >
+                  Suma
+                </button>
+              </div>
+              <div className="min-w-0 flex-1">
+                <NumberInput
+                  id="mov-comision"
+                  suffix="€"
+                  placeholder="0,00"
+                  value={comision}
+                  onChange={(e) => setComision(e.target.value)}
+                  onBlur={() => {
+                    const n = parseNumber(comision)
+                    if (n !== null && n > 0) setComision(fmtNumberInput(n, 'fixed'))
+                  }}
+                />
+              </div>
+            </div>
+            {comisionValor !== 0 && amount !== null && amount > 0 && (
+              <p className="mt-3 text-[13px] text-slate-600" data-comision-resumen>
+                Vendes {hidden ? '•••••• €' : fmtEUR(amount)} y{' '}
+                {signoComision < 0 ? (
+                  <>
+                    te cobran {hidden ? '•••••• €' : fmtEUR(Math.abs(comisionValor))}: a «{dName ?? 'la cuenta'}» llegan{' '}
+                    <strong>{hidden ? '•••••• €' : fmtEUR(llegaACuenta ?? 0)}</strong>
+                  </>
+                ) : (
+                  <>
+                    te devuelven {hidden ? '•••••• €' : fmtEUR(comisionValor)}: a «{dName ?? 'la cuenta'}» llegan{' '}
+                    <strong>{hidden ? '•••••• €' : fmtEUR(llegaACuenta ?? 0)}</strong>
+                  </>
+                )}
+                .
+              </p>
+            )}
+          </div>
+        )}
+
         {bloqueado && origenRef && (
           <div className="rounded-xl border border-rose-200 bg-rose-50 p-3.5 text-sm text-rose-800" role="alert" data-sin-saldo>
             <p className="flex items-center gap-2 font-semibold">
@@ -717,6 +813,12 @@ export function MovementForm({
           {oName && dName && (
             <p className="mt-3 text-[13px] text-slate-600">
               {cross && destinoRef ? explainCross(oName, dName, fromT!, toT!, destinoRef, lookup, vaDePaso) : explain(tipo, oName, dName, oExterna, dExterna)}
+            </p>
+          )}
+          {admiteComision && comisionValor !== 0 && amount !== null && amount > 0 && (
+            <p className="mt-2 text-[13px] text-slate-600">
+              {signoComision < 0 ? 'De lo que suelta el producto, la comisión se la queda el banco' : 'A lo que suelta el producto se le suma lo que te devuelven'}: en
+              la cuenta entran <strong>{hidden ? '•••••• €' : fmtEUR(llegaACuenta ?? 0)}</strong> de los {hidden ? '•••••• €' : fmtEUR(amount)} vendidos.
             </p>
           )}
         </div>

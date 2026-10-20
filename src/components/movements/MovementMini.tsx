@@ -1,7 +1,9 @@
 import { CalendarSync, Pencil, Trash2 } from 'lucide-react'
 import type { Dataset, EntityRef, Movimiento } from '../../types'
 import { entityName, movementKind, ownerOf, sameRef, type Lookup } from '../../lib/movements'
-import { fmtDate } from '../../lib/format'
+import { fmtDate, fmtEUR } from '../../lib/format'
+import { comisionDe, importeEnCuenta } from '../../lib/finance'
+import { useHidden } from '../ui/Amount'
 import { cn } from '../../lib/cn'
 import { editMovement } from '../../store/ui'
 import { borrarMovimiento } from '../../store/acciones'
@@ -15,6 +17,10 @@ import { movementLabel } from './MovementRow'
  */
 export function MovementMini({ m, perspective, lookup, ds }: { m: Movimiento; perspective: EntityRef; lookup: Lookup; ds: Dataset }) {
   const incoming = sameRef(m.destino, perspective)
+  // En una cuenta se ve lo que entra de verdad: el importe con la comisión ya aplicada.
+  const comision = comisionDe(m)
+  const hidden = useHidden()
+  const valor = incoming && perspective.kind === 'cuenta' ? importeEnCuenta(m) : m.importe
   const other = incoming ? m.origen : m.destino
   const viewer = perspective.kind === 'cuenta' ? lookup.cuentas.get(perspective.id)?.titularId : lookup.productos.get(perspective.id)?.titularId
   const otherOwner = ownerOf(lookup, other)
@@ -26,7 +32,7 @@ export function MovementMini({ m, perspective, lookup, ds }: { m: Movimiento; pe
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline justify-between gap-2">
             <span className="truncate text-sm font-semibold text-slate-800">{label}</span>
-            <Amount value={incoming ? m.importe : -m.importe} sign className={cn('shrink-0 text-sm font-semibold', incoming ? 'text-emerald-600' : 'text-slate-900')} />
+            <Amount value={incoming ? valor : -valor} sign className={cn('shrink-0 text-sm font-semibold', incoming ? 'text-emerald-600' : 'text-slate-900')} />
           </div>
           <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-slate-500">
             {m.programadaId && <CalendarSync className="size-3.5 shrink-0 text-fuchsia-600" aria-label="Transferencia mensual" />}
@@ -35,6 +41,18 @@ export function MovementMini({ m, perspective, lookup, ds }: { m: Movimiento; pe
               {otherOwner && otherOwner.id !== viewer ? ` (${otherOwner.nombre})` : ''}
               {m.concepto ? ` · ${m.concepto}` : ''}
             </span>
+            {comision !== 0 && (
+              <span
+                className={cn(
+                  'shrink-0 rounded px-1.5 py-px text-[10px] font-semibold whitespace-nowrap',
+                  comision < 0 ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600',
+                )}
+                data-comision
+              >
+                Comisión {comision < 0 ? '−' : '+'}
+                {hidden ? '•••••• €' : fmtEUR(Math.abs(comision))}
+              </span>
+            )}
           </div>
           <div className="mt-1.5 flex gap-2">
             <button

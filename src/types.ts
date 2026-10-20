@@ -122,6 +122,13 @@ export interface Movimiento {
   destino: EntityRef
   /** Siempre positivo. */
   importe: number
+  /**
+   * Comisión o gasto de la operación, en €, con signo: **negativa** si te la cobran (el dinero que
+   * llega a la cuenta baja) y **positiva** si te la devuelven (sube). Solo en ventas: de un
+   * producto a una cuenta. El producto suelta el importe íntegro; la comisión es lo que se queda
+   * (o lo que te da) el broker por el camino.
+   */
+  comision?: number
   concepto: string
   /** Si lo ha apuntado una transferencia mensual: cuál y de qué mes (AAAA-MM). */
   programadaId?: string
