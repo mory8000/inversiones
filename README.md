@@ -74,14 +74,6 @@ Sustituye al antiguo `Inversiones.xlsx` y mantiene sus mismos conceptos: titular
 - **Movimientos**: todos los movimientos de todos los titulares, con su origen (**De**) y destino (**A**) y de quién
   es cada uno, agrupados por meses. Filtros por titular, tipo, cuenta o producto, tipo de producto y periodo;
   buscador; y exportación a Excel (CSV).
-- **Descargar copia en Excel** (en *Ajustes*): un libro VIVO, no una foto. Todo gira alrededor de la hoja
-  **Movimientos**, que es una tabla de Excel donde registras cada operación: eliges el **Tipo** en una lista
-  desplegable (**Compra**, **Venta**, **Ingreso**, **Gasto**, **Traspaso** o **Ahorro** —lo que se va al otro
-  titular—), el **Titular**, **De** y **A** (también desplegables) y el importe. Al escribir un movimiento se
-  actualizan solos **Cuentas** (entradas, salidas y saldo real), **Inversiones** (invertido, reembolso,
-  traspaso, capital, % y saldo: escribe el % de hoy y el saldo se recalcula) y el panel de **Inicio**
-  (patrimonio, invertido, en cuentas, capital, ganancia, rentabilidad y aportado), todo con SUMIFS y BUSCARV
-  entre hojas. Trae 30 filas vacías con los desplegables listos para seguir registrando.
 - **Flujo del dinero**: diagrama de bandas en tres columnas — *de dónde viene* (tus cuentas, traspasos y la
   rentabilidad), *dónde está* (tus productos) y *a dónde va* (reembolsos, traspasos y lo que sigue invertido).
   Toca una caja para ver su recorrido. Se puede ver todo el histórico o un periodo concreto.

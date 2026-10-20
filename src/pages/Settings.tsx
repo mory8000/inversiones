@@ -116,22 +116,6 @@ export function Settings() {
     toast('Movimientos exportados')
   }
 
-  const exportExcel = async () => {
-    try {
-      // Se carga solo al pulsarlo: es la parte pesada (la que escribe el Excel).
-      const { buildExcel } = await import('../lib/excel')
-      const buf = await buildExcel(fin)
-      downloadFile(
-        `mis-inversiones-${today}.xlsx`,
-        new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      )
-      toast('Excel descargado')
-    } catch {
-      toast('No se ha podido hacer el Excel')
-    }
-  }
-
   const restore = async (file: File) => {
     try {
       const data = sanitizeData(JSON.parse(await file.text()))
@@ -249,16 +233,6 @@ export function Settings() {
               action={
                 <Button id="abrir-valores" variant="secondary" size="sm" onClick={openValores}>
                   Abrir
-                </Button>
-              }
-            />
-            <Row
-              icon={<FileSpreadsheet className="size-[18px]" />}
-              title="Descargar copia en Excel"
-              text="Un libro de Excel como esta app: Inicio, Evolución, Inversiones, Cuentas, Movimientos, Flujo y Transferencias, con las mismas cifras y fórmulas (los totales se calculan solos)."
-              action={
-                <Button variant="secondary" size="sm" icon={Download} onClick={exportExcel} disabled={!ws.movimientos.length}>
-                  Descargar Excel
                 </Button>
               }
             />

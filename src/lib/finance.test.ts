@@ -725,57 +725,5 @@ describe('el principal y el «Fondo ahorro», cada uno por su lado', () => {
     expect(v.patrimonio).toBeCloseTo(luis.patrimonio, 6)
     expect(v.capital).toBeCloseTo(luis.patrimonio - luis.ganancia, 6)
   })
-  it('el Excel que descarga la app: un libro vivo alrededor de la tabla de movimientos', async () => {
-    const { computeFinance } = await import('../store/useFinance')
-    const { buildExcel } = await import('./excel')
-    const ds = base()
-    ds.lineaDesde = '2026-10-14'
-    const fin = computeFinance(ds, '2026-10-15')
-    const buf = await buildExcel(fin)
-    // Un zip (todo .xlsx es un zip): empieza por «PK».
-    const bytes = new Uint8Array(buf)
-    expect(bytes[0]).toBe(0x50) // «P»
-    expect(bytes[1]).toBe(0x4b) // «K»
-    // Se vuelve a abrir (como haría Excel).
-    const ExcelJS = await import('exceljs')
-    const wb = new ExcelJS.Workbook()
-    await wb.xlsx.load(buf)
-    // Las hojas: el panel primero, la tabla fuente, y las que se calculan solas.
-    expect(wb.worksheets.map((h) => h.name)).toEqual(['Inicio', 'Movimientos', 'Cuentas', 'Inversiones', 'Transferencias', 'Listas'])
-    expect(wb.getWorksheet('Listas')!.state).toBe('hidden')
-    // El panel: la tarjeta de Luis con sus cifras, y la fórmula que lo calcula.
-    const inicio = wb.getWorksheet('Inicio')!
-    expect(inicio.getCell('A1').value).toBe('Mis inversiones')
-    expect(inicio.getCell('A4').value).toBe('Luis')
-    const patrimonio = inicio.getCell('B7').value as { formula: string; result: number }
-    expect(patrimonio.formula).toBe('B5+B6')
-    expect(patrimonio.result).toBeCloseTo(totales(ds).luis.patrimonio, 6)
-    // La tabla de movimientos: cabecera y la primera aportación.
-    const mov = wb.getWorksheet('Movimientos')!
-    expect(mov.getCell('A5').value).toBe('Fecha')
-    expect(mov.getCell('G5').value).toBe('Concepto')
-    // El primer movimiento es la aportación desde el banco (cuenta externa → MyInvestor).
-    expect(mov.getCell('B6').value).toBe('Ingreso')
-    expect(mov.getCell('F6').value).toBe(5000)
-    // Y hay filas vacías con los desplegables listos para seguir registrando.
-    expect(mov.getCell('B7').value).toBe('Compra')
-    expect(mov.getCell('B' + (6 + 30)).dataValidation?.type).toBe('list')
-    // Desplegables: tipo, titular, de y a.
-    expect(mov.getCell('B6').dataValidation?.type).toBe('list')
-    expect(mov.getCell('D6').dataValidation?.type).toBe('list')
-    // La columna «Va a (titular)» se calcula sola (BUSCARV sobre la hoja Listas).
-    expect((mov.getCell('H6').value as { formula?: string }).formula ?? '').toContain('VLOOKUP(')
-    // Las cuentas se calculan solas con SUMIFS sobre la tabla.
-    const formula = (c: { value: unknown }) => (c.value as { formula?: string }).formula ?? ''
-    const cue = wb.getWorksheet('Cuentas')!
-    expect(formula(cue.getCell('D5'))).toContain('SUMIFS(Movimientos!')
-    expect(formula(cue.getCell('E5'))).toContain('SUMIFS(Movimientos!')
-    // Las inversiones: capital con SUMIFS, % editable y saldo calculado.
-    const inv = wb.getWorksheet('Inversiones')!
-    expect(formula(inv.getCell('G6'))).toContain('SUMIFS(Movimientos!')
-    expect(formula(inv.getCell('J6'))).toContain('*(1+')
-    // Los nombres de las listas existen.
-    expect(wb.definedNames.model.map((d: { name: string }) => d.name)).toEqual(expect.arrayContaining(['TiposMov', 'ListaTitulares', 'ListaEntidades']))
-  })
 
 })
