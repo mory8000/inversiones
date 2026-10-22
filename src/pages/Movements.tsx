@@ -76,7 +76,7 @@ export function Movements({ params }: { params: URLSearchParams }) {
     try {
       // El libro y su gráfico usan todos los movimientos guardados, no la lista filtrada.
       await descargarExcelMovimientos(fin)
-      toast('Excel con el gráfico del dinero descargado')
+      toast('Excel de movimientos descargado')
     } catch {
       toast('No se ha podido generar el Excel', 'error')
     } finally {
@@ -96,7 +96,7 @@ export function Movements({ params }: { params: URLSearchParams }) {
         actions={
           <>
             <Button variant="secondary" icon={Download} onClick={() => void exportExcel()} disabled={haciendoExcel}>
-              {haciendoExcel ? 'Generando…' : 'Excel con gráfico'}
+              {haciendoExcel ? 'Generando…' : 'Descargar Excel'}
             </Button>
             <Button icon={Plus} onClick={() => openMovement()}>
               Nuevo
@@ -111,8 +111,8 @@ export function Movements({ params }: { params: URLSearchParams }) {
           <div>
             <p className="text-sm font-semibold text-slate-900">Gráfico del dinero</p>
             <p className="mt-0.5 text-[13px] text-slate-600">
-              Los movimientos guardados aquí aparecen automáticamente en el gráfico de la app. El Excel incluye todos los movimientos,
-              aunque filtres esta lista. Si ya lo descargaste, vuelve a descargarlo para ver los cambios.
+              Los movimientos guardados aquí aparecen automáticamente en el gráfico de la app. El Excel contiene todos los movimientos
+              y los gráficos de cuentas, aunque filtres esta lista. Si cambias datos después de descargarlo, descarga un libro nuevo.
             </p>
           </div>
         </div>

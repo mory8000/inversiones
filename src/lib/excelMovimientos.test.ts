@@ -8,7 +8,6 @@ import { entradaDesdeApp } from './excelDesdeApp'
 import { crearExcelDeApp } from './descargarExcelMovimientos'
 import { buildFlowGraph } from './flow'
 import { computeFinance } from '../store/useFinance'
-import { ANCHO_GRAFICO, dibujarGraficoDinero, grafoDinero } from './graficoDineroExcel'
 import type { FinanceData } from '../store/useFinance'
 import type { Position } from './finance'
 import type { Dataset, Movimiento, Titular } from '../types'
@@ -245,13 +244,17 @@ describe('el Excel de movimientos', () => {
     expect(nombres.slice(primerVacio).every((n) => n === null)).toBe(true)
   })
 
-  it('conserva los gráficos de cuentas y usa una imagen REAL para el nuevo Sankey', async () => {
+  it('conserva los gráficos de cuentas, sin la hoja ni imagen del gráfico del dinero', async () => {
     const { zip, buffer, hoja } = await generar()
     const libro = new ExcelJS.Workbook()
     await libro.xlsx.load(buffer)
-    expect(libro.worksheets.map((h) => h.name)).toEqual(['Movimientos', 'Gráficos', 'Gráfico del dinero'])
+    expect(libro.worksheets.map((h) => h.name)).toEqual(['Movimientos', 'Gráficos'])
+    expect(libro.getWorksheet('Gráfico del dinero')).toBeUndefined()
+    expect(zip.file('xl/worksheets/sheet3.xml')).toBeNull()
+    expect(zip.file(/^xl\/media\//)).toHaveLength(0)
+    expect(zip.file('xl/drawings/drawing2.xml')).toBeNull()
     expect(libro.getWorksheet('Mapa del dinero')).toBeUndefined()
-    const dibujoCuentas = await xml(zip, 'xl/drawings/drawing2.xml')
+    const dibujoCuentas = await xml(zip, 'xl/drawings/drawing1.xml')
     expect((dibujoCuentas.match(/<xdr:graphicFrame/g) ?? []).length).toBe(2)
     const anchuras = [...dibujoCuentas.matchAll(/<xdr:(?:from|to)>\s*<xdr:col>(\d+)<\/xdr:col><xdr:colOff>(\d+)<\/xdr:colOff>/g)]
     expect(anchuras).toHaveLength(4)
@@ -275,65 +278,6 @@ describe('el Excel de movimientos', () => {
       expect(leyenda.getCell(`${col}18`).value).toBe('■ Rentabilidad')
       expect(leyenda.getCell(`${col}19`).value).toBe('■ Aportado + rentabilidad')
     }
-    const dibujoImagen = await xml(zip, 'xl/drawings/drawing1.xml')
-    expect(dibujoImagen).toContain('<xdr:pic>')
-    // Anchura y altura efectivas del Sankey = 70 % de la imagen original; nitidez intacta.
-    const cx = Number(dibujoImagen.match(/<xdr:ext cx="(\d+)"/)?.[1])
-    const cy = Number(dibujoImagen.match(/<xdr:ext cx="\d+" cy="(\d+)"/)?.[1])
-    expect(cx / 9525).toBeCloseTo(ANCHO_GRAFICO * 0.7, 0)
-    expect(await xml(zip, 'xl/drawings/_rels/drawing1.xml.rels')).toContain('../media/image1.png')
-    const imagen = await zip.file('xl/media/image1.png')!.async('uint8array')
-    expect([...imagen.slice(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10])
-    expect(imagen.byteLength).toBeGreaterThan(5000)
-    const alturaOriginal = new DataView(imagen.buffer, imagen.byteOffset, imagen.byteLength).getUint32(20)
-    expect(cy / 9525).toBeCloseTo(alturaOriginal * 0.7, 0)
-  })
-
-  it('el gráfico de bandas conserva el importe por origen, inversión y destino, con rentabilidad', () => {
-    const caminos = [{ pasos: ['Exterior', 'Cuenta Myinvestor', 'Fondo'], importe: 100, seQueda: false }]
-    const propietarios = new Map([['Fondo', 'Marta'], ['Cuenta Myinvestor', 'Marta']])
-    const { origen, final } = grafoDinero(caminos, propietarios, new Map([['Fondo', 0.1]]))
-    expect(origen).toEqual([
-      { de: 'Cuenta Myinvestor', a: 'Fondo', importe: 100 },
-      { de: 'Rentabilidad generada · Marta', a: 'Fondo', importe: 10 },
-    ])
-    expect(final).toEqual([{ de: 'Fondo', a: 'Sigue invertido · Marta', importe: 110 }])
-    const { svg } = dibujarGraficoDinero(caminos, propietarios, new Map([['Fondo', 0.1]]))
-    expect(svg).toContain('DE DÓNDE VIENE')
-    expect(svg).toContain('DÓNDE ESTÁ')
-    expect(svg).toContain('A DÓNDE VA')
-    expect(svg).toContain('<path d="M') // cintas curvas, no tarjetas
-    expect(svg).toContain('Rentabilidad generada')
-  })
-
-  it('la banda directa usa Aportaciones; las pérdidas terminan en Pérdidas', () => {
-    const caminos = [{ pasos: ['Exterior', 'Fondo'], importe: 200, seQueda: false }]
-    const { origen, final } = grafoDinero(caminos, new Map([['Fondo', 'Fondo ahorro']]), new Map([['Fondo', -0.1]]))
-    expect(origen).toEqual([{ de: 'Aportaciones · Fondo ahorro', a: 'Fondo', importe: 200 }])
-    expect(final).toEqual([
-      { de: 'Fondo', a: 'Sigue invertido · Fondo ahorro', importe: 180 },
-      { de: 'Fondo', a: 'Pérdidas · Fondo ahorro', importe: 20 },
-    ])
-  })
-
-  it('muestra Myinvestor y Fondo ahorro por separado, aunque el fondo pase por la cuenta principal', () => {
-    const propietarios = new Map([
-      ['Cuenta Myinvestor', 'Marta'], ['Vanguard', 'Marta'], ['Fondo', 'Fondo ahorro'],
-    ])
-    const caminos = [
-      { pasos: ['Exterior', 'Cuenta Myinvestor', 'Vanguard'], importe: 300, seQueda: false },
-      { pasos: ['Exterior', 'Cuenta Myinvestor', 'Fondo'], importe: 200, seQueda: false },
-    ]
-    const { origen } = grafoDinero(caminos, propietarios, new Map())
-    expect(origen).toContainEqual({ de: 'Cuenta Myinvestor', a: 'Vanguard', importe: 300 })
-    expect(origen).toContainEqual({ de: 'Aportaciones · Fondo ahorro', a: 'Fondo', importe: 200 })
-    const { svg } = dibujarGraficoDinero(caminos, propietarios, new Map(), ['Marta', 'Fondo ahorro'])
-    expect(svg).toContain('Cuenta Myinvestor')
-    expect(svg).toContain('Aportaciones · Fondo ahorro')
-    // Si se cierra el fondo, el titular sigue en la leyenda con 0 € (sin crear bandas falsas).
-    const sinFondo = dibujarGraficoDinero(caminos.slice(0, 1), propietarios, new Map(), ['Marta', 'Fondo ahorro']).svg
-    expect(sinFondo).toContain('Aportaciones · Fondo ahorro')
-    expect(sinFondo).toContain('0 €')
   })
 
   it('no borra los movimientos que ya vienen a cero: mantiene sus cuatro campos originales', async () => {
@@ -407,14 +351,14 @@ describe('el Excel de movimientos', () => {
     expect(cf?.rules[0].formulae[0]).toContain('AND($F7<>"",$H7<>"")')
   })
 
-  it('imprime las tres hojas y no incluye ni Flujo ni Mapa del dinero', async () => {
+  it('imprime las dos hojas y no incluye la hoja Gráfico del dinero', async () => {
     const { zip } = await generar()
-    for (const hoja of ['sheet1', 'sheet2', 'sheet3'])
+    for (const hoja of ['sheet1', 'sheet2'])
       expect(await xml(zip, `xl/worksheets/${hoja}.xml`)).toContain('fitToWidth="1"')
     const libro = await xml(zip, 'xl/workbook.xml')
     expect(libro).toContain('&apos;Movimientos&apos;!$A1:$O')
     expect(libro).toContain('&apos;Gráficos&apos;!$A1:$O')
-    expect(libro).toContain('&apos;Gráfico del dinero&apos;!$A1:$M')
+    expect(libro).not.toContain('Gráfico del dinero')
     expect(libro).not.toContain('name="Flujo"')
     expect(libro).not.toContain('name="Mapa del dinero"')
   })
@@ -603,7 +547,7 @@ describe('el Excel se llena con los datos de la app', () => {
     } as unknown as FinanceData
   }
 
-  it('al añadir o editar un movimiento, el gráfico de la app y el del nuevo Excel usan el mismo dato actualizado', async () => {
+  it('al añadir o editar un movimiento, el gráfico de la app y el nuevo Excel usan el dato actualizado', async () => {
     const primera = { ...movimiento('2026-10-01', 'c1', 'p1', 300), tipo: 'inversion' as const }
     const segunda = { ...movimiento('2026-10-02', 'c1', 'p1', 200), tipo: 'inversion' as const }
     const base = {
@@ -629,7 +573,7 @@ describe('el Excel se llena con los datos de la app', () => {
       const zip = await JSZip.loadAsync(buffer)
       return {
         importes: [excel.getWorksheet('Movimientos')!.getCell('D6').value, excel.getWorksheet('Movimientos')!.getCell('D7').value],
-        imagen: await zip.file('xl/media/image1.png')!.async('uint8array'),
+        sinImagen: zip.file(/^xl\/media\//).length === 0,
         hojas: excel.worksheets.map((h) => h.name),
       }
     }
@@ -639,9 +583,10 @@ describe('el Excel se llena con los datos de la app', () => {
     expect(anterior.importes).toEqual([300, null])
     expect(nuevo.importes).toEqual([300, 200])
     expect(corregido.importes).toEqual([450, 200])
-    expect(nuevo.hojas).toContain('Gráfico del dinero')
-    expect(nuevo.imagen).not.toEqual(anterior.imagen)
-    expect(corregido.imagen).not.toEqual(nuevo.imagen)
+    expect([anterior, nuevo, corregido].map((r) => r.hojas)).toEqual([
+      ['Movimientos', 'Gráficos'], ['Movimientos', 'Gráficos'], ['Movimientos', 'Gráficos'],
+    ])
+    expect([anterior, nuevo, corregido].every((r) => r.sinImagen)).toBe(true)
   })
 
   it('pone cada inversión debajo de la cuenta que la paga', () => {

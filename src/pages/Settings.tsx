@@ -279,7 +279,7 @@ export function Settings() {
             <Row
               icon={<FileSpreadsheet className="size-[18px]" />}
               title="Descargar el Excel de movimientos"
-              text="Libro .xlsx con todos tus movimientos, el resumen y «Gráfico del dinero». Tras cambiar movimientos en la app, descárgalo de nuevo para actualizar el gráfico."
+              text="Libro .xlsx con todos tus movimientos, el resumen y los gráficos de cuentas. Si cambias movimientos en la app, descárgalo de nuevo para actualizar los datos."
               action={
                 <Button variant="secondary" size="sm" icon={Download} onClick={() => void exportExcel()} disabled={haciendoExcel}>
                   {haciendoExcel ? 'Generando…' : 'Descargar Excel'}

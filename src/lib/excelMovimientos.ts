@@ -1,7 +1,5 @@
-import { ANCHO_GRAFICO, dibujarGraficoDinero, graficoPNG } from './graficoDineroExcel.ts'
-
 /**
- * Hoja de cálculo de los movimientos: UNA sola hoja, compacta y viva.
+ * Libro de movimientos: resumen y movimientos en una hoja, y gráficos de cuentas en otra.
  *
  * A la izquierda, los movimientos (Fecha · De · A · Importe), con desplegable para el origen y el
  * destino. Solo se ve una fila vacía (con la fecha de hoy, que se puede cambiar): en cuanto la
@@ -9,8 +7,7 @@ import { ANCHO_GRAFICO, dibujarGraficoDinero, graficoPNG } from './graficoDinero
  *
  * A la derecha, el resumen de cada cuenta y, debajo de ella, las inversiones que se pagan desde
  * esa cuenta: Capital aportado, Rentabilidad (se escribe el %, y de ahí salen los euros), y Saldo.
- * Después, el total de cada cuenta, el de cada titular y el TOTAL. El recorrido del dinero se
- * ve en la hoja «Gráfico del dinero» con bandas ORIGEN → INVERSIÓN → DESTINO.
+ * Después, el total de cada cuenta, el de cada titular y el TOTAL.
  *
  * El dinero que llega de fuera («Exterior») entra en la cuenta principal; lo que de ahí se va a
  * otro titular (p. ej. al «Fondo ahorro») no cuenta en esa cuenta: si traes 1.000 € y se van 400,
@@ -82,6 +79,7 @@ const ANCHO_COL = [11, 21, 21, 12, 2, 29, 11, 15, 10, 12, 13, 15, 15, 15, 15]
 const FILA_CABECERAS = 5
 const RES_1 = 6 // Primera fila del resumen (y de los movimientos).
 const EXTERIOR = 'Exterior'
+const NADA = 0.005 // Umbral para omitir del resumen las cuentas sin saldo.
 /** Cuántas filas de movimientos hay: se van destapando según se escriben. */
 const FILAS_MOV_TOTAL = 500
 
@@ -453,10 +451,6 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
   const colorDe = (titular: string) => titulares.find((t) => t.nombre === titular)?.color ?? '#2447B8'
 
   const grupos: { nombre: string; titular: string; desde: number; hasta: number }[] = []
-  // Cada fila escrita: para el mapa del dinero.
-  const hechas: { clase: 'cuenta' | 'inversion'; corto: string; titular: string; fila: number }[] = []
-  // Los caminos del dinero que existen aunque no haya movimientos: así se ve también la plantilla.
-  const caminos: { de: string; a: string }[] = []
   for (const t of titulares) {
     // Primero las cuentas con inversiones, después las que no tienen.
     const ordenados = [...t.grupos].sort((a, b) => b.inversiones.length - a.inversiones.length)
@@ -474,15 +468,9 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
           pct: g.pct ?? null,
           filasInv: cuantas ? [f + 1, f + cuantas] : null,
         })
-        hechas.push({ clase: 'cuenta', corto: nombreCuenta, titular, fila: f })
-        if (cuantas) caminos.push({ de: EXTERIOR, a: nombreCuenta })
       }
       for (const inv of g.inversiones) {
-        const f = fila
-        const corto = nombreDe()
-        filaResumen({ nombre: corto, titular, clase: 'inversion', pct: inv.rentabilidad, sangria: g.cuenta ? 1 : 0 })
-        hechas.push({ clase: 'inversion', corto, titular, fila: f })
-        caminos.push({ de: g.cuenta ? nombreCuenta : EXTERIOR, a: corto })
+        filaResumen({ nombre: nombreDe(), titular, clase: 'inversion', pct: inv.rentabilidad, sangria: g.cuenta ? 1 : 0 })
       }
       if (g.inversiones.length)
         grupos.push({ nombre: g.cuenta ? nombreCuenta : titular, titular, desde, hasta: fila - 1 })
@@ -782,64 +770,6 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
   }
   hojaG.pageSetup.printArea = `A1:O${ultimaGraficos}`
 
-  // ── Un Sankey de bandas, como la referencia: nodos a tres alturas y cintas proporcionales. ───
-  // La hoja «Mapa del dinero» de tarjetas desaparece. ExcelJS coloca un PNG nítido para que el
-  // diagrama se vea también en Excel de escritorio y móvil (las formas flotantes fallaban).
-  const papeles = new Map(hechas.map((h) => [h.corto, h.clase]))
-  const viajes = viajesDelFlujo({ ...entrada, movimientos }, caminos, papeles)
-  const propietarios = new Map(hechas.map((h) => [h.corto, h.titular]))
-  const porcentajes = new Map<string, number>()
-  for (const titular of titulares)
-    for (const grupo of titular.grupos)
-      for (const inv of grupo.inversiones) {
-        const pct = inv.rentabilidad
-        if (pct !== null && Number.isFinite(pct)) porcentajes.set(nombres.corto(inv.nombre), pct)
-      }
-  const { svg, alto } = dibujarGraficoDinero(viajes.viajes, propietarios, porcentajes, entrada.titulares.map((t) => t.nombre))
-  const grafico = await graficoPNG(svg)
-  const idImagen = libro.addImage({ base64: grafico, extension: 'png' })
-  const hojaR = libro.addWorksheet('Gráfico del dinero', {
-    views: [{ showGridLines: false }],
-    pageSetup: {
-      orientation: 'landscape', paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 0,
-      margins: { left: 0.3, right: 0.3, top: 0.4, bottom: 0.4, header: 0, footer: 0 },
-    },
-  })
-  hojaR.properties.tabColor = { argb: 'FF0F766E' }
-  for (let col = 1; col <= 13; col++) hojaR.getColumn(col).width = 17
-  hojaR.mergeCells('A1:M1')
-  hojaR.getCell('A1').value = '¿De dónde viene y a dónde va el dinero?'
-  hojaR.getCell('A1').font = { bold: true, size: 17, color: { argb: TINTA } }
-  hojaR.getRow(1).height = 28
-  hojaR.mergeCells('A2:M2')
-  hojaR.getCell('A2').value = 'El grosor de cada banda es proporcional al importe. Gris/azul/naranja: origen · colores: inversiones · azul oscuro: destino.'
-  hojaR.getCell('A2').font = { size: 10, color: { argb: GRIS } }
-  hojaR.getRow(2).height = 25
-  // Un 30 % más pequeño en las DOS dimensiones; se centra en la hoja sin reducir la resolución
-  // del PNG, para que los textos conserven nitidez al ampliar en Excel.
-  const ESCALA_DINERO = 0.7
-  hojaR.addImage(idImagen, { tl: { col: 2, row: 3 }, ext: { width: ANCHO_GRAFICO * ESCALA_DINERO, height: alto * ESCALA_DINERO } })
-  // Tabla de lectura debajo del gráfico, calculada con la altura reducida: no queda hueco gigante.
-  const inicioTabla = Math.ceil(3 + alto * ESCALA_DINERO / 26.5) + 3
-  const encabezado = hojaR.getRow(inicioTabla)
-  for (const [col, texto] of [[1, 'Origen'], [5, 'Paso'], [9, 'Destino'], [13, 'Importe']] as const) {
-    const c = encabezado.getCell(col)
-    c.value = texto
-    c.font = { bold: true, color: { argb: TINTA } }
-    c.fill = relleno(CABECERA_FILL)
-  }
-  for (const [i, camino] of viajes.viajes.entries()) {
-    const row = hojaR.getRow(inicioTabla + i + 1)
-    const medio = camino.pasos[camino.pasos.length - 1]
-    const titular = propietarios.get(medio) ?? 'Mi dinero'
-    row.getCell(1).value = camino.pasos.length >= 3 ? camino.pasos[camino.pasos.length - 2] : `Aportaciones · ${titular}`
-    row.getCell(5).value = medio
-    row.getCell(9).value = camino.seQueda ? `Sigue en cuenta · ${titular}` : `Sigue invertido · ${titular}`
-    row.getCell(13).value = camino.importe
-    row.getCell(13).numFmt = MONEDA
-  }
-  hojaR.pageSetup.printArea = `A1:M${inicioTabla + viajes.viajes.length + 1}`
-
   // Protegida: solo se puede escribir en los movimientos, en las filas nuevas y en el % de cada
   // cuenta o inversión. Se puede elegir cualquier celda y borrar o añadir filas (para quitar una inversión
   // que quede a cero o para meter una nueva). Sin contraseña: «Revisar → Desproteger hoja».
@@ -851,8 +781,7 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
   // El nombre definido de los desplegables y la protección se añaden a mano.
   return terminar(buffer, {
     nombre: { nombre: NOMBRES, formula: nombreDefinido(HOJA, RES_1, RES_N) },
-    // ExcelJS reserva drawing1.xml para la imagen del gráfico del dinero (sheet3).
-    hojas: [{ hoja: 'xl/worksheets/sheet2.xml', dibujo: 'xl/drawings/drawing2.xml', dibujos, saltos: [] }],
+    hojas: [{ hoja: 'xl/worksheets/sheet2.xml', dibujo: 'xl/drawings/drawing1.xml', dibujos, saltos: [] }],
   })
 }
 
@@ -1028,97 +957,6 @@ function xmlGrafico(id: number, nombre: string): string {
     </xdr:graphicFrame>`
 }
 
-// ── El flujo del dinero: el viaje que hace, de dónde sale a dónde acaba ─────
-
-/** Un viaje del dinero: los nombres por los que pasa, en orden, y cuánto dinero es. */
-interface ViajeFlujo {
-  /** De dónde sale el dinero hasta dónde acaba: 2 o 3 nombres (Exterior → cuenta → inversión). */
-  pasos: string[]
-  importe: number
-  /** `true` si el dinero se queda en la cuenta, sin llegar a ninguna inversión. */
-  seQueda: boolean
-}
-
-/** Lo que se ve arriba de todo: cuánto ha entrado de fuera, cuánto sigue en las cuentas y cuánto está invertido. */
-interface Flujo {
-  viajes: ViajeFlujo[]
-  entra: number
-  enCuentas: number
-  invertido: number
-}
-
-const NADA = 0.005
-
-/**
- * Los viajes del dinero: uno por cada sitio donde el dinero está ahora mismo, contado desde el
- * principio («Exterior → la cuenta por la que pasa → la inversión donde acaba»). Si no hay
- * movimientos, se dibuja el camino que marca la estructura para que la plantilla también se vea.
- */
-function viajesDelFlujo(
-  entrada: EntradaExcel,
-  caminos: { de: string; a: string }[],
-  papeles: Map<string, 'cuenta' | 'inversion'>,
-): Flujo {
-  const clave = (de: string, a: string) => `${de}\u0000${a}`
-  const entra = new Map<string, number>()
-  const sale = new Map<string, number>()
-  const tramos = new Map<string, number>()
-  for (const m of entrada.movimientos) {
-    if (!m.de || !m.a || m.de === m.a || !(m.importe > 0)) continue
-    entra.set(m.a, (entra.get(m.a) ?? 0) + m.importe)
-    sale.set(m.de, (sale.get(m.de) ?? 0) + m.importe)
-    tramos.set(clave(m.de, m.a), (tramos.get(clave(m.de, m.a)) ?? 0) + m.importe)
-  }
-  const piso = (nombre: string) => (nombre === EXTERIOR ? 0 : papeles.get(nombre) === 'inversion' ? 2 : 1)
-  const neto = (nombre: string) => (entra.get(nombre) ?? 0) - (sale.get(nombre) ?? 0)
-  const todos = new Set([...entra.keys(), ...sale.keys()])
-
-  // Quién le manda dinero a cada nombre, de más a menos: por ahí se sube hasta el principio.
-  const quienLeManda = new Map<string, { de: string; importe: number }[]>()
-  for (const [k, importe] of tramos) {
-    const [de, a] = k.split('\u0000')
-    const lista = quienLeManda.get(a) ?? []
-    lista.push({ de, importe })
-    quienLeManda.set(a, lista)
-  }
-  for (const lista of quienLeManda.values()) lista.sort((x, y) => y.importe - x.importe)
-
-  const viajes: ViajeFlujo[] = []
-  for (const nombre of todos) {
-    const cuanto = neto(nombre)
-    if (cuanto <= NADA) continue
-    const pasos = [nombre]
-    const vistos = new Set([nombre])
-    let actual = nombre
-    // Se sube por el camino del dinero (siempre hacia fuera) hasta llegar al principio.
-    for (let guarda = 0; guarda < 6; guarda++) {
-      const padre = (quienLeManda.get(actual) ?? []).find((x) => !vistos.has(x.de) && piso(x.de) < piso(actual))
-      if (!padre) break
-      pasos.unshift(padre.de)
-      vistos.add(padre.de)
-      actual = padre.de
-      if (piso(actual) === 0) break
-    }
-    // Si el viaje no arranca en «Exterior», se le pone: todo el dinero viene de fuera.
-    if (!pasos.includes(EXTERIOR)) pasos.unshift(EXTERIOR)
-    viajes.push({ pasos: pasos.slice(-3), importe: cuanto, seQueda: piso(nombre) === 1 })
-  }
-  viajes.sort((x, y) => y.importe - x.importe || x.pasos.length - y.pasos.length || x.pasos[0].localeCompare(y.pasos[0], 'es'))
-
-  // Sin movimientos, el dibujo lo marca la estructura: se ve el camino, todavía sin dinero.
-  if (!viajes.length)
-    for (const c of caminos) viajes.push({ pasos: [c.de, c.a], importe: 0, seQueda: false })
-
-  const sumaNeto = (p: number) =>
-    [...todos].reduce((t, n) => (piso(n) === p ? t + Math.max(neto(n), 0) : t), 0)
-  return {
-    viajes,
-    entra: [...todos].reduce((t, n) => t + (n === EXTERIOR ? sale.get(n) ?? 0 : 0), 0),
-    enCuentas: sumaNeto(1),
-    invertido: sumaNeto(2),
-  }
-}
-
 /** Una hoja con su dibujo (los gráficos) colgado. */
 interface HojaConDibujo {
   /** Parte de la hoja, p. ej. «xl/worksheets/sheet2.xml». */
@@ -1140,13 +978,6 @@ async function terminar(
 ): Promise<ArrayBuffer> {
   const JSZip = await cargarJSZip()
   const zip = await new JSZip().loadAsync(buffer)
-  // ExcelJS pone editAs en oneCellAnchor de las imágenes; OOXML solo lo admite en twoCellAnchor.
-  // Se retira sin cambiar la imagen ni el ancla para que el dibujo valide y abra sin avisos.
-  const imagen = zip.file('xl/drawings/drawing1.xml')
-  if (imagen) {
-    const dibujo = await imagen.async('string')
-    zip.file('xl/drawings/drawing1.xml', dibujo.replace(/<xdr:oneCellAnchor\s+editAs="[^"]*"/g, '<xdr:oneCellAnchor'))
-  }
   const REL_DIBUJO = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing'
   const REL_CHART = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart'
   const DIBUJO_XML = 'application/vnd.openxmlformats-officedocument.drawing+xml'
