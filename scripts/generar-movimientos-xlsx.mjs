@@ -24,6 +24,8 @@ import { fileURLToPath } from 'node:url'
 
 const aqui = dirname(fileURLToPath(import.meta.url))
 const SALIDA = resolve(aqui, '..', 'Movimientos.xlsx')
+// El mismo archivo en public/, para poder descargarlo también desde la web publicada.
+const SALIDA_WEB = resolve(aqui, '..', 'public', 'Movimientos.xlsx')
 
 // ── Lo que lleva la hoja ───────────────────────────────────────────────────
 // Es lo único que hay que tocar: titulares, sus cuentas y las inversiones que
@@ -428,8 +430,10 @@ ws.pageSetup.printArea = `A1:${L.saldo}${ULTIMA}`
 ws.pageSetup.printTitlesRow = '1:5'
 
 // ── Escribir ───────────────────────────────────────────────────────────────
-const buf = await wb.xlsx.writeBuffer()
-writeFileSync(SALIDA, Buffer.from(buf))
+const buf = Buffer.from(await wb.xlsx.writeBuffer())
+writeFileSync(SALIDA, buf)
+writeFileSync(SALIDA_WEB, buf)
 console.log(`✅ ${SALIDA}`)
+console.log(`✅ ${SALIDA_WEB}  → https://mory8000.github.io/inversiones/Movimientos.xlsx`)
 console.log(`   resumen: filas ${RES_1}-${RES_N} · grupos: ${grupos.map((g) => `${g.nombre} (${g.desde}-${g.hasta})`).join(', ')}`)
 console.log(`   titulares: ${filasTitulares.join(', ')} · TOTAL: ${FILA_TOTAL} · movimientos: ${FILA_MOV_1}-${FILA_MOV_N}`)
