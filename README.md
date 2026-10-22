@@ -255,7 +255,7 @@ Hay dos formas de tenerlo:
 - **La plantilla vacía:** `Movimientos.xlsx`, en la raíz (y su copia en `public/`, que es la que se
   puede descargar desde la web: `https://mory8000.github.io/inversiones/Movimientos.xlsx`).
 
-La hoja, en una sola página:
+El archivo contiene tres hojas:
 
 - **Movimientos** (izquierda, columnas A hasta D): `Fecha · De · A · Importe`. Hay **500 filas**, pero
   solo se ve la que toca (con la fecha de hoy, que se puede cambiar): al rellenarla se abre la
@@ -280,25 +280,25 @@ La hoja, en una sola página:
   **una fila de separación** y los totales, que suben o bajan solos.
 - Si dos productos se llaman igual, el segundo lleva un **2** al final («iShares… Index» e «iShares…
   Index 2»): así el dinero va al que corresponde.
-- **Sin huecos al generar el Excel:** una cuenta sin dinero ni inversiones y una inversión cerrada
-  en la app no salen en el archivo nuevo: las demás filas ocupan su sitio y las filas libres quedan
-  al final. **Dentro del archivo ya descargado**, poner un movimiento a **0** oculta visualmente su
-  fila y deja de contarlo, pero **no borra su contenido ni desplaza físicamente las otras filas**:
-  para ordenarlo o compactarlo de verdad sin macros, haz el cambio en la app y vuelve a descargar
-  el Excel, o borra manualmente la fila en Excel. Tampoco se reordena automáticamente al cambiar
-  una fecha dentro del archivo: ordénalo desde Excel o vuelve a descargarlo desde la app.
+- **Un movimiento a cero al generar el Excel:** no se escribe esa fila. Los siguientes movimientos
+  ocupan su lugar y la primera fila libre queda **sin De, A ni Importe, pero con la fecha de hoy**.
+  Dentro de un `.xlsx` **ya abierto**, al escribir 0 se ocultan visualmente De, A e Importe, pero
+  **las celdas aún contienen datos y la fecha no cambia sola**. Para borrar de verdad esas celdas y
+  poner la fecha actual al teclear 0 se necesita un `.xlsm` con macro habilitada. En el `.xlsx`,
+  borra manualmente De, A e Importe y cambia Fecha por la de hoy, o corrígelo en la app y descarga
+  de nuevo el Excel. Cambiar una fecha dentro del archivo tampoco reordena automáticamente las filas.
 - Después, el total de cada cuenta (si el titular tiene más de una), el de cada **titular** (si solo
   tiene una cuenta, el renglón lleva los dos nombres: «Total Cuenta Myinvestor-Luis») y el **TOTAL**.
-- **La hoja «Flujo»** es el **gráfico nuevo**: sustituye por completo los gráficos de barras y
-  sus imágenes/dibujos. No se pueden superponer sus etiquetas porque los nombres y los importes
-  van dentro de celdas combinadas con espacio para varias líneas. Arriba, tres cifras de un
-  vistazo: lo que **entra de fuera**, lo que **sigue en las cuentas** y lo que está **invertido**.
-  Debajo, el camino en tres columnas —**ORIGEN → PASOS → FINAL**—: cada nombre aparece en un bloque
-  (gris fuera, azul cuenta, verde inversión); cada camino tiene su importe y más altura cuanto más
-  dinero lleva. Si no llega a una inversión, se indica que **sigue en la cuenta**. Abajo están los
-  **movimientos uno a uno** con fecha, origen, destino, importe y total. El gráfico se crea con los
-  movimientos del momento de la descarga: **no se redibuja solo** al editar un movimiento en Excel;
-  vuelve a descargarlo desde la app para actualizarlo.
+- **«Gráficos»**: recupera los gráficos por titular de las cuentas y sus inversiones juntas,
+  con tres barras —**Aportado, Rentabilidad y Aportado + rentabilidad**—. La leyenda se sitúa abajo
+  y las cifras no tienen decimales para dejar más espacio a las etiquetas.
+- **«Mapa del dinero»**: sustituye a la antigua hoja «Flujo», que ya no existe. Es una hoja gráfica
+  distinta que se lee de izquierda a derecha: **ORIGEN → PASO INTERMEDIO → DESTINO FINAL**. Cada
+  destino ocupa su propia tarjeta: cajas grises, azules y verdes, flechas con el importe, y una
+  banda de longitud proporcional al dinero. Si termina en la cuenta, lo indica; si va directo
+  a una inversión, el paso central dice «Sin cuenta intermedia». Arriba aparecen las cifras
+  globales. El mapa representa los movimientos del momento de la descarga; para actualizarlo tras
+  editar el archivo, vuelve a descargarlo desde la app.
 - **Protegida:** solo se puede escribir en los movimientos, en las filas amarillas nuevas y en el %
   de cada cuenta o inversión. Se puede elegir cualquier celda y **borrar o añadir filas** (para quitar una
   inversión que llegue a cero o meter una nueva). Sin contraseña: «Revisar → Desproteger hoja».
