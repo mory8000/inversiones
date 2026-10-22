@@ -215,14 +215,9 @@ describe('el Excel de movimientos', () => {
     expect(chart).toContain('<c:showVal val="1"/>')
     expect(chart).toContain('<c:dLblPos val="outEnd"/>')
     expect(chart).toContain('<c:legendPos val="t"/>')
-    // Un grupo de barras por titular, en orden.
-    expect(chart).toContain('<c:v>Marta</c:v>')
-    expect(chart).toContain('<c:v>Fondo ahorro</c:v>')
-    // Y los valores salen de las filas de total de cada titular.
-    const marta = filaDe(hoja, 'Total MyInvestor-Marta')
-    const fondo = filaDe(hoja, 'Total Fondo ahorro')
-    expect(chart).toContain(`$H$${marta}:$H$${fondo}`) // aportado neto
-    expect(chart).toContain(`$J$${marta}:$J$${fondo}`) // beneficio / pérdida
+    // Y los valores salen de las filas del resumen (cada barra es una fila).
+    expect(chart).toContain(`$H$${filaDe(hoja, 'MyInvestor')}`)
+    expect(chart).toContain(`$J$${filaDe(hoja, 'MyInvestor')}`)
     // Va colgado del dibujo de la hoja «Gráficos» (la de los movimientos no lleva ninguno).
     expect(hojaXml).not.toContain('<drawing')
     const hojaGraficos = await xml(zip, 'xl/worksheets/sheet2.xml')
@@ -249,48 +244,53 @@ describe('el Excel de movimientos', () => {
     expect(workbook).toContain('name="Gráficos"')
   })
 
-  it('pone otro gráfico con las inversiones de cada titular: es el del «Fondo ahorro»', async () => {
+  it('pone un gráfico por titular: sus cuentas y sus inversiones', async () => {
     const { zip, hoja } = await generar()
-    // Uno por titular (Marta y Fondo ahorro) más el de los dos juntos: tres gráficos.
+    // Dos: el de Marta (su cuenta y sus inversiones) y el del «Fondo ahorro».
+    expect(zip.file('xl/charts/chart1.xml')).toBeTruthy()
     expect(zip.file('xl/charts/chart2.xml')).toBeTruthy()
-    expect(zip.file('xl/charts/chart3.xml')).toBeTruthy()
+    expect(zip.file('xl/charts/chart3.xml')).toBeFalsy()
     const dibujo = await xml(zip, 'xl/drawings/drawing1.xml')
-    expect((dibujo.match(/<xdr:graphicFrame/g) ?? []).length).toBe(3)
-    const graficos = [
-      await xml(zip, 'xl/charts/chart1.xml'),
-      await xml(zip, 'xl/charts/chart2.xml'),
-      await xml(zip, 'xl/charts/chart3.xml'),
-    ]
-    // En el del «Fondo ahorro» sale cada una de sus inversiones…
-    const delFondo = graficos.find((g) => g.includes('<c:v>Fondo indexado</c:v>'))
-    expect(delFondo).toBeTruthy()
-    expect(delFondo).toContain('<c:v>iShares Developed World Index</c:v>')
-    // …y sus barras salen de la fila de cada inversión.
-    expect(delFondo).toContain(`$H$${filaDe(hoja, 'Fondo indexado')}`)
-    expect(delFondo).toContain(`$J$${filaDe(hoja, 'Fondo indexado')}`)
+    expect((dibujo.match(/<xdr:graphicFrame/g) ?? []).length).toBe(2)
+    // El primero es el de Marta: su cuenta primero y sus inversiones después.
+    const marta = await xml(zip, 'xl/charts/chart1.xml')
+    expect(marta).toContain('<c:v>MyInvestor</c:v>')
+    expect(marta).toContain('<c:v>Vanguard Global Stock Index</c:v>')
+    // Las barras salen de sus filas del resumen, seguidas.
+    expect(marta).toContain(`$H$${filaDe(hoja, 'MyInvestor')}:$H$${filaDe(hoja, 'Cuenta nómina · BBVA')}`)
+    // El segundo, el del «Fondo ahorro»: solo lo suyo.
+    const fondo = await xml(zip, 'xl/charts/chart2.xml')
+    expect(fondo).toContain('<c:v>Fondo indexado</c:v>')
+    expect(fondo).toContain('<c:v>iShares Developed World Index</c:v>')
+    expect(fondo).not.toContain('<c:v>Vanguard Global Stock Index</c:v>')
+    // Y la mitad de grandes que antes: 5 columnas de ancho y 11 filas de alto.
+    const cols = [...dibujo.matchAll(/<xdr:col>(\d+)<\/xdr:col>/g)].map((m) => Number(m[1]))
+    const filas = [...dibujo.matchAll(/<xdr:row>(\d+)<\/xdr:row>/g)].map((m) => Number(m[1]))
+    expect(cols[1] - cols[0]).toBeLessThanOrEqual(5)
+    expect(filas[1] - filas[0]).toBeLessThanOrEqual(12)
   })
 
   it('dibuja el flujo del dinero: de dónde llega, por dónde pasa y a dónde va', async () => {
-    const { zip, buffer } = await generar()
-    // Va en su propia hoja y en su propio dibujo: si algo falla, no se lleva los gráficos.
-    const dibujo = await xml(zip, 'xl/drawings/drawing2.xml')
-    expect((await xml(zip, 'xl/worksheets/sheet3.xml')).includes('<drawing')).toBe(true)
-    // Su título, en la hoja del flujo.
+    const { buffer } = await generar()
     const libro = new ExcelJS.Workbook()
     await libro.xlsx.load(buffer)
-    const textos = libro
-      .getWorksheet('Flujo')!
+    // Va en su hoja y pintado con celdas (las formas a veces no se ven).
+    const hoja = libro.getWorksheet('Flujo')!
+    expect(String(hoja.getCell('A1').value)).toContain('Flujo del dinero')
+    // Tres pisos: lo que llega de fuera, la cuenta por la que pasa y donde se queda.
+    expect(hoja.getCell('A3').value).toBe('De dónde llega')
+    expect(hoja.getCell('F3').value).toBe('Por dónde pasa')
+    expect(hoja.getCell('K3').value).toBe('A dónde va')
+    const textos = hoja
       .getSheetValues()
       .flat()
       .filter((v): v is string => typeof v === 'string')
-    expect(textos.some((t) => t.includes('Flujo del dinero'))).toBe(true)
-    // Una caja por nombre (redonda) y una flecha con el importe que va de una a otra.
-    expect(dibujo).toContain('prst="roundRect"')
-    expect(dibujo).toContain('prst="rightArrow"')
-    expect(dibujo).toContain('Exterior')
-    expect(dibujo).toContain('MyInvestor')
+    // Una caja por nombre y una flecha con el dinero que va de una a otra.
+    expect(textos).toContain('Exterior')
+    expect(textos).toContain('MyInvestor')
+    expect(textos).toContain('Vanguard Global Stock Index')
     const euros = new Intl.NumberFormat('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-    expect(dibujo).toContain(`${euros.format(1000)} €`)
+    expect(textos.some((t) => t.includes(`${euros.format(1000)}`) && t.includes('\u25b6'))).toBe(true)
   })
 
   it('imprime cada hoja en su página: el resumen, los gráficos y el flujo', async () => {
