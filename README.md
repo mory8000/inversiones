@@ -245,6 +245,31 @@ Configuración (una sola vez, en *Settings* del repositorio):
 > Con el plan gratuito de GitHub, Pages solo funciona si el repositorio es público. La web es pública
 > (cualquiera con el enlace puede abrirla), pero cada persona solo ve los datos guardados en su propio navegador.
 
+## El Excel de movimientos
+
+Junto a este README está **`Movimientos.xlsx`**: una sola hoja, en una sola página, para apuntar de dónde
+viene el dinero y ver el resumen. Es un archivo aparte de la app: ábrelo con Excel o Google Sheets.
+
+- **Movimientos** (izquierda): `Fecha · De · A · Importe`. Solo se ve una fila, con la fecha de hoy (se puede
+  cambiar): en cuanto la rellenas, se abre la siguiente.
+- **De** y **A** son desplegables con los nombres del resumen. `Exterior` es el dinero que entra (o sale) de
+  fuera; `Interés`, lo que paga el banco o la inversión (cuenta como rentabilidad, no como dinero aportado).
+- **Resumen** (derecha): una fila por cuenta y por inversión con **Capital aportado · Rentabilidad (% y €) ·
+  Saldo**. Primero por separado, después el total de cada titular y el **TOTAL** de todo junto.
+- Todo se calcula con fórmulas (`SUMIFS`) a partir de la tabla de movimientos, así que el resumen se actualiza
+  solo. El saldo de las cuentas sale de los movimientos; el de las inversiones lo escribes tú (celda amarilla).
+- **Añadir o quitar productos**: escribe el nombre (y el titular) en una fila libre del resumen; para quitarlo,
+  borra la fila. Entra en el desplegable de los movimientos al momento.
+- Lo que se va de una cuenta a otro titular (la transferencia al «Fondo ahorro», por ejemplo) no cuenta en la
+  cuenta que lo envía: si traes 1.000 € y se van 400, la cuenta principal marca 600 de aportado y el «Fondo
+  ahorro» 400.
+
+Para volver a generarlo (los nombres se cambian arriba del script):
+
+```bash
+npm i --no-save exceljs && node scripts/generar-movimientos-xlsx.mjs
+```
+
 ## Desarrollo
 
 Necesitas Node.js 22 o superior.
