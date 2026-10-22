@@ -1,4 +1,4 @@
-import { useRef, type ReactNode } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import {
   Calculator,
   CalendarClock,
@@ -23,6 +23,8 @@ import { accion } from '../store/deshacer'
 import { isValidISODate, LINEA_DESDE_POR_DEFECTO } from '../lib/dates'
 import { movementsToCSV } from '../lib/movements'
 import { downloadFile } from '../lib/download'
+import { generarExcelMovimientos } from '../lib/excelMovimientos'
+import { entradaDesdeApp } from '../lib/excelDesdeApp'
 import { isStandalone, useInstallPrompt } from '../lib/install'
 import { cn } from '../lib/cn'
 import { PageHeader } from '../components/layout/AppShell'
@@ -118,6 +120,22 @@ export function Settings() {
   const exportCSV = () => {
     downloadFile(`movimientos-${today}.csv`, movementsToCSV(ws.movimientos, lookup), 'text/csv;charset=utf-8')
     toast('Movimientos exportados')
+  }
+
+  const [haciendoExcel, setHaciendoExcel] = useState(false)
+
+  const exportExcel = async () => {
+    setHaciendoExcel(true)
+    try {
+      const buffer = await generarExcelMovimientos(entradaDesdeApp(fin, today))
+      const mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      downloadFile(`movimientos-${today}.xlsx`, new Blob([buffer], { type: mime }), mime)
+      toast('Excel descargado')
+    } catch {
+      toast('No se ha podido generar el Excel')
+    } finally {
+      setHaciendoExcel(false)
+    }
   }
 
   const restore = async (file: File) => {
@@ -258,6 +276,16 @@ export function Settings() {
               action={
                 <Button id="abrir-valores" variant="secondary" size="sm" onClick={openValores}>
                   Abrir
+                </Button>
+              }
+            />
+            <Row
+              icon={<FileSpreadsheet className="size-[18px]" />}
+              title="Descargar el Excel de movimientos"
+              text="Una hoja con todos tus movimientos (de dónde viene el dinero), el resumen de cada cuenta con lo invertido en cada inversión, la rentabilidad y un gráfico. Se calcula sola: escribe el % de cada inversión y listo."
+              action={
+                <Button variant="secondary" size="sm" icon={Download} onClick={() => void exportExcel()} disabled={haciendoExcel}>
+                  {haciendoExcel ? 'Generando…' : 'Descargar Excel'}
                 </Button>
               }
             />

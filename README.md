@@ -247,28 +247,39 @@ Configuración (una sola vez, en *Settings* del repositorio):
 
 ## El Excel de movimientos
 
-Junto a este README está **`Movimientos.xlsx`**: una sola hoja, en una sola página, para apuntar de dónde
-viene el dinero y ver el resumen. Es un archivo aparte de la app: ábrelo con Excel o Google Sheets.
+Hay dos formas de tenerlo:
 
-- **Movimientos** (izquierda): `Fecha · De · A · Importe`. Solo se ve una fila, con la fecha de hoy (se puede
-  cambiar): en cuanto la rellenas, se abre la siguiente.
-- **De** y **A** son desplegables con los nombres del resumen. `Exterior` es el dinero que entra (o sale) de
-  fuera; `Interés`, lo que paga el banco o la inversión (cuenta como rentabilidad, no como dinero aportado).
-- **Resumen** (derecha): cada **cuenta** y, debajo de ella **sangradas, las inversiones que se pagan desde
-  esa cuenta**, cada una con **Capital aportado · Rentabilidad (% y €) · Saldo**. Después el **total de cada
-  cuenta**, el de cada **titular** y el **TOTAL** de todo junto.
-- Todo se calcula con fórmulas (`SUMIFS`) a partir de la tabla de movimientos, así que el resumen se actualiza
-  solo. El saldo de las cuentas sale de los movimientos; el de las inversiones lo escribes tú (celda amarilla).
-- **Añadir o quitar productos**: escribe el nombre (y el titular) en una fila libre, debajo de la cuenta desde
-  la que lo pagas; para quitarlo, borra la fila. Entra en el desplegable de los movimientos al momento.
-- Lo que se va de una cuenta a otro titular (la transferencia al «Fondo ahorro», por ejemplo) no cuenta en la
-  cuenta que lo envía: si traes 1.000 € y se van 400, la cuenta principal marca 600 de aportado y el «Fondo
-  ahorro» 400.
+- **Con tus datos: Ajustes → «Descargar el Excel de movimientos».** La app genera la hoja con todos
+  tus movimientos, tus cuentas, tus inversiones y la rentabilidad de cada una. (Es la misma hoja que
+  la plantilla, pero ya rellena.)
+- **La plantilla vacía:** `Movimientos.xlsx`, en la raíz (y su copia en `public/`, que es la que se
+  puede descargar desde la web: `https://mory8000.github.io/inversiones/Movimientos.xlsx`).
 
-Para volver a generarlo (los nombres se cambian arriba del script):
+La hoja, en una sola página:
+
+- **Movimientos** (izquierda): `Fecha · De · A · Importe`. Solo se ve una fila, con la fecha de hoy
+  (se puede cambiar): en cuanto la rellenas, se abre la siguiente.
+- **De** y **A** son desplegables con los nombres del resumen. `Exterior` es el dinero que entra (o
+  sale) de fuera; `Interés`, lo que paga el banco (cuenta como rentabilidad, no como dinero aportado).
+  Si en la app el dinero sale de una cuenta externa (otro banco), en el Excel se ve como dos
+  movimientos: «Exterior → cuenta externa» y «cuenta externa → destino».
+- **Resumen** (derecha): cada **cuenta** y, **debajo de ella, las inversiones que se pagan desde esa
+  cuenta**, con **Capital aportado · Rentabilidad (% y €) · Saldo**. En las inversiones se escribe el
+  **%** (el mismo que ves en la app) y los euros y el saldo se calculan solos.
+- Después, el **total de cada cuenta**, el de cada **titular** y el **TOTAL**; y un **gráfico** con
+  tres columnas por cuenta: Aportado, Rentabilidad y Saldo.
+- **Añadir o quitar inversiones:** escribe el nombre (y el titular) en una de las filas libres del
+  final; para quitarla, borra la fila. Entra al momento en los desplegables (que no muestran huecos
+  y crecen solos).
+- **Colores de la lista:** los tres primeros conceptos en negro y el resto con el color que la app le
+  da a cada titular (azul el principal, naranja el «Fondo ahorro»).
+- Todo son fórmulas (`SUMIFS`) envueltas en `SI.ERROR`: una celda sin datos sale en blanco, nunca
+  con `#¡VALOR!`.
+
+Para volver a generar la plantilla (los nombres se cambian arriba del script):
 
 ```bash
-npm i --no-save exceljs && node scripts/generar-movimientos-xlsx.mjs
+npm install && node --experimental-strip-types scripts/generar-movimientos-xlsx.mjs
 ```
 
 ## Desarrollo
