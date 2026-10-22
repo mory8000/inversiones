@@ -266,8 +266,9 @@ La hoja, en una sola página:
 - **Resumen** (derecha): cada **cuenta** y, **debajo de ella, las inversiones que se pagan desde esa
   cuenta**, con **Capital aportado · Rentabilidad (% y €) · Saldo**. En las inversiones se escribe el
   **%** (el mismo que ves en la app) y los euros y el saldo se calculan solos.
-- Después, el **total de cada cuenta**, el de cada **titular** y el **TOTAL**; y un **gráfico** con
-  tres columnas por cuenta: Aportado, Rentabilidad y Saldo.
+- Después, el total de cada cuenta (cuando el titular tiene más de una), el de cada **titular** y el
+  **TOTAL**. Y debajo, el **gráfico**: dos barras por titular — **Aportado neto** (azul) y
+  **Beneficio-pérdida** (naranja) — con el importe encima de cada barra, como en el modelo.
 - **Añadir o quitar inversiones:** escribe el nombre (y el titular) en una de las filas libres del
   final; para quitarla, borra la fila. Entra al momento en los desplegables (que no muestran huecos
   y crecen solos).

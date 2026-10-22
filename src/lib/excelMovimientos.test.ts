@@ -1,5 +1,5 @@
 // El Excel de movimientos: que se genera con la estructura prometida, sin «#¡VALOR!» y con su
-// gráfico de tres columnas por cuenta.
+// gráfico de dos barras por titular (aportado neto y beneficio / pérdida).
 
 import { describe, expect, it } from 'vitest'
 import JSZip from 'jszip'
@@ -123,23 +123,45 @@ describe('el Excel de movimientos', () => {
     expect(nombres.slice(primerVacio).every((n) => n === null)).toBe(true)
   })
 
-  it('pone el gráfico de tres columnas (aportado, rentabilidad y saldo) por cuenta', async () => {
-    const { zip } = await generar()
+  it('pone el gráfico del modelo: dos barras por titular, con el importe encima', async () => {
+    const { zip, hoja } = await generar()
     const chart = (await zip.file('xl/charts/chart1.xml')!.async('string')) as string
     const dibujo = (await zip.file('xl/drawings/drawing1.xml')!.async('string')) as string
     const tipos = (await zip.file('[Content_Types].xml')!.async('string')) as string
     const hojaXml = (await zip.file('xl/worksheets/sheet1.xml')!.async('string')) as string
     expect(chart).toContain('<c:barDir val="col"/>')
-    expect(chart).toContain('<c:v>Aportado</c:v>')
-    expect(chart).toContain('<c:v>Rentabilidad</c:v>')
-    expect(chart).toContain('<c:v>Saldo</c:v>')
-    expect(chart).toContain('$H$') // aportado
-    expect(chart).toContain('$J$') // rentabilidad
-    expect(chart).toContain('$K$') // saldo
+    // Dos series: lo que has puesto (azul) y lo que has ganado o perdido (naranja).
+    expect(chart).toContain('<c:v>Aportado neto</c:v>')
+    expect(chart).toContain('<c:v>Beneficio-pérdida</c:v>')
+    expect(chart).toContain('srgbClr val="2563EB"')
+    expect(chart).toContain('srgbClr val="E67E22"')
+    // Cada barra lleva su importe encima y la leyenda va arriba.
+    expect(chart).toContain('<c:showVal val="1"/>')
+    expect(chart).toContain('<c:dLblPos val="outEnd"/>')
+    expect(chart).toContain('<c:legendPos val="t"/>')
+    // Un grupo de barras por titular, en orden.
+    expect(chart).toContain('<c:v>Marta</c:v>')
+    expect(chart).toContain('<c:v>Fondo ahorro</c:v>')
+    // Y los valores salen de las filas de total de cada titular.
+    const marta = filaDe(hoja, 'Total Marta')
+    const fondo = filaDe(hoja, 'Total Fondo ahorro')
+    expect(chart).toContain(`$H$${marta}:$H$${fondo}`) // aportado neto
+    expect(chart).toContain(`$J$${marta}:$J$${fondo}`) // beneficio / pérdida
     expect(dibujo).toContain('<xdr:graphicFrame')
     expect(hojaXml).toContain('<drawing r:id="rId1"/>')
     expect(tipos).toContain('/xl/charts/chart1.xml')
     expect(tipos).toContain('/xl/drawings/drawing1.xml')
+  })
+
+  it('deja una fila de total por titular, seguidas y en orden: son las del gráfico', async () => {
+    const { hoja } = await generar()
+    const marta = filaDe(hoja, 'Total Marta')
+    const fondo = filaDe(hoja, 'Total Fondo ahorro')
+    expect(fondo).toBe(marta + 1)
+    expect(hoja.getCell(`G${marta}`).value).toBe('Marta')
+    expect(hoja.getCell(`G${fondo}`).value).toBe('Fondo ahorro')
+    // Y el total del titular es la suma de lo suyo (por titular, no por fila).
+    expect(hoja.getCell(`H${marta}`).formula).toContain('SUMIFS')
   })
 
   it('colorea la lista: negros los tres primeros y después el color de cada titular', async () => {

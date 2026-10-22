@@ -372,7 +372,7 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
   const colorDe = (titular: string) =>
     entrada.titulares.find((t) => t.nombre === titular)?.color ?? '#2447B8'
 
-  const grupos: { nombre: string; desde: number; hasta: number }[] = []
+  const grupos: { nombre: string; titular: string; desde: number; hasta: number }[] = []
   for (const t of entrada.titulares) {
     // Primero las cuentas con inversiones, después las que no tienen.
     const ordenados = [...t.grupos].sort((a, b) => b.inversiones.length - a.inversiones.length)
@@ -389,7 +389,7 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
           sangria: g.cuenta ? 1 : 0,
         })
       if (g.inversiones.length)
-        grupos.push({ nombre: g.cuenta ? nombreDe(g.cuenta, titular) : titular, desde, hasta: fila - 1 })
+        grupos.push({ nombre: g.cuenta ? nombreDe(g.cuenta, titular) : titular, titular, desde, hasta: fila - 1 })
     }
   }
   // Filas libres al final: escribe aquí una inversión nueva y entra en los desplegables.
@@ -443,21 +443,29 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
 
   fila++ // línea en blanco
   const suma = (c: Col, desde: number, hasta: number) => `SUM($${L[c]}$${desde}:$${L[c]}$${hasta})`
-  // Cada cuenta con sus inversiones (estas filas van seguidas: son las del gráfico).
-  const filasGrafico: number[] = []
+  const sumaTitular = (c: Col, titular: string) => `SUMIFS(${rango(c)},${rango('titular')},"${titular}")`
+  // Cada cuenta con sus inversiones (solo si el titular tiene más de una: si no, basta con su total).
   for (const g of grupos) {
-    filasGrafico.push(fila)
+    const t = entrada.titulares.find((x) => x.nombre === g.titular)
+    if (!t || t.grupos.length < 2) continue
     filaTotal(
       `Total ${g.nombre}`,
       null,
       { aportado: suma('aportado', g.desde, g.hasta), euros: suma('euros', g.desde, g.hasta), saldo: suma('saldo', g.desde, g.hasta) },
     )
   }
-  // Cada titular (si solo tiene un grupo, su total ya es el de ese grupo y no se repite).
+  // Un renglón por titular, seguidos y en orden: son las del gráfico.
+  const filasGrafico: number[] = []
+  const nombresGrafico: string[] = []
   for (const t of entrada.titulares) {
-    if (t.grupos.length < 2) continue
-    const sumaSi = (c: Col) => `SUMIFS(${rango(c)},${rango('titular')},"${t.nombre}")`
-    filaTotal(`Total ${t.nombre}`, t.nombre, { aportado: sumaSi('aportado'), euros: sumaSi('euros'), saldo: sumaSi('saldo') })
+    if (t.grupos.length < 1) continue
+    filasGrafico.push(fila)
+    nombresGrafico.push(t.nombre)
+    filaTotal(`Total ${t.nombre}`, t.nombre, {
+      aportado: sumaTitular('aportado', t.nombre),
+      euros: sumaTitular('euros', t.nombre),
+      saldo: sumaTitular('saldo', t.nombre),
+    })
   }
   // Y todo junto.
   const FILA_TOTAL = fila
@@ -493,7 +501,7 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
 
   // ── Impresión: una página ────────────────────────────────────────────────
   const FILA_GRAFICO = FILA_TOTAL + 4
-  const ALTO_GRAFICO = 11
+  const ALTO_GRAFICO = 15
   ws.pageSetup.printArea = `A1:${L.saldo}${FILA_GRAFICO + ALTO_GRAFICO}`
   ws.pageSetup.printTitlesRow = `1:${FILA_CABECERAS}`
 
@@ -506,12 +514,12 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
     grafico: filasGrafico.length
       ? {
           hoja: HOJA,
-          titulo: 'Aportado · Rentabilidad · Saldo por cuenta',
-          categorias: `$${L.nombre}$${filasGrafico[0]}:$${L.nombre}$${ultima(filasGrafico)}`,
+          titulo: 'Aportado neto y beneficio / pérdida por titular',
+          categorias: nombresGrafico,
           series: [
-            { nombre: 'Aportado', valores: `$${L.aportado}$${filasGrafico[0]}:$${L.aportado}$${ultima(filasGrafico)}`, color: '1D4ED8' },
-            { nombre: 'Rentabilidad', valores: `$${L.euros}$${filasGrafico[0]}:$${L.euros}$${ultima(filasGrafico)}`, color: '047857' },
-            { nombre: 'Saldo', valores: `$${L.saldo}$${filasGrafico[0]}:$${L.saldo}$${ultima(filasGrafico)}`, color: 'EA580C' },
+            // Lo que has puesto (azul) y lo que has ganado o perdido (naranja), como en el modelo.
+            { nombre: 'Aportado neto', valores: `$${L.aportado}$${filasGrafico[0]}:$${L.aportado}$${ultima(filasGrafico)}`, color: '2563EB' },
+            { nombre: 'Beneficio-pérdida', valores: `$${L.euros}$${filasGrafico[0]}:$${L.euros}$${ultima(filasGrafico)}`, color: 'E67E22' },
           ],
           desde: { col: 0, fila: FILA_GRAFICO },
           hasta: { col: 9, fila: FILA_GRAFICO + ALTO_GRAFICO },
@@ -533,22 +541,39 @@ interface SerieGrafico {
 interface OpcionesGrafico {
   hoja: string
   titulo: string
-  /** Rango con los nombres de cada cuenta, p. ej. «$F$24:$F$26». */
-  categorias: string
+  /** Nombre de cada grupo de barras, en orden (p. ej. los titulares). */
+  categorias: string[]
   series: SerieGrafico[]
   desde: { col: number; fila: number }
   hasta: { col: number; fila: number }
 }
 
+/** Texto seguro para el XML del gráfico. */
+function xml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
+
 function xmlChart(op: OpcionesGrafico): string {
+  const categorias =
+    `<c:cat><c:strLit><c:ptCount val="${op.categorias.length}"/>` +
+    op.categorias.map((c, i) => `<c:pt idx="${i}"><c:v>${xml(c)}</c:v></c:pt>`).join('') +
+    `</c:strLit></c:cat>`
+  // El importe encima de cada barra, como en el modelo.
+  const etiquetas = `
+            <c:dLbls>
+              <c:numFmt formatCode="#,##0.00 &quot;€&quot;" sourceLinked="0"/>
+              <c:dLblPos val="outEnd"/>
+              <c:showLegendKey val="0"/><c:showVal val="1"/><c:showCatName val="0"/><c:showSerName val="0"/>
+              <c:showPercent val="0"/><c:showBubbleSize val="0"/>
+            </c:dLbls>`
   const serie = (s: SerieGrafico, i: number) => `
         <c:ser>
           <c:idx val="${i}"/>
           <c:order val="${i}"/>
-          <c:tx><c:v>${s.nombre}</c:v></c:tx>
+          <c:tx><c:v>${xml(s.nombre)}</c:v></c:tx>
           <c:spPr><a:solidFill><a:srgbClr val="${s.color}"/></a:solidFill><a:ln><a:noFill/></a:ln></c:spPr>
-          <c:invertIfNegative val="0"/>
-          <c:cat><c:strRef><c:f>${op.hoja}!${op.categorias}</c:f></c:strRef></c:cat>
+          <c:invertIfNegative val="0"/>${etiquetas}
+          ${categorias}
           <c:val><c:numRef><c:f>${op.hoja}!${s.valores}</c:f></c:numRef></c:val>
         </c:ser>`
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -556,8 +581,13 @@ function xmlChart(op: OpcionesGrafico): string {
   <c:roundedCorners val="0"/>
   <c:chart>
     <c:title>
-      <c:tx><c:v>${op.titulo}</c:v></c:tx>
+      <c:tx><c:v>${xml(op.titulo)}</c:v></c:tx>
       <c:overlay val="0"/>
+      <c:txPr>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p><a:pPr><a:defRPr sz="1000" b="0"><a:solidFill><a:srgbClr val="334155"/></a:solidFill></a:defRPr></a:pPr><a:endParaRPr/></a:p>
+      </c:txPr>
     </c:title>
     <c:autoTitleDeleted val="0"/>
     <c:plotArea>
@@ -567,7 +597,7 @@ function xmlChart(op: OpcionesGrafico): string {
         <c:grouping val="clustered"/>
         <c:varyColors val="0"/>${op.series.map(serie).join('')}
         <c:gapWidth val="60"/>
-        <c:overlap val="-10"/>
+        <c:overlap val="-80"/>
         <c:axId val="100000001"/>
         <c:axId val="100000002"/>
       </c:barChart>
@@ -599,12 +629,17 @@ function xmlChart(op: OpcionesGrafico): string {
         <c:crossAx val="100000001"/>
         <c:crosses val="autoZero"/>
         <c:crossBetween val="between"/>
-        <c:auto val="1"/>
-        <c:lblAlgn val="ctr"/>
-        <c:lblOffset val="100"/>
-        <c:noMultiLvlLbl val="0"/>
       </c:valAx>
     </c:plotArea>
+    <c:legend>
+      <c:legendPos val="t"/>
+      <c:overlay val="0"/>
+      <c:txPr>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p><a:pPr><a:defRPr sz="900" b="0"><a:solidFill><a:srgbClr val="334155"/></a:solidFill></a:defRPr></a:pPr><a:endParaRPr/></a:p>
+      </c:txPr>
+    </c:legend>
     <c:plotVisOnly val="1"/>
     <c:dispBlanksAs val="gap"/>
   </c:chart>
@@ -655,7 +690,7 @@ function xmlDrawing(op: OpcionesGrafico): string {
 
 /**
  * Remata el archivo: le mete el nombre definido de los desplegables (exceljs solo escribe rangos
- * fijos) y, si hay cuentas, el gráfico de tres columnas por cuenta.
+ * fijos) y, si hay titulares, el gráfico de dos barras por titular.
  */
 async function terminar(
   buffer: ArrayBuffer,
