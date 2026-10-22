@@ -23,8 +23,7 @@ import { accion } from '../store/deshacer'
 import { isValidISODate, LINEA_DESDE_POR_DEFECTO } from '../lib/dates'
 import { movementsToCSV } from '../lib/movements'
 import { downloadFile } from '../lib/download'
-import { generarExcelMovimientos } from '../lib/excelMovimientos'
-import { entradaDesdeApp } from '../lib/excelDesdeApp'
+import { descargarExcelMovimientos } from '../lib/descargarExcelMovimientos'
 import { isStandalone, useInstallPrompt } from '../lib/install'
 import { cn } from '../lib/cn'
 import { PageHeader } from '../components/layout/AppShell'
@@ -127,9 +126,7 @@ export function Settings() {
   const exportExcel = async () => {
     setHaciendoExcel(true)
     try {
-      const buffer = await generarExcelMovimientos(entradaDesdeApp(fin, today))
-      const mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-      downloadFile(`movimientos-${today}.xlsx`, new Blob([buffer], { type: mime }), mime)
+      await descargarExcelMovimientos(fin)
       toast('Excel descargado')
     } catch {
       toast('No se ha podido generar el Excel')
@@ -282,7 +279,7 @@ export function Settings() {
             <Row
               icon={<FileSpreadsheet className="size-[18px]" />}
               title="Descargar el Excel de movimientos"
-              text="Una hoja con todos tus movimientos (de dónde viene el dinero), el resumen de cada cuenta con lo invertido en cada inversión, la rentabilidad y un gráfico. Se calcula sola: escribe el % de cada inversión y listo."
+              text="Libro .xlsx con todos tus movimientos, el resumen y «Gráfico del dinero». Tras cambiar movimientos en la app, descárgalo de nuevo para actualizar el gráfico."
               action={
                 <Button variant="secondary" size="sm" icon={Download} onClick={() => void exportExcel()} disabled={haciendoExcel}>
                   {haciendoExcel ? 'Generando…' : 'Descargar Excel'}
@@ -291,8 +288,8 @@ export function Settings() {
             />
             <Row
               icon={<FileSpreadsheet className="size-[18px]" />}
-              title="Exportar movimientos a Excel"
-              text="Archivo CSV que se abre directamente con Excel o Google Sheets."
+              title="Exportar movimientos en CSV"
+              text="Archivo de datos sin gráficos que se abre con Excel o Google Sheets."
               action={
                 <Button variant="secondary" size="sm" icon={Download} onClick={exportCSV} disabled={!ws.movimientos.length}>
                   Exportar CSV

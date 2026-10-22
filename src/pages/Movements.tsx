@@ -1,11 +1,13 @@
 import { useMemo, useState, type CSSProperties } from 'react'
-import { ArrowLeftRight, Download, Plus, Search, SlidersHorizontal, X } from 'lucide-react'
+import { ArrowLeftRight, Download, Plus, Search, SlidersHorizontal, Waypoints, X } from 'lucide-react'
 import type { MovementKind, ProductType } from '../types'
 import { useFinance } from '../store/useFinance'
 import { openMovement, toast } from '../store/ui'
 import { EMPTY_FILTERS, filterMovements, movementKind, movementsToCSV, periodOptions, refKey, totalsOf, type MovementFilters } from '../lib/movements'
 import { MOVEMENT_KINDS, PRODUCT_META, PRODUCT_TYPES, kindMeta } from '../lib/meta'
 import { downloadFile } from '../lib/download'
+import { descargarExcelMovimientos } from '../lib/descargarExcelMovimientos'
+import { navigate, paths } from '../lib/router'
 import { cn } from '../lib/cn'
 import { PageHeader } from '../components/layout/AppShell'
 import { Card, EmptyState } from '../components/ui/Card'
@@ -27,7 +29,9 @@ const PLURAL: Record<MovementKind, string> = {
 }
 
 export function Movements({ params }: { params: URLSearchParams }) {
-  const { ws, ds, lookup, today } = useFinance()
+  const fin = useFinance()
+  const { ws, ds, lookup, today } = fin
+  const [haciendoExcel, setHaciendoExcel] = useState(false)
   const multi = ds.titulares.length > 1
   const initialTipo = params.get('tipo')
   const initialTitular = params.get('titular') ?? ''
@@ -64,7 +68,20 @@ export function Movements({ params }: { params: URLSearchParams }) {
     const csv = movementsToCSV(filtered, lookup)
     const name = (titularSel?.nombre ?? (multi ? 'todos' : ds.titulares[0].nombre)).replace(/[^\p{L}\p{N}]+/gu, '-').toLowerCase()
     downloadFile(`movimientos-${name}-${today}.csv`, csv, 'text/csv;charset=utf-8')
-    toast('Movimientos exportados (se abren con Excel)')
+    toast('CSV filtrado descargado')
+  }
+
+  const exportExcel = async () => {
+    setHaciendoExcel(true)
+    try {
+      // El libro y su gráfico usan todos los movimientos guardados, no la lista filtrada.
+      await descargarExcelMovimientos(fin)
+      toast('Excel con el gráfico del dinero descargado')
+    } catch {
+      toast('No se ha podido generar el Excel', 'error')
+    } finally {
+      setHaciendoExcel(false)
+    }
   }
 
   const kinds = MOVEMENT_KINDS.filter((k) => k !== 'entreTitulares' || counts.entreTitulares > 0 || filters.tipo === k)
@@ -78,8 +95,8 @@ export function Movements({ params }: { params: URLSearchParams }) {
         subtitle={multi ? 'Todo el dinero que se mueve, de todos los titulares: de dónde viene y a dónde va' : 'Todo el dinero que se mueve: de dónde viene y a dónde va'}
         actions={
           <>
-            <Button variant="secondary" icon={Download} onClick={exportCSV} disabled={!filtered.length} className="max-sm:hidden">
-              Exportar a Excel
+            <Button variant="secondary" icon={Download} onClick={() => void exportExcel()} disabled={haciendoExcel}>
+              {haciendoExcel ? 'Generando…' : 'Excel con gráfico'}
             </Button>
             <Button icon={Plus} onClick={() => openMovement()}>
               Nuevo
@@ -87,6 +104,22 @@ export function Movements({ params }: { params: URLSearchParams }) {
           </>
         }
       />
+
+      <Card className="mb-4 flex flex-wrap items-center justify-between gap-3 p-4 sm:px-5">
+        <div className="flex min-w-0 items-start gap-3">
+          <Waypoints className="mt-0.5 size-5 shrink-0 text-brand-600" aria-hidden="true" />
+          <div>
+            <p className="text-sm font-semibold text-slate-900">Gráfico del dinero</p>
+            <p className="mt-0.5 text-[13px] text-slate-600">
+              Los movimientos guardados aquí aparecen automáticamente en el gráfico de la app. El Excel incluye todos los movimientos,
+              aunque filtres esta lista. Si ya lo descargaste, vuelve a descargarlo para ver los cambios.
+            </p>
+          </div>
+        </div>
+        <Button variant="soft" size="sm" icon={Waypoints} onClick={() => navigate(paths.flujo)}>
+          Ver gráfico actualizado
+        </Button>
+      </Card>
 
       {ws.movimientos.length === 0 ? (
         <Card>
@@ -278,9 +311,9 @@ export function Movements({ params }: { params: URLSearchParams }) {
             )}
           </Card>
 
-          <div className="mt-4 sm:hidden">
-            <Button variant="secondary" icon={Download} onClick={exportCSV} disabled={!filtered.length} className="w-full">
-              Exportar a Excel (CSV)
+          <div className="mt-4 flex justify-end">
+            <Button variant="secondary" size="sm" icon={Download} onClick={exportCSV} disabled={!filtered.length} className="max-sm:w-full">
+              Exportar CSV de estos filtros
             </Button>
           </div>
         </>

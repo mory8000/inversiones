@@ -81,7 +81,9 @@ Sustituye al antiguo `Inversiones.xlsx` y mantiene sus mismos conceptos: titular
   producto («Comisiones pagadas») y en el CSV. Conta también para no dejar gastar más de lo que hay.
 - **Movimientos**: todos los movimientos de todos los titulares, con su origen (**De**) y destino (**A**) y de quién
   es cada uno, agrupados por meses. Filtros por titular, tipo, cuenta o producto, tipo de producto y periodo;
-  buscador; y exportación a Excel (CSV).
+  buscador; exportación del **Excel con el «Gráfico del dinero»** a partir de todos los movimientos guardados,
+  aunque haya filtros activos; y descarga separada del **CSV de los movimientos filtrados**. El enlace «Ver
+  gráfico actualizado» abre el flujo interactivo de la app, que se recalcula al guardar o editar movimientos.
 - **De dónde sale lo que tienes**: en la tarjeta de cada titular, el patrimonio se desglosa en tres cifras que
   suman: **Aportado** (lo que has puesto tú, desde fuera, menos lo que te has llevado fuera: sin ganancias),
   **Beneficio / pérdida** (lo que han ganado o perdido tus inversiones, ya descontadas las comisiones) y
@@ -91,7 +93,7 @@ Sustituye al antiguo `Inversiones.xlsx` y mantiene sus mismos conceptos: titular
 - **Desde cuándo cuenta la evolución** (en *Ajustes*): las líneas del gráfico empiezan un día fijo (por defecto, el
   **19/10/2026**, el de los valores reales del banco): lo anterior no se dibuja. Desde ese día cuentan lo que
   aportes, lo que saques y lo que ganen o pierdan tus inversiones. Se puede cambiar a cualquier otra fecha.
-- **Flujo del dinero**: diagrama de bandas en tres columnas — *de dónde viene* (tus cuentas, traspasos y la
+- **Gráfico del dinero** (en la app): diagrama de bandas en tres columnas — *de dónde viene* (tus cuentas, traspasos y la
   rentabilidad), *dónde está* (tus productos) y *a dónde va* (reembolsos, traspasos y lo que sigue invertido).
   Toca una caja para ver su recorrido. Se puede ver todo el histórico o un periodo concreto.
   En el móvil se muestra en dos pasos para que se lea bien.
@@ -249,9 +251,11 @@ Configuración (una sola vez, en *Settings* del repositorio):
 
 Hay dos formas de tenerlo:
 
-- **Con tus datos: Ajustes → «Descargar el Excel de movimientos».** La app genera la hoja con todos
-  tus movimientos, tus cuentas, tus inversiones y la rentabilidad de cada una. (Es la misma hoja que
-  la plantilla, pero ya rellena.)
+- **Con tus datos: Movimientos → «Excel con gráfico»** (también en Ajustes → «Descargar el Excel de
+  movimientos»). La app genera la hoja con **todos** tus movimientos, no solo los que coinciden con
+  los filtros de la página, tus cuentas, tus inversiones y la rentabilidad de cada una. Es la misma
+  hoja que la plantilla, pero ya rellena. Si cambias datos en la app después de descargar el libro,
+  descarga uno nuevo: un archivo ya guardado no se sincroniza con el navegador.
 - **La plantilla vacía:** `Movimientos.xlsx`, en la raíz (y su copia en `public/`, que es la que se
   puede descargar desde la web: `https://mory8000.github.io/inversiones/Movimientos.xlsx`).
 

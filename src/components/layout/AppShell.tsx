@@ -34,7 +34,7 @@ const NAV: { key: NavKey; label: string; icon: LucideIcon; path: string }[] = [
   { key: 'inicio', label: 'Inicio', icon: House, path: paths.inicio },
   { key: 'inversiones', label: 'Inversiones', icon: Wallet, path: paths.productos() },
   { key: 'movimientos', label: 'Movimientos', icon: ArrowLeftRight, path: paths.movimientos() },
-  { key: 'flujo', label: 'Flujo del dinero', icon: Waypoints, path: paths.flujo },
+  { key: 'flujo', label: 'Gráfico del dinero', icon: Waypoints, path: paths.flujo },
   { key: 'cuentas', label: 'Cuentas', icon: Landmark, path: paths.cuentas },
   { key: 'ajustes', label: 'Ajustes', icon: Settings, path: paths.ajustes },
 ]
@@ -175,7 +175,7 @@ function BottomNav({ current }: { current: NavKey }) {
     { key: 'inicio', label: 'Inicio', icon: House, path: paths.inicio },
     { key: 'inversiones', label: 'Inversiones', icon: Wallet, path: paths.productos() },
     { key: 'movimientos', label: 'Movimientos', icon: ArrowLeftRight, path: paths.movimientos() },
-    { key: 'flujo', label: 'Flujo', icon: Waypoints, path: paths.flujo },
+    { key: 'flujo', label: 'Gráfico', icon: Waypoints, path: paths.flujo },
   ]
   const render = (item: (typeof items)[number]) => {
     const active = item.key === current || (item.key === 'inversiones' && current === 'cuentas')

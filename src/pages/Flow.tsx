@@ -179,7 +179,7 @@ export function Flow() {
     <div>
       <DemoBanner />
       <PageHeader
-        title="Flujo del dinero"
+        title="Gráfico del dinero"
         subtitle={multi ? 'De dónde viene, dónde está y a dónde va cada euro, de todos los titulares' : 'De dónde viene, dónde está y a dónde va cada euro'}
         actions={
           ws.movimientos.length > 0 && (

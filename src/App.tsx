@@ -53,7 +53,7 @@ export default function App() {
       producto: 'Producto',
       cuenta: 'Cuenta',
       movimientos: 'Movimientos',
-      flujo: 'Flujo del dinero',
+      flujo: 'Gráfico del dinero',
       ajustes: 'Ajustes',
     }
     document.title = `${section[route.name]} · Mis Inversiones`

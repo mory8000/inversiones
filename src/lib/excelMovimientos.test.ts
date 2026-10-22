@@ -5,6 +5,9 @@ import JSZip from 'jszip'
 import ExcelJS from 'exceljs'
 import { generarExcelMovimientos, type EntradaExcel } from './excelMovimientos'
 import { entradaDesdeApp } from './excelDesdeApp'
+import { crearExcelDeApp } from './descargarExcelMovimientos'
+import { buildFlowGraph } from './flow'
+import { computeFinance } from '../store/useFinance'
 import { ANCHO_GRAFICO, dibujarGraficoDinero, grafoDinero } from './graficoDineroExcel'
 import type { FinanceData } from '../store/useFinance'
 import type { Position } from './finance'
@@ -599,6 +602,47 @@ describe('el Excel se llena con los datos de la app', () => {
       owner: (ref: { id: string }) => ref,
     } as unknown as FinanceData
   }
+
+  it('al añadir o editar un movimiento, el gráfico de la app y el del nuevo Excel usan el mismo dato actualizado', async () => {
+    const primera = { ...movimiento('2026-10-01', 'c1', 'p1', 300), tipo: 'inversion' as const }
+    const segunda = { ...movimiento('2026-10-02', 'c1', 'p1', 200), tipo: 'inversion' as const }
+    const base = {
+      titulares: [titular('t1', 'Marta')],
+      cuentas: [cuenta('c1', 'Cuenta de origen', 't1', true)],
+      productos: [producto('p1', 'Fondo indexado', 't1')],
+      movimientos: [primera],
+      programadas: [],
+    } as Dataset
+    const añadido = { ...base, movimientos: [primera, segunda] }
+    const editado = { ...añadido, movimientos: [{ ...primera, importe: 450 }, segunda] }
+    const totalEnGraficoApp = (ds: Dataset) => {
+      const fin = computeFinance(ds, HOY)
+      return buildFlowGraph(fin.ds, fin.positions, { from: null, to: null }).links
+        .find((l) => l.source === 'L:c:c1' && l.target === 'M:p1')?.value
+    }
+    expect([base, añadido, editado].map(totalEnGraficoApp)).toEqual([300, 500, 650])
+
+    const libro = async (ds: Dataset) => {
+      const buffer = await crearExcelDeApp(computeFinance(ds, HOY))
+      const excel = new ExcelJS.Workbook()
+      await excel.xlsx.load(buffer)
+      const zip = await JSZip.loadAsync(buffer)
+      return {
+        importes: [excel.getWorksheet('Movimientos')!.getCell('D6').value, excel.getWorksheet('Movimientos')!.getCell('D7').value],
+        imagen: await zip.file('xl/media/image1.png')!.async('uint8array'),
+        hojas: excel.worksheets.map((h) => h.name),
+      }
+    }
+    const anterior = await libro(base)
+    const nuevo = await libro(añadido)
+    const corregido = await libro(editado)
+    expect(anterior.importes).toEqual([300, null])
+    expect(nuevo.importes).toEqual([300, 200])
+    expect(corregido.importes).toEqual([450, 200])
+    expect(nuevo.hojas).toContain('Gráfico del dinero')
+    expect(nuevo.imagen).not.toEqual(anterior.imagen)
+    expect(corregido.imagen).not.toEqual(nuevo.imagen)
+  })
 
   it('pone cada inversión debajo de la cuenta que la paga', () => {
     const ds = {
