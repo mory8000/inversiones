@@ -264,31 +264,37 @@ La hoja, en una sola página:
   se pagan desde esa cuenta**, con **Capital aportado · Rentabilidad (% y €) · Saldo**. En las
   inversiones se escribe el **%** (el mismo que ves en la app) y los euros y el saldo se calculan
   solos: el interés no es un movimiento, va dentro de ese %.
-- **Exterior** es el dinero que entra (o sale) de fuera. Las **cuentas externas** (las de otro banco)
-  no salen en el resumen: ese dinero ya se ve como «Exterior → cuenta externa → destino».
+- **Exterior** es el dinero que entra (o sale) de fuera. De las **cuentas externas** (las de otro
+  banco, la cuenta nómina) **no se ve ningún dato**: no salen ni en el resumen ni en los movimientos,
+  porque ese dinero es simplemente «Exterior → la cuenta de dentro» (o al revés).
 - Los nombres van **en corto**: se quita lo que va entre paréntesis y se recorta lo que sobra de
-  30 letras («iShares Developed World Index (IE) Acc EUR clase s» → «iShares Developed World Index»).
+  30 letras. Los movimientos se escriben con ese mismo nombre corto: si no, el dinero de una
+  inversión con el nombre largo no encontraría su fila y se quedaría a cero.
 - **Añadir o quitar inversiones:** al final del resumen se ve **una sola fila amarilla**. Escribes el
   nombre (y el titular) y aparece la siguiente; si borras el nombre, la fila desaparece. Entran al
   momento en los desplegables (que no muestran huecos y crecen solos). Hay **siete filas** y, detrás,
   **una fila de separación** y los totales, que suben o bajan solos.
 - Si dos productos se llaman igual, el segundo lleva un **2** al final («iShares… Index» e «iShares…
-  Index 2»): así el dinero va al que corresponde. Las **inversiones a cero y sin movimientos** no
-  salen en el resumen.
-- **Lo que se queda a cero desaparece:** si sacas de una inversión todo su saldo (lo aportado más la
-  rentabilidad), su fila se queda en blanco y deja de contar en los totales, y una cuenta sin
-  inversiones a la vista desaparece igual. Si vuelves a meter dinero, la fila reaparece.
+  Index 2»): así el dinero va al que corresponde.
+- **Lo que se queda a cero desaparece, y lo de abajo sube:** si sacas de una inversión todo su saldo
+  (lo aportado más la rentabilidad), si vendes un fondo o si una cuenta se queda sin dinero y sin
+  inversiones, su fila **no sale en el Excel** y las de abajo suben tantas posiciones como filas se
+  hayan quedado vacías: así no quedan huecos. Si vuelves a meter dinero, la fila vuelve a salir. Lo
+  mismo pasa dentro de la hoja: una fila que se queda a cero se va en blanco y deja de contar, y un
+  movimiento que pones a **0** se borra entero (como si no lo hubieras escrito).
 - Después, el total de cada cuenta (si el titular tiene más de una), el de cada **titular** (si solo
   tiene una cuenta, el renglón lleva los dos nombres: «Total Cuenta Myinvestor-Luis») y el **TOTAL**.
 - **La hoja «Gráficos»** (una pestaña aparte): **un gráfico por titular** con **tres barras**:
   **Aportado** (azul), **Rentabilidad** (naranja) y **Aportado + rentabilidad** (verde), que es el
   saldo. La cuenta y las inversiones van **juntas, sin desglosar**, y el importe sale encima de cada
   barra.
-- **La hoja «Flujo»** (otra pestaña): el flujo del dinero, pintado con celdas. Tres columnas —**de
-  dónde llega**, **por dónde pasa** y **a dónde va**—, una caja por nombre y una flecha con el dinero
-  que va de una a otra (si el dinero vuelve, la flecha mira hacia atrás). Debajo, los **movimientos
-  uno a uno**: fecha, de dónde sale, a dónde va e importe, con el total al final. Se dibuja con los
-  movimientos de hoy: vuelve a descargar el Excel para tenerlo al día.
+- **La hoja «Flujo»** (otra pestaña): el flujo del dinero, pintado con celdas. Arriba, tres cifras de
+  un vistazo —lo que **entra de fuera**, lo que **sigue en las cuentas** y lo que está **invertido**—.
+  Después, **un renglón por viaje del dinero**: cada línea cuenta el camino entero —**de dónde llega**,
+  **por dónde pasa** y **a dónde va**— con una caja por nombre y la flecha con el importe que se mueve
+  (si el dinero se queda en la cuenta, la última caja lo dice). Debajo, los **movimientos uno a uno**:
+  fecha, de dónde sale, a dónde va e importe, con el total al final. Se dibuja con los movimientos de
+  hoy: vuelve a descargar el Excel para tenerlo al día.
 - **Protegida:** solo se puede escribir en los movimientos, en las filas amarillas nuevas y en el %
   de cada inversión. Se puede elegir cualquier celda y **borrar o añadir filas** (para quitar una
   inversión que llegue a cero o meter una nueva). Sin contraseña: «Revisar → Desproteger hoja».

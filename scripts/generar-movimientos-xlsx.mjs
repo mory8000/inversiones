@@ -19,14 +19,20 @@ const RAIZ = resolve(aqui, '..')
 const HOY = '2026-10-22'
 
 /** Los mismos colores que la app: azul el primer titular, naranja el segundo. */
+/**
+ * Los mismos colores que la app: azul el primer titular, naranja el segundo. Todo lo que sale
+ * aquí tiene dinero: lo que queda a cero no aparece en el Excel (ni la cuenta nómina, que es la
+ * cuenta de fuera y en el Excel es simplemente «Exterior»).
+ */
 const PLANTILLA = {
   hoy: HOY,
   movimientos: [
     { fecha: '2026-10-01', de: 'Exterior', a: 'Cuenta Myinvestor', importe: 1000 },
     { fecha: '2026-10-02', de: 'Cuenta Myinvestor', a: 'Vanguard Global Stock Index', importe: 300 },
     { fecha: '2026-10-02', de: 'Cuenta Myinvestor', a: 'Fidelity MSCI World Index', importe: 200 },
+    { fecha: '2026-10-03', de: 'Cuenta Myinvestor', a: 'Cartera indexada Metal', importe: 120 },
     { fecha: '2026-10-03', de: 'Exterior', a: 'Fondo indexado', importe: 400 },
-    { fecha: '2026-10-05', de: 'Cuenta Myinvestor', a: 'iShares Developed World Index', importe: 150 },
+    { fecha: '2026-10-05', de: 'Exterior', a: 'iShares Developed World Index (IE) Acc EUR clase s', importe: 150 },
   ],
   // Dos filas amarillas: una a la vista y otra lista para cuando rellenes la primera.
   libres: 2,
@@ -41,12 +47,8 @@ const PLANTILLA = {
             { nombre: 'Vanguard Global Stock Index', rentabilidad: null },
             { nombre: 'Fidelity MSCI World Index', rentabilidad: null },
             { nombre: 'Cartera indexada Metal', rentabilidad: null },
-            { nombre: 'Depósito 12 meses', rentabilidad: null },
-            { nombre: 'Plan de pensiones indexado global', rentabilidad: null },
           ],
         },
-        // La cuenta nómina no sale: es la cuenta exterior, y en el Excel ese dinero es «Exterior».
-        { cuenta: 'Cuenta ahorro · ING', inversiones: [] },
       ],
     },
     {

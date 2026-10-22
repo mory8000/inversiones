@@ -1,10 +1,12 @@
 // Traduce los datos de la app a la entrada del generador del Excel.
 //
 // Aquí se decide a qué cuenta pertenece cada inversión (la que más dinero le ha puesto) y cómo se
-// ve en el Excel el dinero que entra y sale de fuera: en la app el dinero llega desde una cuenta
-// externa (otro banco), que en el Excel aparece como dos movimientos: «Exterior → cuenta externa»
-// y «cuenta externa → su destino». Así la cuenta externa queda a cero y lo aportado es lo que
-// realmente ha entrado de fuera.
+// ve en el Excel el dinero que entra y sale de fuera: de la cuenta externa (otro banco, la
+// nómina) no se ve nada, porque ese dinero es sencillamente el «Exterior»; su nombre no aparece
+// por ningún lado.
+//
+// Y lo que queda a cero, no sale: ni las inversiones de las que se sacó todo el dinero ni las cuentas
+// que no tienen nada. Así no quedan huecos y las filas de abajo suben solas.
 
 import type { EntityRef, Movimiento } from '../types'
 import type { FinanceData } from '../store/useFinance'
@@ -19,6 +21,14 @@ export function entradaDesdeApp(fin: FinanceData, hoy: string): EntradaExcel {
   const bonito = (nombre: string) => (/^my\s*investor$/i.test(nombre.trim()) ? 'Cuenta Myinvestor' : nombre)
   const nombreDe = (ref: EntityRef) =>
     bonito(ref.kind === 'cuenta' ? nombreCuenta.get(ref.id) ?? '' : nombreProducto.get(ref.id) ?? '')
+
+  // Qué cuentas salen en algún movimiento: las demás no pintan nada en el resumen.
+  const tocadas = new Set<string>()
+  for (const m of ds.movimientos) {
+    if (m.origen.kind === 'cuenta') tocadas.add(m.origen.id)
+    if (m.destino.kind === 'cuenta') tocadas.add(m.destino.id)
+  }
+  const tocaElDinero = (cuentaId: string) => tocadas.has(cuentaId)
 
   // ── Titulares: cada cuenta con las inversiones que paga ──────────────────
   const titulares = fin.titulares.map((tf) => {
@@ -37,8 +47,11 @@ export function entradaDesdeApp(fin: FinanceData, hoy: string): EntradaExcel {
       const [cuentaId] = [...porCuenta.entries()].sort((a, b) => b[1] - a[1])[0]
       return cuentaId
     }
-    // Las cuentas externas (otro banco) no salen en el resumen: en el Excel ese dinero es «Exterior».
-    const cuentas = tf.ws.cuentas.filter((c) => !c.externa)
+    // Las cuentas externas (otro banco, la nómina) no salen en el resumen: en el Excel ese dinero es
+    // «Exterior». Y tampoco sale una cuenta por la que no ha pasado dinero y que no paga nada.
+    const cuentas = tf.ws.cuentas.filter(
+      (c) => !c.externa && (tocaElDinero(c.id) || productos.some((p) => conDatos(fin, p.id) && cuentaDe(p.id) === c.id)),
+    )
     const grupos: GrupoExcel[] = []
     for (const cuenta of cuentas) {
       const inversiones: InversionExcel[] = productos
@@ -83,23 +96,19 @@ function anadirMovimiento(
   const a = nombreDe(m.destino)
   const deExterna = m.origen.kind === 'cuenta' && externa.get(m.origen.id) === true
   const aExterna = m.destino.kind === 'cuenta' && externa.get(m.destino.id) === true
-  // El dinero que llega de fuera entra primero en la cuenta externa; el que se va, sale por ella.
-  if (deExterna) {
-    anade(m.fecha, 'Exterior', de, m.importe)
-    anade(m.fecha, de, a, m.importe)
-  } else if (aExterna) {
-    anade(m.fecha, de, a, m.importe)
-    anade(m.fecha, a, 'Exterior', m.importe)
-  } else {
-    anade(m.fecha, de, a, m.importe)
-  }
+  // La cuenta de fuera (el otro banco, la nómina) no se nombra: el dinero entra o sale «del Exterior».
+  anade(m.fecha, deExterna ? 'Exterior' : de, aExterna ? 'Exterior' : a, m.importe)
 }
 
-/** Las inversiones que quedan a cero (sin dinero y sin movimientos) no salen en el resumen. */
+/**
+ * Las inversiones que quedan a cero no salen en el resumen: ni las que nunca tuvieron dinero ni las
+ * que se vendieron o se vaciaron del todo (así no dejan un hueco en medio de las demás).
+ */
 function conDatos(fin: FinanceData, productoId: string): boolean {
   const p = fin.positions.get(productoId)
   if (!p) return false
-  return p.numMovimientos > 0 || p.saldo !== 0 || p.capital !== 0
+  const EPS = 0.005
+  return Math.abs(p.saldo) > EPS || Math.abs(p.capital) > EPS
 }
 
 /** Rentabilidad en tanto por uno (0,05 = 5 %): la de la app, o la que sale del valor actual. */

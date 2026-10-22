@@ -154,6 +154,30 @@ describe('el Excel de movimientos', () => {
     expect(nombres.filter((n) => n.startsWith('iShares')).length).toBe(2)
   })
 
+  it('el dinero va al nombre en corto: una inversión con el nombre largo no se queda a cero', async () => {
+    // El movimiento llega con el nombre completo de la app («...(IE) Acc EUR clase s») y en el
+    // resumen la fila sale en corto: el movimiento tiene que escribirse con ese nombre, o la fila
+    // no encontraría su dinero y se quedaría a cero.
+    const { hoja } = await generar({
+      ...ENTRADA,
+      movimientos: [
+        { fecha: '2026-10-01', de: 'Exterior', a: 'MyInvestor', importe: 500 },
+        { fecha: '2026-10-02', de: 'MyInvestor', a: 'iShares Developed World Index (IE) Acc EUR clase s', importe: 500 },
+      ],
+    })
+    expect(hoja.getCell(7, 3).value).toBe('iShares Developed World Index')
+    expect(nombresDelResumen(hoja)).toContain('iShares Developed World Index')
+  })
+
+  it('las cuentas sin dinero y sin inversiones no salen: lo de abajo sube', async () => {
+    const { hoja } = await generar()
+    const nombres = nombresDelResumen(hoja)
+    // «Cuenta nómina · BBVA» no tiene ni movimientos ni inversiones: se va y no deja hueco.
+    expect(nombres.some((n) => n.includes('nómina') || n.includes('BBVA'))).toBe(false)
+    expect(nombres[0]).toBe('Exterior')
+    expect(nombres[1]).toBe('MyInvestor')
+  })
+
   it('no tiene «Interés»: el interés se escribe en el % de cada producto', async () => {
     const { hoja } = await generar()
     expect(nombresDelResumen(hoja)).not.toContain('Interés')
@@ -279,28 +303,44 @@ describe('el Excel de movimientos', () => {
     expect(filas[1] - filas[0]).toBeLessThanOrEqual(12)
   })
 
-  it('dibuja el flujo del dinero: de dónde llega, por dónde pasa y a dónde va', async () => {
+  it('dibuja el flujo del dinero: un renglón por viaje, de dónde sale a dónde acaba', async () => {
     const { buffer } = await generar()
     const libro = new ExcelJS.Workbook()
     await libro.xlsx.load(buffer)
     // Va en su hoja y pintado con celdas (las formas a veces no se ven).
     const hoja = libro.getWorksheet('Flujo')!
     expect(String(hoja.getCell('A1').value)).toContain('Flujo del dinero')
-    // Tres pisos: lo que llega de fuera, la cuenta por la que pasa y donde se queda.
-    expect(hoja.getCell('A3').value).toBe('De dónde llega')
-    expect(hoja.getCell('F3').value).toBe('Por dónde pasa')
-    expect(hoja.getCell('K3').value).toBe('A dónde va')
+    // Arriba, de un vistazo: lo que entra de fuera, lo que sigue en las cuentas y lo invertido.
+    const euros = new Intl.NumberFormat('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    expect(String(hoja.getCell('A4').value)).toBe(`Entra de fuera\n${euros.format(1000)} \u20ac`)
+    expect(String(hoja.getCell('F4').value)).toContain('Sigue en las cuentas')
+    expect(String(hoja.getCell('K4').value)).toContain('Invertido')
+    expect(String(hoja.getCell('K4').value)).toBe(`Invertido\n${euros.format(700)} \u20ac`)
+    // Tres pisos: lo que llega de fuera, la cuenta por la que pasa y donde acaba.
+    expect(hoja.getCell('A7').value).toBe('DE D\u00d3NDE LLEGA')
+    expect(hoja.getCell('F7').value).toBe('POR D\u00d3NDE PASA')
+    expect(hoja.getCell('K7').value).toBe('A D\u00d3NDE VA')
     const textos = hoja
       .getSheetValues()
       .flat()
       .filter((v): v is string => typeof v === 'string')
-    // Una caja por nombre y una flecha con el dinero que va de una a otra.
+    // Cada viaje es un renglón: «Exterior → MyInvestor → Vanguard» se lee de izquierda a derecha.
+    let viajes = 0
+    // Cada viaje ocupa dos filas (la caja y la flecha se ven más grandes) y una de respiro.
+    for (let f = 8; f <= hoja.rowCount; f += 3) {
+      const de = hoja.getCell(f, 1).value
+      const por = hoja.getCell(f, 6).value
+      const a = hoja.getCell(f, 11).value
+      if (de === 'Exterior' && typeof por === 'string' && typeof a === 'string') viajes++
+    }
+    expect(viajes).toBe(3) // 400 al Fondo indexado, 300 a Vanguard y 300 que siguen en la cuenta
     expect(textos).toContain('Exterior')
     expect(textos).toContain('MyInvestor')
     expect(textos).toContain('Vanguard Global Stock Index')
+    expect(textos).toContain('Sigue en la cuenta')
     // El dinero yendo de un sitio a otro: la flecha con el importe.
-    const euros = new Intl.NumberFormat('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-    expect(textos.some((t) => t.includes(`${euros.format(1000)}`) && t.includes('\u25b6'))).toBe(true)
+    expect(textos.some((t) => t.includes(euros.format(400)) && t.includes('\u25b6'))).toBe(true)
+    expect(textos.some((t) => t.includes(euros.format(300)) && t.includes('\u25b6'))).toBe(true)
     // Y los movimientos, uno a uno, con su fecha y su importe.
     expect(textos).toContain('Movimientos, uno a uno')
     const celdas = hoja.getSheetValues().flat()
@@ -493,7 +533,7 @@ describe('el Excel se llena con los datos de la app', () => {
     const tfs = titulares.map((t, i) => ({ titular: t, index: i, color: '#2447B8', ws: ws(t.id), positions: [], accounts: [], totals: vacio, byType: new Map(), recibido: 0 }))
     // Todas las inversiones con datos, salvo que la prueba diga otra cosa.
     const posiciones = new Map<string, Position>(
-      ds.productos.map((p) => [p.id, { rentabilidad: null, capital: 0, saldo: 0, numMovimientos: 1 } as unknown as Position]),
+      ds.productos.map((p) => [p.id, { rentabilidad: null, capital: 100, saldo: 100, numMovimientos: 1 } as unknown as Position]),
     )
     return {
       ds,
@@ -527,23 +567,34 @@ describe('el Excel se llena con los datos de la app', () => {
     } as unknown as Dataset
     const entrada = entradaDesdeApp(fin(ds, [titular('t1', 'Marta')]), HOY)
     expect(entrada.titulares[0].grupos.map((g) => g.cuenta)).toEqual(['Cuenta Myinvestor'])
-    expect(entrada.movimientos).toEqual([
-      { fecha: '2026-10-01', de: 'Exterior', a: 'Cuenta nómina', importe: 1000 },
-      { fecha: '2026-10-01', de: 'Cuenta nómina', a: 'Cuenta Myinvestor', importe: 1000 },
-    ])
+    // De la cuenta nómina no se ve nada: ni como fila ni en los movimientos.
+    expect(entrada.movimientos).toEqual([{ fecha: '2026-10-01', de: 'Exterior', a: 'Cuenta Myinvestor', importe: 1000 }])
   })
 
-  it('el dinero que llega de una cuenta externa se ve como «Exterior → cuenta externa → destino»', () => {
+  it('de la cuenta de fuera (la nómina) no se nombra nada: ese dinero es «Exterior»', () => {
     const ds = {
       cuentas: [cuenta('c1', 'Cuenta Myinvestor', 't1'), cuenta('c2', 'Otro banco', 't1', true)],
       productos: [producto('p1', 'Fondo indexado', 't1')],
-      movimientos: [movimiento('2026-10-02', 'c2', 'p1', 300)],
+      movimientos: [
+        movimiento('2026-10-02', 'c2', 'p1', 300),
+        movimiento('2026-10-03', 'c1', 'c2', 100),
+      ],
     } as unknown as Dataset
     const entrada = entradaDesdeApp(fin(ds, [titular('t1', 'Marta')]), HOY)
     expect(entrada.movimientos.map((m) => [m.de, m.a])).toEqual([
-      ['Exterior', 'Otro banco'],
-      ['Otro banco', 'Fondo indexado'],
+      ['Exterior', 'Fondo indexado'],
+      ['Cuenta Myinvestor', 'Exterior'],
     ])
+  })
+
+  it('las cuentas por las que no pasa dinero no salen en el resumen', () => {
+    const ds = {
+      cuentas: [cuenta('c1', 'Cuenta Myinvestor', 't1'), cuenta('c2', 'Cuenta vacía', 't1')],
+      productos: [producto('p1', 'Fondo indexado', 't1')],
+      movimientos: [movimiento('2026-10-01', 'c1', 'p1', 300)],
+    } as unknown as Dataset
+    const entrada = entradaDesdeApp(fin(ds, [titular('t1', 'Marta')]), HOY)
+    expect(entrada.titulares[0].grupos.map((g) => g.cuenta)).toEqual(['Cuenta Myinvestor'])
   })
 
   it('escribe «Cuenta Myinvestor» aunque en la app se llame «Myinvestor»', () => {
@@ -562,14 +613,15 @@ describe('el Excel se llena con los datos de la app', () => {
     })
   })
 
-  it('las inversiones que quedan a cero y sin movimientos no salen en el resumen', () => {
+  it('las inversiones que quedan a cero no salen en el resumen, aunque tengan movimientos', () => {
     const ds = {
       cuentas: [cuenta('c1', 'Cuenta Myinvestor', 't1')],
       productos: [producto('p1', 'Fondo indexado', 't1'), producto('p2', 'Fondo viejo', 't1')],
       movimientos: [movimiento('2026-10-01', 'c1', 'p1', 300)],
     } as unknown as Dataset
     const base = fin(ds, [titular('t1', 'Marta')])
-    base.positions.set('p2', { rentabilidad: null, capital: 0, saldo: 0, numMovimientos: 0 } as unknown as Position)
+    // Se vendió del todo: tiene movimientos, pero no queda dinero, así que no deja hueco.
+    base.positions.set('p2', { rentabilidad: null, capital: 0, saldo: 0, numMovimientos: 3 } as unknown as Position)
     const entrada = entradaDesdeApp(base, HOY)
     const nombres = entrada.titulares[0].grupos.flatMap((g) => g.inversiones.map((i) => i.nombre))
     expect(nombres).toContain('Fondo indexado')

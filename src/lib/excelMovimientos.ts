@@ -131,14 +131,23 @@ function nombresCortos(entrada: EntradaExcel) {
     return n === 1 ? corto : `${corto} ${n}`
   }
   // Se reparten una sola vez y en el orden en que salen las filas.
-  const enOrden: string[] = []
+  const enOrden: [string, string][] = []
   for (const t of entrada.titulares)
     for (const g of [...t.grupos].sort((a, b) => b.inversiones.length - a.inversiones.length)) {
-      if (g.cuenta) enOrden.push(asignar(g.cuenta))
-      for (const i of g.inversiones) enOrden.push(asignar(i.nombre))
+      if (g.cuenta) enOrden.push([g.cuenta, asignar(g.cuenta)])
+      for (const i of g.inversiones) enOrden.push([i.nombre, asignar(i.nombre)])
     }
   let siguiente = 0
-  return () => enOrden[siguiente++] ?? ''
+  /**
+   * El nombre tal y como sale en la fila. Los movimientos se escriben con él: si una inversión se
+   * llama «iShares Developed World Index (IE) Acc EUR clase s» y en el resumen sale en corto, el
+   * dinero tiene que ir al nombre corto (si no, la fila se queda a cero y no cuadra).
+   */
+  const corto = new Map(enOrden)
+  return {
+    siguiente: () => enOrden[siguiente++]?.[1] ?? '',
+    corto: (nombre: string) => corto.get(nombre) ?? nombre,
+  }
 }
 
 /** RANGO con el que se alimentan los desplegables: solo los nombres escritos, sin huecos. */
@@ -277,6 +286,27 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
   ws.getRow(FILA_CABECERAS).height = 16
 
   // ── Movimientos ──────────────────────────────────────────────────────────
+  // Una cuenta sin dinero y sin inversiones no pinta nada en el resumen: se va, y lo que había
+  // debajo sube una fila. (Las inversiones que quedan a cero ya no llegan: la app no las manda.)
+  const conDinero = new Set<string>()
+  for (const m of entrada.movimientos) {
+    conDinero.add(m.de)
+    conDinero.add(m.a)
+  }
+  const titulares = entrada.titulares
+    .map((t) => ({ ...t, grupos: t.grupos.filter((g) => !g.cuenta || g.inversiones.length > 0 || conDinero.has(g.cuenta)) }))
+    .filter((t) => t.grupos.length)
+  const nombres = nombresCortos({ ...entrada, titulares })
+  /**
+   * Los movimientos se escriben con el mismo nombre que la fila del resumen (en corto, si lo lleva):
+   * si una inversión se llama «iShares Developed World Index (IE) Acc EUR clase s» y en el resumen sale en
+   * corto, el dinero va al nombre corto; si no, la fila se quedaría a cero sin cuadrar.
+   */
+  const movimientos = entrada.movimientos.map((m) => ({ ...m, de: nombres.corto(m.de), a: nombres.corto(m.a) }))
+  for (const m of movimientos) {
+    conDinero.add(m.de)
+    conDinero.add(m.a)
+  }
   const fechaHoy = (() => {
     const [y, m, d] = entrada.hoy.split('-').map(Number)
     return new Date(Date.UTC(y, (m || 1) - 1, d || 1))
@@ -289,7 +319,7 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
     // Los movimientos son lo único que se escribe a mano: fecha, de, a e importe.
     for (const c of [COL.fecha, COL.de, COL.a, COL.importe]) celda(f, c).protection = { locked: false }
   }
-  for (const [i, m] of entrada.movimientos.entries()) {
+  for (const [i, m] of movimientos.entries()) {
     const f = RES_1 + i
     celda(f, COL.de).value = m.de
     celda(f, COL.a).value = m.a
@@ -298,26 +328,33 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
     celda(f, COL.fecha).value = new Date(Date.UTC(y, (mo || 1) - 1, d || 1))
   }
 
-  // Solo se ve la fila que toca: la siguiente se destapa cuando se rellena esta.
+  // Solo se ve la fila que toca: la siguiente se destapa cuando se rellena esta. Y una fila que se
+  // pone a cero se borra del todo: se queda en blanco, como si no se hubiera escrito nada.
   ws.addConditionalFormatting({
     ref: `${L.fecha}${RES_1}:${L.importe}${FILA_MOV_N}`,
     rules: [
       {
         type: 'expression',
-        formulae: [`AND($${L.importe}${RES_1 - 1}<>"",$${L.importe}${RES_1}="")`],
+        formulae: [`AND($${L.importe}${RES_1}<>"",$${L.importe}${RES_1}=0)`],
         priority: 1,
+        style: { font: { size: 10, color: { argb: 'FFFFFFFF' } } },
+      },
+      {
+        type: 'expression',
+        formulae: [`AND($${L.importe}${RES_1 - 1}<>"",$${L.importe}${RES_1}="")`],
+        priority: 2,
         style: { fill: relleno(AMARILLO_FUERTE), font: { size: 10, color: { argb: TINTA } }, border: bordeFino },
       },
       {
         type: 'expression',
         formulae: [`$${L.importe}${RES_1 - 1}<>""`],
-        priority: 2,
+        priority: 3,
         style: { font: { size: 10, color: { argb: TINTA } }, border: bordeFino },
       },
       {
         type: 'expression',
         formulae: [`$${L.importe}${RES_1 - 1}=""`],
-        priority: 3,
+        priority: 4,
         style: { font: { size: 10, color: { argb: 'FFFFFFFF' } } },
       },
     ],
@@ -333,7 +370,8 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
   /** Lo que ha entrado en un nombre (o en la celda que se le pase, p. ej. «$F7»). */
   const entra = (nombre: string) => `SUMIFS(${IMP},${A},${nombre})`
   const sale = (nombre: string) => `SUMIFS(${IMP},${DE},${nombre})`
-  const seMueve = (nombre: string) => `COUNTIF(${A},${nombre})+COUNTIF(${DE},${nombre})`
+  // Un movimiento a cero es como si no existiera: por eso solo cuentan los que llevan dinero.
+  const seMueve = (nombre: string) => `COUNTIFS(${A},${nombre},${IMP},">0")+COUNTIFS(${DE},${nombre},${IMP},">0")`
   const H = (f: number) => `$${L.aportado}${f}`
   /**
    * «Cerrado»: el dinero que entró ya se ha ido. Lo que sale de una inversión es su saldo (lo
@@ -368,7 +406,7 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
     siError(`IF($${L.nombre}${f}="","",IF(${cierra},"",IF(OR(${H(f)}=0,${H(f)}=""),"",$${L.euros}${f}/${H(f)})))`)
 
   // ── Resumen ──────────────────────────────────────────────────────────────
-  const nombreDe = nombresCortos(entrada)
+  const nombreDe = nombres.siguiente
   let fila = RES_1
   let numeroConcepto = 0
 
@@ -424,15 +462,14 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
     fila++
   }
 
-  const colorDe = (titular: string) =>
-    entrada.titulares.find((t) => t.nombre === titular)?.color ?? '#2447B8'
+  const colorDe = (titular: string) => titulares.find((t) => t.nombre === titular)?.color ?? '#2447B8'
 
   const grupos: { nombre: string; titular: string; desde: number; hasta: number }[] = []
   // Cada fila escrita: para el gráfico de las inversiones de cada titular y para el flujo.
   const hechas: { clase: 'cuenta' | 'inversion'; corto: string; titular: string; fila: number }[] = []
   // Los caminos del dinero que existen aunque no haya movimientos: así se ve también la plantilla.
   const caminos: { de: string; a: string }[] = []
-  for (const t of entrada.titulares) {
+  for (const t of titulares) {
     // Primero las cuentas con inversiones, después las que no tienen.
     const ordenados = [...t.grupos].sort((a, b) => b.inversiones.length - a.inversiones.length)
     for (const g of ordenados) {
@@ -533,7 +570,7 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
   // El color de cada fila lo marca su titular: así quedan también las inversiones que añadas.
   ws.addConditionalFormatting({
     ref: `${L.nombre}${RES_1 + 3}:${L.nombre}${RES_N}`,
-    rules: entrada.titulares.map((t, i) => ({
+    rules: titulares.map((t, i) => ({
       type: 'expression' as const,
       formulae: [`AND($${L.nombre}${RES_1 + 3}<>"",$${L.titular}${RES_1 + 3}="${t.nombre}")`],
       priority: 6 + i,
@@ -590,7 +627,7 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
   // Un renglón por titular, seguidos y en orden: son las del gráfico. Si el titular tiene una sola
   // cuenta, el renglón lleva los dos nombres («Total Cuenta Myinvestor-Luis»).
   const filaTotalTitular = new Map<string, number>()
-  for (const t of entrada.titulares) {
+  for (const t of titulares) {
     if (t.grupos.length < 1) continue
     filaTotalTitular.set(t.nombre, fila)
     const conInversiones = t.grupos.filter((g) => g.cuenta && g.inversiones.length)
@@ -655,7 +692,7 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
 
   // Uno por titular (Luis, y el «Fondo ahorro»): todo junto —la cuenta y las inversiones— en tres
   // barras: lo aportado, la rentabilidad y las dos cosas sumadas.
-  for (const t of entrada.titulares) {
+  for (const t of titulares) {
     const total = filaTotalTitular.get(t.nombre)
     if (total === undefined) continue
     graficos.push({
@@ -724,10 +761,15 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
     [6, 9],
     [11, 14],
   ]
-  const rutas = rutasDelFlujo(entrada, caminos, new Map(hechas.map((h) => [h.corto, h.clase])))
-  const movimientos = entrada.movimientos.slice(0, 40)
-  const FILA_MOVS = 4 + rutas.length * 2 + 3
-  const ultimaFlujo = FILA_MOVS + movimientos.length + 1
+  const papelesFlujo = new Map(hechas.map((h) => [h.corto, h.clase]))
+  const pisoDe = (nombre: string) => (nombre === EXTERIOR ? 0 : papelesFlujo.get(nombre) === 'inversion' ? 2 : 1)
+  const flujo = viajesDelFlujo({ ...entrada, movimientos }, caminos, papelesFlujo)
+  const listaMovimientos = movimientos.slice(0, 40)
+  // Arriba el resumen, luego un renglón por viaje (dos filas de alto) y, al final, los movimientos.
+  const FILA_1_VIAJE = 8
+  const PASO_VIAJE = 3
+  const FILA_MOVS = FILA_1_VIAJE + flujo.viajes.length * PASO_VIAJE + 2
+  const ultimaFlujo = FILA_MOVS + listaMovimientos.length + 1
 
   const hojaF = libro.addWorksheet(HOJA_FLUJO, {
     views: [{ showGridLines: false }],
@@ -742,9 +784,9 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
   })
   hojaF.properties.tabColor = { argb: AZUL }
   for (let c = 1; c <= 15; c++) hojaF.getColumn(c).width = c === 15 ? 3 : c % 5 === 0 ? 13 : 22
-  for (let f = 1; f <= ultimaFlujo; f++) hojaF.getRow(f).height = f <= 3 ? 20 : 22
-  rotulo(hojaF, 1, 'Flujo del dinero: de dónde llega, por dónde pasa y a dónde va', 14)
-  rotulo(hojaF, 2, 'Se dibuja con los movimientos de hoy: vuelve a descargar el Excel para tenerlo al día.', 9, true)
+  for (let f = 1; f <= ultimaFlujo; f++) hojaF.getRow(f).height = 20
+  rotulo(hojaF, 1, 'Flujo del dinero', 16)
+  rotulo(hojaF, 2, 'Cada línea es el viaje del dinero: de dónde sale, por dónde pasa y dónde acaba. Se dibuja con los movimientos de hoy: vuelve a descargar el Excel para tenerlo al día.', 9, true)
 
   /** Escribe un trozo de la hoja del flujo (y lo centra si ocupa varias columnas). */
   const trozo = (
@@ -759,45 +801,77 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
       negrita?: boolean
       alinear?: 'left' | 'center' | 'right'
       formato?: string
+      /** Filas que ocupa (1 por defecto): las cajas del viaje ocupan 2. */
+      alto?: number
+      /** Para escribir en dos líneas (la cifra y su importe). */
+      envuelve?: boolean
     } = {},
   ) => {
-    if (c2 > c1) hojaF.mergeCells(f, c1, f, c2)
+    const hasta = f + (op.alto ?? 1) - 1
+    if (c2 > c1 || hasta > f) hojaF.mergeCells(f, c1, hasta, c2)
     const celda = hojaF.getCell(f, c1)
     celda.value = valor as never
     celda.font = { size: op.tamano ?? 10, bold: op.negrita ?? false, color: { argb: op.tinta ?? TINTA } }
-    celda.alignment = { horizontal: op.alinear ?? 'center', vertical: 'middle' }
+    celda.alignment = { horizontal: op.alinear ?? 'center', vertical: 'middle', wrapText: op.envuelve ?? false }
     if (op.relleno) celda.fill = relleno(op.relleno)
     if (op.formato) celda.numFmt = op.formato
     return celda
   }
 
-  // Encima, a qué corresponde cada piso.
-  for (const [i, texto] of ['De dónde llega', 'Por dónde pasa', 'A dónde va'].entries())
-    trozo(3, CAJAS[i][0], CAJAS[i][1], texto, { tinta: GRIS, negrita: true })
+  // Arriba, de un vistazo: lo que ha entrado de fuera, lo que sigue en las cuentas y lo invertido.
+  const cifras: [string, number][] = [
+    ['Entra de fuera', flujo.entra],
+    ['Sigue en las cuentas', flujo.enCuentas],
+    ['Invertido', flujo.invertido],
+  ]
+  for (const [i, [texto, valor]] of cifras.entries())
+    trozo(4, CAJAS[i][0], CAJAS[i][1], `${texto}\n${euros(valor)}`, {
+      relleno: `FF${colorDePiso(i)}`,
+      tinta: 'FFFFFFFF',
+      tamano: 11,
+      negrita: true,
+      alto: 2,
+      envuelve: true,
+    })
+  for (const f of [3, 6]) hojaF.getRow(f).height = 8
 
-  // Una fila por camino: la caja de donde sale, la flecha con el dinero y la caja de donde llega.
-  rutas.forEach((r, i) => {
-    const f = 4 + i * 2
-    trozo(f, CAJAS[r.deCol][0], CAJAS[r.deCol][1], r.de, {
-      relleno: `FF${colorDePiso(r.deCol)}`,
-      tinta: 'FFFFFFFF',
-      tamano: 11,
-      negrita: true,
+  // Encima de los viajes, a qué corresponde cada piso.
+  for (const [i, texto] of ['DE DÓNDE LLEGA', 'POR DÓNDE PASA', 'A DÓNDE VA'].entries())
+    trozo(FILA_1_VIAJE - 1, CAJAS[i][0], CAJAS[i][1], texto, { tinta: GRIS, negrita: true, tamano: 10 })
+
+  // Un renglón por viaje: la caja de donde sale, la flecha con el dinero y la caja donde acaba.
+  flujo.viajes.forEach((v, i) => {
+    const f = FILA_1_VIAJE + i * PASO_VIAJE
+    const pisos = pisosDelViaje(v.pasos, pisoDe)
+    v.pasos.forEach((nombre, j) => {
+      trozo(f, CAJAS[pisos[j]][0], CAJAS[pisos[j]][1], nombre, {
+        relleno: `FF${colorDePiso(pisos[j])}`,
+        tinta: 'FFFFFFFF',
+        tamano: 11,
+        negrita: true,
+        alto: 2,
+      })
+      if (j === 0) return
+      const c1 = CAJAS[pisos[j - 1]][1] + 1
+      const c2 = CAJAS[pisos[j]][0] - 1
+      const flecha = c2 - c1 >= 3 ? '\u25b6\u25b6\u25b6' : '\u25b6'
+      trozo(f, c1, c2, v.importe > 0 ? `${euros(v.importe)}   ${flecha}` : flecha, {
+        relleno: v.importe > 0 ? 'FFEFF6FF' : 'FFF8FAFC',
+        tinta: v.importe > 0 ? 'FF1D4ED8' : 'FF94A3B8',
+        tamano: 12,
+        negrita: true,
+        alto: 2,
+      })
     })
-    const flecha = r.delante ? '\u25b6' : '\u25c0'
-    trozo(f, CAJAS[Math.min(r.deCol, r.aCol)][1] + 1, CAJAS[Math.max(r.deCol, r.aCol)][0] - 1, r.importe > 0 ? (r.delante ? `${euros(r.importe)}   ${flecha}` : `${flecha}   ${euros(r.importe)}`) : flecha, {
-      relleno: r.importe > 0 ? 'FFEFF6FF' : 'FFF8FAFC',
-      tinta: r.importe > 0 ? 'FF1D4ED8' : 'FF94A3B8',
-      tamano: 12,
-      negrita: true,
-    })
-    trozo(f, CAJAS[r.aCol][0], CAJAS[r.aCol][1], r.a, {
-      relleno: `FF${colorDePiso(r.aCol)}`,
-      tinta: 'FFFFFFFF',
-      tamano: 11,
-      negrita: true,
-    })
-    hojaF.getRow(f + 1).height = 5
+    // El dinero que no llega a ninguna inversión: se queda donde está, en la cuenta.
+    if (v.seQueda && pisos[pisos.length - 1] < 2)
+      trozo(f, CAJAS[2][0], CAJAS[2][1], 'Sigue en la cuenta', {
+        relleno: 'FFF1F5F9',
+        tinta: GRIS,
+        tamano: 10,
+        alto: 2,
+      })
+    hojaF.getRow(f + 2).height = 7
   })
 
   // Y los movimientos, uno a uno: es el dinero moviéndose, con su fecha y su importe.
@@ -814,7 +888,7 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
       tinta: 'FF334155',
       negrita: true,
     })
-  movimientos.forEach((m, i) => {
+  listaMovimientos.forEach((m, i) => {
     const f = FILA_MOVS + 1 + i
     const [y, mes, d] = m.fecha.split('-').map(Number)
     trozo(f, 1, 2, new Date(Date.UTC(y, (mes || 1) - 1, d || 1)), { formato: FECHA })
@@ -827,10 +901,10 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
       if (c2 > c1) for (let c = c1 + 1; c <= c2; c++) hojaF.getCell(f, c).border = bordeFino
     }
   })
-  const totalMovido = movimientos.reduce((t, m) => t + m.importe, 0)
-  if (movimientos.length) {
-    const f = FILA_MOVS + 1 + movimientos.length
-    trozo(f, 1, 10, `Total de los ${movimientos.length} movimientos`, { negrita: true, alinear: 'right' })
+  const totalMovido = listaMovimientos.reduce((t, m) => t + m.importe, 0)
+  if (listaMovimientos.length) {
+    const f = FILA_MOVS + 1 + listaMovimientos.length
+    trozo(f, 1, 10, `Total de los ${listaMovimientos.length} movimientos`, { negrita: true, alinear: 'right' })
     trozo(f, 11, 14, totalMovido, { formato: MONEDA, alinear: 'right', negrita: true, relleno: CABECERA_FILL })
   }
   hojaF.pageSetup.printArea = `A1:O${ultimaFlujo}`
@@ -1028,70 +1102,114 @@ function xmlGrafico(id: number, nombre: string): string {
     </xdr:graphicFrame>`
 }
 
-// ── El flujo del dinero: de dónde llega, por dónde pasa y a dónde va ────────
+// ── El flujo del dinero: el viaje que hace, de dónde sale a dónde acaba ─────
 
-interface RutaFlujo {
-  de: string
-  a: string
+/** Un viaje del dinero: los nombres por los que pasa, en orden, y cuánto dinero es. */
+interface ViajeFlujo {
+  /** De dónde sale el dinero hasta dónde acaba: 2 o 3 nombres (Exterior → cuenta → inversión). */
+  pasos: string[]
   importe: number
-  /** Columna en la que se dibuja cada nombre: 0 llega, 1 pasa, 2 se queda. */
-  deCol: number
-  aCol: number
-  /** `true` si el dinero va hacia delante (hacia la derecha); `false` si vuelve. */
-  delante: boolean
+  /** `true` si el dinero se queda en la cuenta, sin llegar a ninguna inversión. */
+  seQueda: boolean
+}
+
+/** Lo que se ve arriba de todo: cuánto ha entrado de fuera, cuánto sigue en las cuentas y cuánto está invertido. */
+interface Flujo {
+  viajes: ViajeFlujo[]
+  entra: number
+  enCuentas: number
+  invertido: number
 }
 
 const euros = (n: number) =>
   `${new Intl.NumberFormat('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n)} €`
 
+const NADA = 0.005
+
 /**
- * Los caminos del dinero: los de los movimientos (con su importe) y, si no hay movimientos, los
- * que marca la estructura («Exterior → cuenta → inversión») para que la plantilla también se vea.
- * Cada nombre va a su piso: lo que llega de fuera, la cuenta por la que pasa y donde se queda.
+ * Los viajes del dinero: uno por cada sitio donde el dinero está ahora mismo, contado desde el
+ * principio («Exterior → la cuenta por la que pasa → la inversión donde acaba»). Si no hay
+ * movimientos, se dibuja el camino que marca la estructura para que la plantilla también se vea.
  */
-function rutasDelFlujo(
+function viajesDelFlujo(
   entrada: EntradaExcel,
   caminos: { de: string; a: string }[],
   papeles: Map<string, 'cuenta' | 'inversion'>,
-): RutaFlujo[] {
-  const importes = new Map<string, number>()
-  const conDinero = new Set<string>()
+): Flujo {
   const clave = (de: string, a: string) => `${de}\u0000${a}`
-  const anotar = (de: string, a: string, importe: number) => {
-    if (!de || !a || de === a) return
-    importes.set(clave(de, a), (importes.get(clave(de, a)) ?? 0) + importe)
-  }
+  const entra = new Map<string, number>()
+  const sale = new Map<string, number>()
+  const tramos = new Map<string, number>()
   for (const m of entrada.movimientos) {
-    anotar(m.de, m.a, m.importe)
-    conDinero.add(m.a)
+    if (!m.de || !m.a || m.de === m.a || !(m.importe > 0)) continue
+    entra.set(m.a, (entra.get(m.a) ?? 0) + m.importe)
+    sale.set(m.de, (sale.get(m.de) ?? 0) + m.importe)
+    tramos.set(clave(m.de, m.a), (tramos.get(clave(m.de, m.a)) ?? 0) + m.importe)
   }
-  // Los caminos de la estructura solo salen si por ahí no ha pasado dinero todavía.
-  for (const c of caminos)
-    if (!importes.has(clave(c.de, c.a)) && !conDinero.has(c.a)) anotar(c.de, c.a, 0)
+  const piso = (nombre: string) => (nombre === EXTERIOR ? 0 : papeles.get(nombre) === 'inversion' ? 2 : 1)
+  const neto = (nombre: string) => (entra.get(nombre) ?? 0) - (sale.get(nombre) ?? 0)
+  const todos = new Set([...entra.keys(), ...sale.keys()])
 
-  const piso = (nombre: string) =>
-    nombre === EXTERIOR ? 0 : papeles.get(nombre) === 'inversion' ? 2 : 1
-  return [...importes]
-    .map(([k, importe]) => {
-      const [de, a] = k.split('\u0000')
-      let deCol = piso(de)
-      let aCol = piso(a)
-      // Si los dos van al mismo piso (un traspaso entre dos inversiones, sin pasar por la cuenta),
-      // el que suelta el dinero se pone un piso antes para que se vea el camino.
-      if (deCol === aCol) {
-        if (deCol === 2) deCol = 1
-        else aCol = 2
-      }
-      return { de, a, importe, deCol, aCol, delante: aCol > deCol }
-    })
-    .sort(
-      (x, y) =>
-        Math.min(x.deCol, x.aCol) - Math.min(y.deCol, y.aCol) ||
-        Number(y.delante) - Number(x.delante) ||
-        y.importe - x.importe ||
-        x.de.localeCompare(y.de, 'es'),
-    )
-    .slice(0, 14)
+  // Quién le manda dinero a cada nombre, de más a menos: por ahí se sube hasta el principio.
+  const quienLeManda = new Map<string, { de: string; importe: number }[]>()
+  for (const [k, importe] of tramos) {
+    const [de, a] = k.split('\u0000')
+    const lista = quienLeManda.get(a) ?? []
+    lista.push({ de, importe })
+    quienLeManda.set(a, lista)
+  }
+  for (const lista of quienLeManda.values()) lista.sort((x, y) => y.importe - x.importe)
+
+  const viajes: ViajeFlujo[] = []
+  for (const nombre of todos) {
+    const cuanto = neto(nombre)
+    if (cuanto <= NADA) continue
+    const pasos = [nombre]
+    const vistos = new Set([nombre])
+    let actual = nombre
+    // Se sube por el camino del dinero (siempre hacia fuera) hasta llegar al principio.
+    for (let guarda = 0; guarda < 6; guarda++) {
+      const padre = (quienLeManda.get(actual) ?? []).find((x) => !vistos.has(x.de) && piso(x.de) < piso(actual))
+      if (!padre) break
+      pasos.unshift(padre.de)
+      vistos.add(padre.de)
+      actual = padre.de
+      if (piso(actual) === 0) break
+    }
+    // Si el viaje no arranca en «Exterior», se le pone: todo el dinero viene de fuera.
+    if (!pasos.includes(EXTERIOR)) pasos.unshift(EXTERIOR)
+    viajes.push({ pasos: pasos.slice(-3), importe: cuanto, seQueda: piso(nombre) === 1 })
+  }
+  viajes.sort((x, y) => y.importe - x.importe || x.pasos.length - y.pasos.length || x.pasos[0].localeCompare(y.pasos[0], 'es'))
+
+  // Sin movimientos, el dibujo lo marca la estructura: se ve el camino, todavía sin dinero.
+  if (!viajes.length)
+    for (const c of caminos) viajes.push({ pasos: [c.de, c.a], importe: 0, seQueda: false })
+
+  const sumaNeto = (p: number) =>
+    [...todos].reduce((t, n) => (piso(n) === p ? t + Math.max(neto(n), 0) : t), 0)
+  return {
+    viajes: viajes.slice(0, 12),
+    entra: [...todos].reduce((t, n) => t + (n === EXTERIOR ? sale.get(n) ?? 0 : 0), 0),
+    enCuentas: sumaNeto(1),
+    invertido: sumaNeto(2),
+  }
+}
+
+/**
+ * A qué altura va cada nombre del viaje: 0 llega de fuera, 1 pasa por la cuenta, 2 se queda. Si
+ * dos nombres seguidos van al mismo sitio (un traspaso entre dos inversiones), el segundo baja uno.
+ */
+function pisosDelViaje(pasos: string[], piso: (nombre: string) => number): number[] {
+  const pisos: number[] = []
+  let anterior = -1
+  for (const paso of pasos) {
+    let p = piso(paso)
+    if (p <= anterior) p = Math.min(anterior + 1, 2)
+    pisos.push(p)
+    anterior = p
+  }
+  return pisos
 }
 
 const colorDePiso = (piso: number) => (piso === 0 ? '64748B' : piso === 1 ? '1D4ED8' : '0F766E')
