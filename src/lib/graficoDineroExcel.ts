@@ -47,7 +47,12 @@ export function grafoDinero(
     const medio = camino.pasos[camino.pasos.length - 1]
     const duenio = titulares.get(medio) ?? 'Mi dinero'
     const cuenta = camino.seQueda
-    const anterior = camino.pasos.length >= 3 ? camino.pasos[camino.pasos.length - 2] : `Aportaciones · ${duenio}`
+    const pasoAnterior = camino.pasos.length >= 3 ? camino.pasos[camino.pasos.length - 2] : null
+    // Si la cuenta por la que pasó era de OTRO titular, al destinatario le llega una aportación.
+    // Así «Fondo ahorro» no se confunde con el dinero propio de MyInvestor.
+    const anterior = pasoAnterior && titulares.get(pasoAnterior) === duenio
+      ? pasoAnterior
+      : `Aportaciones · ${duenio}`
     sumar(origen, anterior, medio, camino.importe)
     if (cuenta) {
       sumar(final, medio, `Sigue en cuenta · ${duenio}`, camino.importe)
@@ -67,10 +72,18 @@ export function dibujarGraficoDinero(
   caminos: CaminoDinero[],
   titulares: Map<string, string>,
   porcentajes: Map<string, number>,
+  titularesDelLibro: string[] = [],
 ): { svg: string; alto: number } {
   const { origen, final } = grafoDinero(caminos, titulares, porcentajes)
+  const fuentes = [...new Set(origen.map((e) => e.de))]
+  // Si existe el titular «Fondo ahorro» pero hoy no tiene movimiento, que figure sin inventar euros.
+  // Cuando sí hay dinero suyo, la aportación calculada arriba ya ocupa esta posición.
+  for (const titular of titularesDelLibro) {
+    if (/fondo ahorro/i.test(titular) && !fuentes.some((n) => n.includes(titular)))
+      fuentes.push(`Aportaciones · ${titular}`)
+  }
   const etiquetas = [
-    [...new Set(origen.map((e) => e.de))],
+    fuentes,
     [...new Set([...origen.map((e) => e.a), ...final.map((e) => e.de)])],
     [...new Set(final.map((e) => e.a))],
   ]
@@ -134,7 +147,7 @@ export function dibujarGraficoDinero(
   }).join('')
   const cuerpo = total
     ? `${ribbon(origen, 0, 0.32)}${ribbon(final, 1, 0.35)}${nombres}`
-    : `<text x="750" y="330" text-anchor="middle" font-size="24" fill="#64748B">Todavía no hay dinero que representar.</text>`
+    : `${nombres}<text x="800" y="330" text-anchor="middle" font-size="24" fill="#64748B">Todavía no hay dinero que representar.</text>`
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${ANCHO_GRAFICO} ${alto}" width="${ANCHO_GRAFICO}" height="${alto}">
     <rect width="100%" height="100%" fill="white"/>
     <style>text{font-family:Arial,Helvetica,sans-serif}</style>

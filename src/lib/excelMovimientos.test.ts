@@ -5,7 +5,7 @@ import JSZip from 'jszip'
 import ExcelJS from 'exceljs'
 import { generarExcelMovimientos, type EntradaExcel } from './excelMovimientos'
 import { entradaDesdeApp } from './excelDesdeApp'
-import { dibujarGraficoDinero, grafoDinero } from './graficoDineroExcel'
+import { ANCHO_GRAFICO, dibujarGraficoDinero, grafoDinero } from './graficoDineroExcel'
 import type { FinanceData } from '../store/useFinance'
 import type { Position } from './finance'
 import type { Dataset, Movimiento, Titular } from '../types'
@@ -250,30 +250,52 @@ describe('el Excel de movimientos', () => {
     expect(libro.getWorksheet('Mapa del dinero')).toBeUndefined()
     const dibujoCuentas = await xml(zip, 'xl/drawings/drawing2.xml')
     expect((dibujoCuentas.match(/<xdr:graphicFrame/g) ?? []).length).toBe(2)
+    const anchuras = [...dibujoCuentas.matchAll(/<xdr:(?:from|to)>\s*<xdr:col>(\d+)<\/xdr:col><xdr:colOff>(\d+)<\/xdr:colOff>/g)]
+    expect(anchuras).toHaveLength(4)
     for (const [i, nombre] of ['Marta', 'Fondo ahorro'].entries()) {
+      // Cada ancla ocupa 4,8 columnas: 80 % de las 6 que ocupaba antes.
+      const inicio = anchuras[i * 2], fin = anchuras[i * 2 + 1]
+      expect((+fin[1] - +inicio[1]) + (+fin[2] - +inicio[2]) / (110 * 9525)).toBeCloseTo(4.8, 1)
       const chart = await xml(zip, `xl/charts/chart${i + 1}.xml`)
       expect(chart).toContain(`<c:v>${nombre}</c:v>`)
       expect((chart.match(/<c:ser>/g) ?? []).length).toBe(3)
+      expect(chart).not.toContain('<c:legend>') // leyenda en celdas, lejos de las barras
+      expect(chart).not.toContain('<c:majorGridlines')
+      expect(chart).toContain('<c:tickLblPos val="none"/>')
+      expect(chart).toContain('<c:manualLayout>')
       const total = filaDe(hoja, i === 0 ? 'Total MyInvestor-Marta' : 'Total Fondo ahorro')
       for (const c of ['H', 'J', 'K']) expect(chart).toContain(`$${c}$${total}`)
     }
+    const leyenda = libro.getWorksheet('Gráficos')!
+    for (const col of ['B', 'J']) {
+      expect(leyenda.getCell(`${col}17`).value).toBe('■ Aportado')
+      expect(leyenda.getCell(`${col}18`).value).toBe('■ Rentabilidad')
+      expect(leyenda.getCell(`${col}19`).value).toBe('■ Aportado + rentabilidad')
+    }
     const dibujoImagen = await xml(zip, 'xl/drawings/drawing1.xml')
     expect(dibujoImagen).toContain('<xdr:pic>')
+    // Anchura y altura efectivas del Sankey = 70 % de la imagen original; nitidez intacta.
+    const cx = Number(dibujoImagen.match(/<xdr:ext cx="(\d+)"/)?.[1])
+    const cy = Number(dibujoImagen.match(/<xdr:ext cx="\d+" cy="(\d+)"/)?.[1])
+    expect(cx / 9525).toBeCloseTo(ANCHO_GRAFICO * 0.7, 0)
     expect(await xml(zip, 'xl/drawings/_rels/drawing1.xml.rels')).toContain('../media/image1.png')
     const imagen = await zip.file('xl/media/image1.png')!.async('uint8array')
     expect([...imagen.slice(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10])
     expect(imagen.byteLength).toBeGreaterThan(5000)
+    const alturaOriginal = new DataView(imagen.buffer, imagen.byteOffset, imagen.byteLength).getUint32(20)
+    expect(cy / 9525).toBeCloseTo(alturaOriginal * 0.7, 0)
   })
 
   it('el gráfico de bandas conserva el importe por origen, inversión y destino, con rentabilidad', () => {
     const caminos = [{ pasos: ['Exterior', 'Cuenta Myinvestor', 'Fondo'], importe: 100, seQueda: false }]
-    const { origen, final } = grafoDinero(caminos, new Map([['Fondo', 'Marta']]), new Map([['Fondo', 0.1]]))
+    const propietarios = new Map([['Fondo', 'Marta'], ['Cuenta Myinvestor', 'Marta']])
+    const { origen, final } = grafoDinero(caminos, propietarios, new Map([['Fondo', 0.1]]))
     expect(origen).toEqual([
       { de: 'Cuenta Myinvestor', a: 'Fondo', importe: 100 },
       { de: 'Rentabilidad generada · Marta', a: 'Fondo', importe: 10 },
     ])
     expect(final).toEqual([{ de: 'Fondo', a: 'Sigue invertido · Marta', importe: 110 }])
-    const { svg } = dibujarGraficoDinero(caminos, new Map([['Fondo', 'Marta']]), new Map([['Fondo', 0.1]]))
+    const { svg } = dibujarGraficoDinero(caminos, propietarios, new Map([['Fondo', 0.1]]))
     expect(svg).toContain('DE DÓNDE VIENE')
     expect(svg).toContain('DÓNDE ESTÁ')
     expect(svg).toContain('A DÓNDE VA')
@@ -289,6 +311,26 @@ describe('el Excel de movimientos', () => {
       { de: 'Fondo', a: 'Sigue invertido · Fondo ahorro', importe: 180 },
       { de: 'Fondo', a: 'Pérdidas · Fondo ahorro', importe: 20 },
     ])
+  })
+
+  it('muestra Myinvestor y Fondo ahorro por separado, aunque el fondo pase por la cuenta principal', () => {
+    const propietarios = new Map([
+      ['Cuenta Myinvestor', 'Marta'], ['Vanguard', 'Marta'], ['Fondo', 'Fondo ahorro'],
+    ])
+    const caminos = [
+      { pasos: ['Exterior', 'Cuenta Myinvestor', 'Vanguard'], importe: 300, seQueda: false },
+      { pasos: ['Exterior', 'Cuenta Myinvestor', 'Fondo'], importe: 200, seQueda: false },
+    ]
+    const { origen } = grafoDinero(caminos, propietarios, new Map())
+    expect(origen).toContainEqual({ de: 'Cuenta Myinvestor', a: 'Vanguard', importe: 300 })
+    expect(origen).toContainEqual({ de: 'Aportaciones · Fondo ahorro', a: 'Fondo', importe: 200 })
+    const { svg } = dibujarGraficoDinero(caminos, propietarios, new Map(), ['Marta', 'Fondo ahorro'])
+    expect(svg).toContain('Cuenta Myinvestor')
+    expect(svg).toContain('Aportaciones · Fondo ahorro')
+    // Si se cierra el fondo, el titular sigue en la leyenda con 0 € (sin crear bandas falsas).
+    const sinFondo = dibujarGraficoDinero(caminos.slice(0, 1), propietarios, new Map(), ['Marta', 'Fondo ahorro']).svg
+    expect(sinFondo).toContain('Aportaciones · Fondo ahorro')
+    expect(sinFondo).toContain('0 €')
   })
 
   it('no borra los movimientos que ya vienen a cero: mantiene sus cuatro campos originales', async () => {

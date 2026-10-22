@@ -688,15 +688,17 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
   ws.pageSetup.printArea = `A1:O${FILA_TOTAL + 4}`
   ws.pageSetup.printTitlesRow = `1:${FILA_CABECERAS}`
 
-  // ── Los gráficos: una hoja aparte, uno por titular ────────────────────────
+  // ── Gráficos por titular: 20 % más estrechos y con leyenda FUERA de la zona de barras. ───
   const HOJA_GRAFICOS = 'Gráficos'
   const COLS_GRAFICOS = 15
   const FILA_1_G = 4
-  // Mitad de tamaño que antes: 11 filas de alto y 7 columnas de ancho.
-  const ALTO_GRAFICO = 11
+  const ALTO_GRAFICO = 13 // Más altura para el título y los valores sobre las tres barras.
+  const SALTO_GRAFICO = ALTO_GRAFICO + 5 // Tres filas de leyenda y dos de aire.
+  // Antes eran 6 columnas: ahora 4,8 (un 20 % menos). 110 px aprox. por columna Excel.
+  const OCHENTA_POR_CIENTO_COLUMNA = Math.round(0.8 * 110 * 9525)
   const MEDIAS = [
-    { desde: 0, hasta: 6 },
-    { desde: 8, hasta: 14 },
+    { desde: 1, hasta: 5 },
+    { desde: 9, hasta: 13 },
   ]
   const dibujos: Dibujo[] = []
   const graficos: Omit<OpcionesGrafico, 'desde' | 'hasta'>[] = []
@@ -720,16 +722,16 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
   const puestos = Math.min(graficos.length, 4)
   graficos.slice(0, 4).forEach((grafico, i) => {
     const media = MEDIAS[i % 2]
-    const arriba = FILA_1_G + Math.floor(i / 2) * (ALTO_GRAFICO + 2)
+    const arriba = FILA_1_G + Math.floor(i / 2) * SALTO_GRAFICO
     dibujos.push({
       grafico,
       desde: { col: media.desde, fila: arriba },
-      hasta: { col: media.hasta, fila: arriba + ALTO_GRAFICO },
+      hasta: { col: media.hasta, offX: OCHENTA_POR_CIENTO_COLUMNA, fila: arriba + ALTO_GRAFICO },
     })
   })
 
   // La hoja de los gráficos: títulos y medidas.
-  const ultimaGraficos = FILA_1_G + Math.ceil(puestos / 2) * (ALTO_GRAFICO + 2)
+  const ultimaGraficos = FILA_1_G + Math.ceil(puestos / 2) * SALTO_GRAFICO
   const hojaG = libro.addWorksheet(HOJA_GRAFICOS, {
     views: [{ showGridLines: false }],
     pageSetup: {
@@ -760,6 +762,24 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
   aMedida(hojaG, ultimaGraficos)
   rotulo(hojaG, 1, 'Gráficos', 16)
   rotulo(hojaG, 2, 'Todo sale de la hoja «Movimientos»: lo que cambies allí, cambia aquí.', 9, true)
+  // Etiquetas en celdas, no en la leyenda flotante de Excel: cada una ocupa su fila, así nunca
+  // se montan sobre el dibujo ni sobre los importes aunque se reduzca un 20 % el ancho.
+  for (let i = 0; i < puestos; i++) {
+    const col = i % 2 === 0 ? 2 : 10
+    const base = FILA_1_G + Math.floor(i / 2) * SALTO_GRAFICO + ALTO_GRAFICO
+    for (const [j, item] of [
+      ['Aportado', 'FF2563EB'],
+      ['Rentabilidad', 'FFE67E22'],
+      ['Aportado + rentabilidad', 'FF0F766E'],
+    ].entries()) {
+      hojaG.mergeCells(base + j, col, base + j, col + 4)
+      const celda = hojaG.getCell(base + j, col)
+      celda.value = `■ ${item[0]}`
+      celda.font = { bold: true, size: 10, color: { argb: item[1] } }
+      celda.alignment = { vertical: 'middle' }
+      hojaG.getRow(base + j).height = 20
+    }
+  }
   hojaG.pageSetup.printArea = `A1:O${ultimaGraficos}`
 
   // ── Un Sankey de bandas, como la referencia: nodos a tres alturas y cintas proporcionales. ───
@@ -775,7 +795,7 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
         const pct = inv.rentabilidad
         if (pct !== null && Number.isFinite(pct)) porcentajes.set(nombres.corto(inv.nombre), pct)
       }
-  const { svg, alto } = dibujarGraficoDinero(viajes.viajes, propietarios, porcentajes)
+  const { svg, alto } = dibujarGraficoDinero(viajes.viajes, propietarios, porcentajes, entrada.titulares.map((t) => t.nombre))
   const grafico = await graficoPNG(svg)
   const idImagen = libro.addImage({ base64: grafico, extension: 'png' })
   const hojaR = libro.addWorksheet('Gráfico del dinero', {
@@ -795,9 +815,12 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
   hojaR.getCell('A2').value = 'El grosor de cada banda es proporcional al importe. Gris/azul/naranja: origen · colores: inversiones · azul oscuro: destino.'
   hojaR.getCell('A2').font = { size: 10, color: { argb: GRIS } }
   hojaR.getRow(2).height = 25
-  hojaR.addImage(idImagen, { tl: { col: 0, row: 3 }, ext: { width: ANCHO_GRAFICO, height: alto } })
-  // Tabla de lectura debajo del gráfico: valores disponibles también cuando se imprime en B/N.
-  const inicioTabla = Math.ceil(3 + alto / 26.5) + 3
+  // Un 30 % más pequeño en las DOS dimensiones; se centra en la hoja sin reducir la resolución
+  // del PNG, para que los textos conserven nitidez al ampliar en Excel.
+  const ESCALA_DINERO = 0.7
+  hojaR.addImage(idImagen, { tl: { col: 2, row: 3 }, ext: { width: ANCHO_GRAFICO * ESCALA_DINERO, height: alto * ESCALA_DINERO } })
+  // Tabla de lectura debajo del gráfico, calculada con la altura reducida: no queda hueco gigante.
+  const inicioTabla = Math.ceil(3 + alto * ESCALA_DINERO / 26.5) + 3
   const encabezado = hojaR.getRow(inicioTabla)
   for (const [col, texto] of [[1, 'Origen'], [5, 'Paso'], [9, 'Destino'], [13, 'Importe']] as const) {
     const c = encabezado.getCell(col)
@@ -920,7 +943,10 @@ function xmlChart(op: Omit<OpcionesGrafico, 'desde' | 'hasta'>): string {
     </c:title>
     <c:autoTitleDeleted val="0"/>
     <c:plotArea>
-      <c:layout/>
+      <c:layout><c:manualLayout>
+        <c:layoutTarget val="inner"/><c:xMode val="edge"/><c:yMode val="edge"/>
+        <c:x val="0.18"/><c:y val="0.18"/><c:w val="0.76"/><c:h val="0.68"/>
+      </c:manualLayout></c:layout>
       <c:barChart>
         <c:barDir val="col"/>
         <c:grouping val="clustered"/>
@@ -937,7 +963,7 @@ function xmlChart(op: Omit<OpcionesGrafico, 'desde' | 'hasta'>): string {
         <c:axPos val="b"/>
         <c:majorTickMark val="none"/>
         <c:minorTickMark val="none"/>
-        <c:tickLblPos val="nextTo"/>
+        <c:tickLblPos val="none"/>
         <c:crossAx val="100000002"/>
         <c:crosses val="autoZero"/>
         <c:auto val="1"/>
@@ -950,7 +976,6 @@ function xmlChart(op: Omit<OpcionesGrafico, 'desde' | 'hasta'>): string {
         <c:scaling><c:orientation val="minMax"/></c:scaling>
         <c:delete val="0"/>
         <c:axPos val="l"/>
-        <c:majorGridlines/>
         <c:numFmt formatCode="#,##0" sourceLinked="0"/>
         <c:majorTickMark val="none"/>
         <c:minorTickMark val="none"/>
@@ -960,15 +985,6 @@ function xmlChart(op: Omit<OpcionesGrafico, 'desde' | 'hasta'>): string {
         <c:crossBetween val="between"/>
       </c:valAx>
     </c:plotArea>
-    <c:legend>
-      <c:legendPos val="b"/>
-      <c:overlay val="0"/>
-      <c:txPr>
-        <a:bodyPr/>
-        <a:lstStyle/>
-        <a:p><a:pPr><a:defRPr sz="900" b="0"><a:solidFill><a:srgbClr val="334155"/></a:solidFill></a:defRPr></a:pPr><a:endParaRPr/></a:p>
-      </c:txPr>
-    </c:legend>
     <c:plotVisOnly val="1"/>
     <c:dispBlanksAs val="gap"/>
   </c:chart>

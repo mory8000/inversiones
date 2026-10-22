@@ -289,14 +289,17 @@ El archivo contiene tres hojas:
 - Después, el total de cada cuenta (si el titular tiene más de una), el de cada **titular** (si solo
   tiene una cuenta, el renglón lleva los dos nombres: «Total Cuenta Myinvestor-Luis») y el **TOTAL**.
 - **«Gráficos»**: recupera los gráficos por titular de las cuentas y sus inversiones juntas,
-  con tres barras —**Aportado, Rentabilidad y Aportado + rentabilidad**—. La leyenda se sitúa abajo
-  y las cifras no tienen decimales para dejar más espacio a las etiquetas.
-- **«Gráfico del dinero»**: reemplaza por completo el antiguo «Mapa del dinero». Es un
-  diagrama de **bandas curvas**, basado en el ejemplo facilitado: **DE DÓNDE VIENE → DÓNDE ESTÁ →
-  A DÓNDE VA**. El grosor de cada banda representa el importe, con nombres, cantidades, dinero
-  todavía en cuenta, inversiones, rentabilidad y pérdidas. Debajo hay una tabla de lectura para
-  quien prefiera cifras. La imagen se genera localmente al descargar el Excel; no se suben datos
-  a un servidor. Para actualizarla tras cambios, descarga otro Excel desde la app.
+  con tres barras —**Aportado, Rentabilidad y Aportado + rentabilidad**—. Son un **20 % más
+  estrechos**; sus tres etiquetas van en filas separadas debajo del gráfico para que no se pisen
+  ni con las cifras ni entre sí. El eje no repite el nombre del titular y no lleva rejilla.
+- **«Gráfico del dinero»**: diagrama de **bandas curvas** como el ejemplo facilitado,
+  **DE DÓNDE VIENE → DÓNDE ESTÁ → A DÓNDE VA**. Es un **30 % más pequeño**, centrado y con
+  resolución original para poder ampliarlo. Se ven por separado **Cuenta Myinvestor** y
+  **Aportaciones · Fondo ahorro** cuando corresponda; si este titular existe pero hoy no tiene
+  dinero, figura con **0 €**, sin inventar ninguna banda. Su grosor representa los importes;
+  también se ven las inversiones, la rentabilidad, las pérdidas y lo que queda en la cuenta.
+  Debajo hay una tabla de cifras. El gráfico se genera localmente al descargar el Excel; ningún
+  dato se sube a un servidor y, si cambias los movimientos, descárgalo otra vez para actualizarlo.
 - **Protegida:** solo se puede escribir en los movimientos, en las filas amarillas nuevas y en el %
   de cada cuenta o inversión. Se puede elegir cualquier celda y **borrar o añadir filas** (para quitar una
   inversión que llegue a cero o meter una nueva). Sin contraseña: «Revisar → Desproteger hoja».
