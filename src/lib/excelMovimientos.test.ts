@@ -7,7 +7,8 @@ import ExcelJS from 'exceljs'
 import { generarExcelMovimientos, type EntradaExcel } from './excelMovimientos'
 import { entradaDesdeApp } from './excelDesdeApp'
 import type { FinanceData } from '../store/useFinance'
-import type { Dataset, Movimiento, Position, Titular } from '../types'
+import type { Position } from './finance'
+import type { Dataset, Movimiento, Titular } from '../types'
 
 const HOY = '2026-10-22'
 
@@ -66,7 +67,7 @@ describe('el Excel de movimientos', () => {
 
   it('deja una sola fila para escribir: la siguiente aparece al rellenar la anterior', async () => {
     const { hoja } = await generar()
-    const reglas = hoja.conditionalFormattings as unknown as { rules: { formulae: string[] }[] }[]
+    const reglas = (hoja as unknown as { conditionalFormattings: { rules: { formulae: string[] }[] }[] }).conditionalFormattings
     const formulas = reglas.flatMap((cf) => cf.rules.map((r) => r.formulae).flat())
     // La fila que toca se pinta; la anterior escrita se ve normal; las demás van en blanco.
     expect(formulas.some((f) => f.includes('AND($D5<>"",$D6="")'))).toBe(true)
@@ -186,7 +187,7 @@ describe('el Excel se llena con los datos de la app', () => {
       ...parcial,
     }) as Position
 
-  const titular = (id: string, nombre: string, color: string): Titular =>
+  const titular = (id: string, nombre: string): Titular =>
     ({ id, codigo: '0001', nombre, createdAt: '2026-01-01T00:00:00.000Z' }) as Titular
 
   function finDe(parcial: {
@@ -195,7 +196,7 @@ describe('el Excel se llena con los datos de la app', () => {
     movimientos: Movimiento[]
     posiciones?: Map<string, Position>
   }): FinanceData {
-    const t1 = titular('t1', 'Marta', '#2447B8')
+    const t1 = titular('t1', 'Marta')
     const ds = {
       titulares: [t1],
       cuentas: parcial.cuentas,
@@ -224,7 +225,19 @@ describe('el Excel se llena con los datos de la app', () => {
   const cuenta = (id: string, nombre: string, externa: boolean) =>
     ({ id, titularId: 't1', nombre, entidad: '', iban: '', color: '', notas: '', externa, createdAt: '2026-01-01T00:00:00.000Z' }) as Dataset['cuentas'][number]
   const producto = (id: string, nombre: string) =>
-    ({ id, titularId: 't1', tipo: 'fondo', nombre, entidad: '', isin: '', notas: '', tae: null, valoraciones: [], createdAt: '2026-01-01T00:00:00.000Z' }) as Dataset['productos'][number]
+    ({
+      id,
+      titularId: 't1',
+      tipo: 'fondo',
+      nombre,
+      entidad: '',
+      isin: '',
+      notas: '',
+      tae: null,
+      vencimiento: null,
+      valoraciones: [],
+      createdAt: '2026-01-01T00:00:00.000Z',
+    }) as unknown as Dataset['productos'][number]
   const movimiento = (de: { kind: 'cuenta' | 'producto'; id: string }, a: { kind: 'cuenta' | 'producto'; id: string }, importe: number): Movimiento =>
     ({
       id: `m-${Math.random()}`,
