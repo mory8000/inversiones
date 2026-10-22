@@ -22,14 +22,15 @@ const HOY = '2026-10-22'
 const PLANTILLA = {
   hoy: HOY,
   movimientos: [],
-  libres: 6,
+  // Una sola fila amarilla a la vista: al rellenarla sale la siguiente (hay 15).
+  libres: 15,
   titulares: [
     {
       nombre: 'Marta',
       color: '#2447B8',
       grupos: [
         {
-          cuenta: 'MyInvestor',
+          cuenta: 'Cuenta Myinvestor',
           inversiones: [
             { nombre: 'Vanguard Global Stock Index', rentabilidad: null },
             { nombre: 'Fidelity MSCI World Index', rentabilidad: null },
@@ -38,7 +39,7 @@ const PLANTILLA = {
             { nombre: 'Plan de pensiones indexado global', rentabilidad: null },
           ],
         },
-        { cuenta: 'Cuenta nómina · BBVA', inversiones: [] },
+        // La cuenta nómina no sale: es la cuenta exterior, y en el Excel ese dinero es «Exterior».
         { cuenta: 'Cuenta ahorro · ING', inversiones: [] },
       ],
     },
@@ -50,7 +51,7 @@ const PLANTILLA = {
           cuenta: null, // El «Fondo ahorro» no tiene cuenta: el dinero va directo a sus inversiones.
           inversiones: [
             { nombre: 'Fondo indexado', rentabilidad: null },
-            { nombre: 'Depósito ahorro', rentabilidad: null },
+            { nombre: 'iShares Developed World Index (IE) Acc EUR clase s', rentabilidad: null },
           ],
         },
       ],

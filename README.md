@@ -257,23 +257,26 @@ Hay dos formas de tenerlo:
 
 La hoja, en una sola página:
 
-- **Movimientos** (izquierda): `Fecha · De · A · Importe`. Solo se ve una fila, con la fecha de hoy
-  (se puede cambiar): en cuanto la rellenas, se abre la siguiente.
-- **De** y **A** son desplegables con los nombres del resumen. `Exterior` es el dinero que entra (o
-  sale) de fuera; `Interés`, lo que paga el banco (cuenta como rentabilidad, no como dinero aportado).
-  Si en la app el dinero sale de una cuenta externa (otro banco), en el Excel se ve como dos
-  movimientos: «Exterior → cuenta externa» y «cuenta externa → destino».
-- **Resumen** (derecha): cada **cuenta** y, **debajo de ella, las inversiones que se pagan desde esa
-  cuenta**, con **Capital aportado · Rentabilidad (% y €) · Saldo**. En las inversiones se escribe el
-  **%** (el mismo que ves en la app) y los euros y el saldo se calculan solos.
-- Después, el total de cada cuenta (cuando el titular tiene más de una), el de cada **titular** y el
-  **TOTAL**. Y debajo, el **gráfico**: dos barras por titular — **Aportado neto** (azul) y
-  **Beneficio-pérdida** (naranja) — con el importe encima de cada barra, como en el modelo.
-- **Añadir o quitar inversiones:** escribe el nombre (y el titular) en una de las filas libres del
-  final; para quitarla, borra la fila. Entra al momento en los desplegables (que no muestran huecos
-  y crecen solos).
-- **Colores de la lista:** los tres primeros conceptos en negro y el resto con el color que la app le
-  da a cada titular (azul el principal, naranja el «Fondo ahorro»).
+- **Movimientos** (izquierda, columnas A hasta D): `Fecha · De · A · Importe`. Hay **500 filas**, pero
+  solo se ve la que toca (con la fecha de hoy, que se puede cambiar): al rellenarla se abre la
+  siguiente. `De` y `A` son desplegables con los nombres del resumen.
+- **Resumen** (derecha, columnas F hasta K): cada **cuenta** y, **debajo de ella, las inversiones que
+  se pagan desde esa cuenta**, con **Capital aportado · Rentabilidad (% y €) · Saldo**. En las
+  inversiones se escribe el **%** (el mismo que ves en la app) y los euros y el saldo se calculan
+  solos: el interés no es un movimiento, va dentro de ese %.
+- **Exterior** es el dinero que entra (o sale) de fuera. Las **cuentas externas** (las de otro banco)
+  no salen en el resumen: ese dinero ya se ve como «Exterior → cuenta externa → destino».
+- Los nombres van **en corto**: se quita lo que va entre paréntesis y se recorta lo que sobra de
+  30 letras («iShares Developed World Index (IE) Acc EUR clase s» → «iShares Developed World Index»).
+- **Añadir o quitar inversiones:** al final del resumen se ve **una sola fila amarilla**. Escribes el
+  nombre (y el titular) y aparece la siguiente; si borras el nombre, la fila desaparece. Entran al
+  momento en los desplegables (que no muestran huecos y crecen solos). Hay 15 filas disponibles.
+- Después, el total de cada cuenta (si el titular tiene más de una), el de cada **titular** (si solo
+  tiene una cuenta, el renglón lleva los dos nombres: «Total Cuenta Myinvestor-Luis») y el **TOTAL**.
+- Y en las **columnas L hasta O**, el **gráfico**: dos barras por titular — **Aportado neto** (azul) y
+  **Beneficio-pérdida** (naranja) — con el importe encima de cada barra.
+- **Protegida:** solo se puede escribir en los movimientos, en las filas amarillas nuevas y en el %
+  de cada inversión. Sin contraseña: «Revisar → Desproteger hoja» si quieres tocar algo más.
 - Todo son fórmulas (`SUMIFS`) envueltas en `SI.ERROR`: una celda sin datos sale en blanco, nunca
   con `#¡VALOR!`.
 

@@ -76,7 +76,8 @@ const FILA_TITULO = 1
 const FILA_CABECERAS = 5
 const RES_1 = 6 // Primera fila del resumen (y de los movimientos).
 const EXTERIOR = 'Exterior'
-const INTERES = 'Interés'
+/** Cuántas filas de movimientos hay: se van destapando según se escriben. */
+const FILAS_MOV_TOTAL = 500
 
 const AZUL = 'FF1D4ED8'
 const TINTA = 'FF0F172A'
@@ -93,17 +94,30 @@ const FECHA = 'dd/mm/yyyy'
 
 const hexArgb = (hex: string) => `FF${hex.replace('#', '').toUpperCase()}`
 
-/** Nombres únicos: si dos cosas se llaman igual, se añade el titular («MyInvestor (Luis)»). */
-function nombresUnicos(entrada: EntradaExcel) {
-  const usados = new Map<string, number>()
-  for (const t of entrada.titulares) {
-    for (const g of t.grupos) {
-      if (g.cuenta) usados.set(g.cuenta, (usados.get(g.cuenta) ?? 0) + 1)
-      for (const i of g.inversiones) usados.set(i.nombre, (usados.get(i.nombre) ?? 0) + 1)
-    }
+/** Deja el nombre en corto: fuera lo que va entre paréntesis y lo que sobre de 30 letras. */
+function acortar(nombre: string): string {
+  let s = nombre
+    .replace(/\s*\([^)]*\)/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (s.length > 30) {
+    const corte = s.slice(0, 30)
+    const espacio = corte.lastIndexOf(' ')
+    s = espacio > 14 ? corte.slice(0, espacio) : corte
   }
-  return (nombre: string, titular: string) =>
-    (usados.get(nombre) ?? 0) > 1 ? `${nombre} (${titular})` : nombre
+  return s || nombre
+}
+
+/** Nombres cortos: si al acortar dos chocan, se queda el nombre entero. */
+function nombresCortos(entrada: EntradaExcel) {
+  const conteo = new Map<string, number>()
+  const cuenta = (nombre: string) => conteo.set(nombre, (conteo.get(nombre) ?? 0) + 1)
+  for (const t of entrada.titulares)
+    for (const g of t.grupos) {
+      if (g.cuenta) cuenta(acortar(g.cuenta))
+      for (const i of g.inversiones) cuenta(acortar(i.nombre))
+    }
+  return (nombre: string) => ((conteo.get(acortar(nombre)) ?? 0) > 1 ? nombre : acortar(nombre))
 }
 
 /** RANGO con el que se alimentan los desplegables: solo los nombres escritos, sin huecos. */
@@ -134,8 +148,8 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
   libro.calcProperties = { fullCalcOnLoad: true }
 
   const HOJA = 'Movimientos'
-  const libres = entrada.libres ?? 6
-  const FILAS_MOV = Math.max(60, entrada.movimientos.length * 2 + 40)
+  const libres = entrada.libres ?? 15
+  const FILAS_MOV = Math.max(FILAS_MOV_TOTAL, entrada.movimientos.length + 1)
   const FILA_MOV_N = RES_1 + FILAS_MOV - 1
 
   const ws = libro.addWorksheet(HOJA, {
@@ -162,6 +176,8 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
   ws.getColumn(COL.pct).width = 10
   ws.getColumn(COL.euros).width = 12
   ws.getColumn(COL.saldo).width = 13
+  // El gráfico vive en las columnas L hasta O.
+  for (const c of [12, 13, 14, 15]) ws.getColumn(c).width = 15
 
   const celda = (f: number, c: number) => ws.getCell(f, c)
   const relleno = (argb: string) => ({ type: 'pattern' as const, pattern: 'solid' as const, fgColor: { argb } })
@@ -233,7 +249,7 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
     [COL.de, 'De  (de dónde sale)'],
     [COL.a, 'A  (a dónde va)'],
     [COL.importe, 'Importe'],
-    [COL.nombre, 'Cuenta e inversiones'],
+    [COL.nombre, 'Inversiones'],
     [COL.titular, 'Titular'],
     [COL.aportado, 'Capital aportado'],
     [COL.pct, 'Rentab. %'],
@@ -260,6 +276,8 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
     poner(f, COL.de, null, { font: { size: 10, color: { argb: TINTA } } })
     poner(f, COL.a, null, { font: { size: 10, color: { argb: TINTA } } })
     poner(f, COL.importe, null, { numFmt: MONEDA, font: { size: 10, color: { argb: TINTA } } })
+    // Los movimientos son lo único que se escribe a mano: fecha, de, a e importe.
+    for (const c of [COL.fecha, COL.de, COL.a, COL.importe]) celda(f, c).protection = { locked: false }
   }
   for (const [i, m] of entrada.movimientos.entries()) {
     const f = RES_1 + i
@@ -299,16 +317,12 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
   const IMP = `$${L.importe}$${RES_1}:$${L.importe}$${FILA_MOV_N}`
   const DE = `$${L.de}$${RES_1}:$${L.de}$${FILA_MOV_N}`
   const A = `$${L.a}$${RES_1}:$${L.a}$${FILA_MOV_N}`
-  const INTERES_LIT = `"${INTERES}"`
   const siError = (formula: string) => `IFERROR(${formula},"")`
 
-  /** Capital aportado: lo que entra menos lo que sale, sin contar el interés (que es rentabilidad). */
+  /** Capital aportado: lo que entra menos lo que sale. */
   const fAportado = (f: number) =>
     siError(
-      `IF($${L.nombre}${f}="","",SUMIFS(${IMP},${A},$${L.nombre}${f})` +
-        `-SUMIFS(${IMP},${DE},$${L.nombre}${f})` +
-        `-SUMIFS(${IMP},${A},$${L.nombre}${f},${DE},${INTERES_LIT})` +
-        `+SUMIFS(${IMP},${DE},$${L.nombre}${f},${A},${INTERES_LIT}))`,
+      `IF($${L.nombre}${f}="","",SUMIFS(${IMP},${A},$${L.nombre}${f})-SUMIFS(${IMP},${DE},$${L.nombre}${f}))`,
     )
   /** Saldo de una cuenta: lo que entra menos lo que sale. */
   const fSaldoCuenta = (f: number) =>
@@ -323,7 +337,7 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
     siError(`IF($${L.nombre}${f}="","",IF($${L.aportado}${f}=0,"",$${L.euros}${f}/$${L.aportado}${f}))`)
 
   // ── Resumen ──────────────────────────────────────────────────────────────
-  const nombreDe = nombresUnicos(entrada)
+  const nombreDe = nombresCortos(entrada)
   let fila = RES_1
   let numeroConcepto = 0
 
@@ -334,37 +348,37 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
     fila++
   }
   especial(EXTERIOR)
-  especial(INTERES)
 
   const filaResumen = (op: { nombre: string | null; titular: string; clase: 'cuenta' | 'inversion' | 'libre'; pct?: number | null; sangria?: number }) => {
-    const color = numeroConcepto < 3 || op.clase === 'libre' ? TINTA : hexArgb(colorDe(op.titular))
     const esLibre = op.clase === 'libre'
+    // Las filas libres empiezan escondidas (letra blanca): el formato condicional las destapa.
+    const color = esLibre ? 'FFFFFFFF' : numeroConcepto < 3 ? TINTA : hexArgb(colorDe(op.titular))
+    const letra = (size = 10) => ({ size, color: { argb: color } })
     poner(fila, COL.nombre, op.nombre, {
-      font: { size: 10, bold: op.clase === 'cuenta', color: { argb: color } },
+      font: { ...letra(), bold: op.clase === 'cuenta' },
       alignment: { indent: op.sangria ?? 0 },
-      fill: esLibre ? relleno(AMARILLO) : undefined,
     })
     poner(fila, COL.titular, esLibre ? null : op.titular, {
-      font: { size: 9, color: { argb: GRIS } },
+      font: { size: 9, color: { argb: esLibre ? 'FFFFFFFF' : GRIS } },
       alignment: { horizontal: 'center' },
-      fill: esLibre ? relleno(AMARILLO) : undefined,
     })
-    poner(fila, COL.aportado, { formula: fAportado(fila) }, { numFmt: MONEDA, font: { size: 10 } })
+    poner(fila, COL.aportado, { formula: fAportado(fila) }, { numFmt: MONEDA, font: letra() })
     if (op.clase === 'inversion' || esLibre) {
       // El % lo escribes tú (el de la app); de ahí salen los euros y el saldo.
-      poner(fila, COL.pct, op.pct ?? null, {
-        numFmt: PORCENTAJE,
-        font: { size: 10 },
-        fill: relleno(AMARILLO),
-      })
-      poner(fila, COL.euros, { formula: fEuros(fila) }, { numFmt: MONEDA, font: { size: 10 } })
-      poner(fila, COL.saldo, { formula: fSaldoInversion(fila) }, { numFmt: MONEDA, font: { size: 10 } })
+      poner(fila, COL.pct, op.pct ?? null, { numFmt: PORCENTAJE, font: letra() })
+      poner(fila, COL.euros, { formula: fEuros(fila) }, { numFmt: MONEDA, font: letra() })
+      poner(fila, COL.saldo, { formula: fSaldoInversion(fila) }, { numFmt: MONEDA, font: letra() })
     } else {
-      poner(fila, COL.pct, { formula: fPct(fila) }, { numFmt: PORCENTAJE, font: { size: 10 } })
-      poner(fila, COL.euros, { formula: fEuros(fila) }, { numFmt: MONEDA, font: { size: 10 } })
-      poner(fila, COL.saldo, { formula: fSaldoCuenta(fila) }, { numFmt: MONEDA, font: { size: 10 } })
+      poner(fila, COL.pct, { formula: fPct(fila) }, { numFmt: PORCENTAJE, font: letra() })
+      poner(fila, COL.euros, { formula: fEuros(fila) }, { numFmt: MONEDA, font: letra() })
+      poner(fila, COL.saldo, { formula: fSaldoCuenta(fila) }, { numFmt: MONEDA, font: letra() })
     }
-    for (let c = COL.nombre; c <= COL.saldo; c++) celda(fila, c).border = bordeFino
+    if (!esLibre) for (let c = COL.nombre; c <= COL.saldo; c++) celda(fila, c).border = bordeFino
+    // Lo único que se puede escribir: el nombre y el titular de las filas libres, y el % de cada
+    // inversión (que es la rentabilidad).
+    if (esLibre)
+      for (const c of [COL.nombre, COL.titular, COL.pct]) celda(fila, c).protection = { locked: false }
+    if (op.clase === 'inversion' || esLibre) celda(fila, COL.pct).protection = { locked: false }
     if (op.nombre) numeroConcepto++
     fila++
   }
@@ -379,21 +393,69 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
     for (const g of ordenados) {
       const desde = fila
       const titular = t.nombre
-      if (g.cuenta) filaResumen({ nombre: nombreDe(g.cuenta, titular), titular, clase: 'cuenta' })
+      if (g.cuenta) filaResumen({ nombre: nombreDe(g.cuenta), titular, clase: 'cuenta' })
       for (const inv of g.inversiones)
         filaResumen({
-          nombre: nombreDe(inv.nombre, titular),
+          nombre: nombreDe(inv.nombre),
           titular,
           clase: 'inversion',
           pct: inv.rentabilidad,
           sangria: g.cuenta ? 1 : 0,
         })
       if (g.inversiones.length)
-        grupos.push({ nombre: g.cuenta ? nombreDe(g.cuenta, titular) : titular, titular, desde, hasta: fila - 1 })
+        grupos.push({ nombre: g.cuenta ? nombreDe(g.cuenta) : titular, titular, desde, hasta: fila - 1 })
     }
   }
-  // Filas libres al final: escribe aquí una inversión nueva y entra en los desplegables.
+  // Filas libres al final: solo se ve una. Al escribir el nombre sale la siguiente; al borrarlo,
+  // desaparece. Escribe aquí una inversión nueva y entra al momento en los desplegables.
+  const LIBRE_1 = fila
+  const LIBRE_N = LIBRE_1 + libres - 1
   for (let i = 0; i < libres; i++) filaResumen({ nombre: null, titular: '', clase: 'libre', sangria: 1 })
+  const estilo = { font: { size: 10, color: { argb: TINTA } }, border: bordeFino }
+  ws.addConditionalFormatting({
+    ref: `${L.nombre}${LIBRE_1}:${L.saldo}${LIBRE_N}`,
+    rules: [
+      // La fila escrita se ve normal…
+      {
+        type: 'expression',
+        formulae: [`$${L.nombre}${LIBRE_1}<>""`],
+        priority: 1,
+        style: estilo,
+      },
+      // …y la que toca (la primera vacía) se ve en amarillo, lista para escribir.
+      {
+        type: 'expression',
+        formulae: [`AND($${L.nombre}${LIBRE_1 - 1}<>"",$${L.nombre}${LIBRE_1}="")`],
+        priority: 2,
+        style: { ...estilo, fill: relleno(AMARILLO) },
+      },
+      // Las demás van en blanco: no estorban.
+      {
+        type: 'expression',
+        formulae: [`$${L.nombre}${LIBRE_1 - 1}=""`],
+        priority: 3,
+        style: { font: { size: 10, color: { argb: 'FFFFFFFF' } } },
+      },
+    ],
+  })
+  // La casilla del % se pinta de amarillo solo cuando la fila se ve.
+  ws.addConditionalFormatting({
+    ref: `${L.pct}${LIBRE_1}:${L.pct}${LIBRE_N}`,
+    rules: [
+      {
+        type: 'expression',
+        formulae: [`$${L.nombre}${LIBRE_1}<>""`],
+        priority: 4,
+        style: { fill: relleno(AMARILLO) },
+      },
+      {
+        type: 'expression',
+        formulae: [`AND($${L.nombre}${LIBRE_1 - 1}<>"",$${L.nombre}${LIBRE_1}="")`],
+        priority: 5,
+        style: { fill: relleno(AMARILLO) },
+      },
+    ],
+  })
 
   const RES_N = fila - 1
   const rango = (c: Col) => `$${L[c]}$${RES_1}:$${L[c]}$${RES_N}`
@@ -444,24 +506,31 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
   fila++ // línea en blanco
   const suma = (c: Col, desde: number, hasta: number) => `SUM($${L[c]}$${desde}:$${L[c]}$${hasta})`
   const sumaTitular = (c: Col, titular: string) => `SUMIFS(${rango(c)},${rango('titular')},"${titular}")`
-  // Cada cuenta con sus inversiones (solo si el titular tiene más de una: si no, basta con su total).
+  // Cada cuenta con sus inversiones, pero solo si el titular tiene más de una cuenta con
+  // inversiones: si solo tiene una, su total y el de la cuenta son el mismo y no se repite.
   for (const g of grupos) {
-    const t = entrada.titulares.find((x) => x.nombre === g.titular)
-    if (!t || t.grupos.length < 2) continue
+    const cuantas = grupos.filter((x) => x.titular === g.titular).length
+    if (cuantas < 2) continue
     filaTotal(
       `Total ${g.nombre}`,
       null,
       { aportado: suma('aportado', g.desde, g.hasta), euros: suma('euros', g.desde, g.hasta), saldo: suma('saldo', g.desde, g.hasta) },
     )
   }
-  // Un renglón por titular, seguidos y en orden: son las del gráfico.
+  // Un renglón por titular, seguidos y en orden: son las del gráfico. Si el titular tiene una sola
+  // cuenta, el renglón lleva los dos nombres («Total Cuenta Myinvestor-Luis»).
   const filasGrafico: number[] = []
   const nombresGrafico: string[] = []
   for (const t of entrada.titulares) {
     if (t.grupos.length < 1) continue
     filasGrafico.push(fila)
     nombresGrafico.push(t.nombre)
-    filaTotal(`Total ${t.nombre}`, t.nombre, {
+    const conInversiones = t.grupos.filter((g) => g.cuenta && g.inversiones.length)
+    const nombre =
+      conInversiones.length === 1 && conInversiones[0].cuenta !== t.nombre
+        ? `Total ${conInversiones[0].cuenta}-${t.nombre}`
+        : `Total ${t.nombre}`
+    filaTotal(nombre, t.nombre, {
       aportado: sumaTitular('aportado', t.nombre),
       euros: sumaTitular('euros', t.nombre),
       saldo: sumaTitular('saldo', t.nombre),
@@ -477,8 +546,8 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
     ws.mergeCells(f, 1, f, COL.saldo)
     poner(f, 1, texto, { font: { size: 9, italic: true, color: { argb: GRIS } } })
   }
-  nota(FILA_TOTAL + 2, 'Para añadir una inversión: escribe su nombre (y su titular) en una fila libre del final. Para quitarla: borra su fila. Entra al momento en los desplegables.')
-  nota(FILA_TOTAL + 3, 'En las inversiones se escribe la rentabilidad en % (la celda amarilla, como en la app) y el saldo se calcula solo. «Exterior» es el dinero que entra o sale de fuera; «Interés», lo que paga el banco (rentabilidad, no dinero aportado).')
+  nota(FILA_TOTAL + 2, 'Para añadir una inversión: escribe su nombre (y su titular) en la fila amarilla; al rellenarla sale la siguiente. Para quitarla: borra su nombre y desaparece. Entra al momento en los desplegables.')
+  nota(FILA_TOTAL + 3, 'En las inversiones se escribe la rentabilidad en % (la celda amarilla, como en la app) y el saldo se calcula solo. «Exterior» es el dinero que entra o sale de fuera. La hoja está protegida: solo se puede escribir en los movimientos, en las filas nuevas y en el %.')
 
   // ── Desplegables ─────────────────────────────────────────────────────────
   const NOMBRES = 'ListaNombres'
@@ -501,9 +570,13 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
 
   // ── Impresión: una página ────────────────────────────────────────────────
   const FILA_GRAFICO = FILA_TOTAL + 4
-  const ALTO_GRAFICO = 15
-  ws.pageSetup.printArea = `A1:${L.saldo}${FILA_GRAFICO + ALTO_GRAFICO}`
+  const ALTO_GRAFICO = 12
+  ws.pageSetup.printArea = `A1:O${FILA_GRAFICO + ALTO_GRAFICO}`
   ws.pageSetup.printTitlesRow = `1:${FILA_CABECERAS}`
+
+  // Protegida: solo se puede escribir en los movimientos, en las filas nuevas y en el % de cada
+  // inversión. Sin contraseña: «Revisar → Desproteger hoja» si quieres cambiar algo más.
+  await ws.protect('')
 
   const buffer = (await libro.xlsx.writeBuffer()) as ArrayBuffer
 
@@ -521,8 +594,9 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
             { nombre: 'Aportado neto', valores: `$${L.aportado}$${filasGrafico[0]}:$${L.aportado}$${ultima(filasGrafico)}`, color: '2563EB' },
             { nombre: 'Beneficio-pérdida', valores: `$${L.euros}$${filasGrafico[0]}:$${L.euros}$${ultima(filasGrafico)}`, color: 'E67E22' },
           ],
-          desde: { col: 0, fila: FILA_GRAFICO },
-          hasta: { col: 9, fila: FILA_GRAFICO + ALTO_GRAFICO },
+          // En las columnas L hasta O, al lado del resumen (el ancla se cuenta desde cero).
+          desde: { col: 11, fila: FILA_GRAFICO },
+          hasta: { col: 14, fila: FILA_GRAFICO + ALTO_GRAFICO },
         }
       : null,
   })

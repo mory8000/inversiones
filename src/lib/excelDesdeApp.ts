@@ -35,8 +35,10 @@ export function entradaDesdeApp(fin: FinanceData, hoy: string): EntradaExcel {
       const [cuentaId] = [...porCuenta.entries()].sort((a, b) => b[1] - a[1])[0]
       return cuentaId
     }
+    // Las cuentas externas (otro banco) no salen en el resumen: en el Excel ese dinero es «Exterior».
+    const cuentas = tf.ws.cuentas.filter((c) => !c.externa)
     const grupos: GrupoExcel[] = []
-    for (const cuenta of tf.ws.cuentas) {
+    for (const cuenta of cuentas) {
       const inversiones: InversionExcel[] = productos
         .filter((p) => cuentaDe(p.id) === cuenta.id)
         .map((p) => ({ nombre: p.nombre, rentabilidad: rentabilidadDe(fin, p.id) }))
@@ -44,7 +46,7 @@ export function entradaDesdeApp(fin: FinanceData, hoy: string): EntradaExcel {
     }
     const sueltos = productos.filter((p) => {
       const id = cuentaDe(p.id)
-      return !id || !tf.ws.cuentas.some((c) => c.id === id)
+      return !id || !cuentas.some((c) => c.id === id)
     })
     if (sueltos.length)
       grupos.push({

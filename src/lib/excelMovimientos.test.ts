@@ -1,5 +1,5 @@
-// El Excel de movimientos: que se genera con la estructura prometida, sin «#¡VALOR!» y con su
-// gráfico de dos barras por titular (aportado neto y beneficio / pérdida).
+// El Excel de movimientos: que se genera con la estructura prometida, sin «#¡VALOR!», protegido y
+// con su gráfico de dos barras por titular (aportado neto y beneficio / pérdida).
 
 import { describe, expect, it } from 'vitest'
 import JSZip from 'jszip'
@@ -37,7 +37,15 @@ const ENTRADA: EntradaExcel = {
     {
       nombre: 'Fondo ahorro',
       color: '#EA580C',
-      grupos: [{ cuenta: null, inversiones: [{ nombre: 'Fondo indexado', rentabilidad: 0.05 }] }],
+      grupos: [
+        {
+          cuenta: null,
+          inversiones: [
+            { nombre: 'Fondo indexado', rentabilidad: 0.05 },
+            { nombre: 'iShares Developed World Index (IE) Acc EUR clase s', rentabilidad: 0.02 },
+          ],
+        },
+      ],
     },
   ],
 }
@@ -50,9 +58,21 @@ async function generar(entrada: EntradaExcel = ENTRADA) {
   return { buffer, zip, hoja: libro.getWorksheet('Movimientos')! }
 }
 
+const xml = async (zip: JSZip, nombre: string) => (await zip.file(nombre)!.async('string')) as string
+
 const filaDe = (hoja: ExcelJS.Worksheet, nombre: string) => {
-  for (let f = 6; f <= 60; f++) if (hoja.getCell(`F${f}`).value === nombre) return f
+  for (let f = 6; f <= 80; f++) if (hoja.getCell(`F${f}`).value === nombre) return f
   throw new Error(`no está ${nombre}`)
+}
+
+const nombresDelResumen = (hoja: ExcelJS.Worksheet) => {
+  const out: string[] = []
+  for (let f = 6; f <= 80; f++) {
+    const v = hoja.getCell(`F${f}`).value
+    if (typeof v === 'string' && v.startsWith('Total ')) break
+    if (typeof v === 'string') out.push(v)
+  }
+  return out
 }
 
 describe('el Excel de movimientos', () => {
@@ -65,11 +85,18 @@ describe('el Excel de movimientos', () => {
     expect(hoja.getCell('C7').value).toBe('Fondo indexado')
   })
 
-  it('deja una sola fila para escribir: la siguiente aparece al rellenar la anterior', async () => {
-    const { hoja } = await generar()
-    const reglas = (hoja as unknown as { conditionalFormattings: { rules: { formulae: string[] }[] }[] }).conditionalFormattings
-    const formulas = reglas.flatMap((cf) => cf.rules.map((r) => r.formulae).flat())
+  it('tiene 500 filas de movimientos, y solo se ve la que toca', async () => {
+    const { hoja, zip } = await generar()
+    // 500 filas: de la 6 a la 505.
+    expect(hoja.getCell('A6').value).toBeInstanceOf(Date)
+    expect(hoja.getCell('D505').protection).toMatchObject({ locked: false })
+    expect(hoja.getCell('D506').value).toBeNull()
+    const hojaXml = await xml(zip, 'xl/worksheets/sheet1.xml')
+    expect(hojaXml).toContain('A6:D505')
     // La fila que toca se pinta; la anterior escrita se ve normal; las demás van en blanco.
+    const reglas = (hoja as unknown as { conditionalFormattings: { rules: { formulae: string[] }[] }[] })
+      .conditionalFormattings
+    const formulas = reglas.flatMap((cf) => cf.rules.map((r) => r.formulae).flat())
     expect(formulas.some((f) => f.includes('AND($D5<>"",$D6="")'))).toBe(true)
     expect(formulas.some((f) => f === '$D5<>""')).toBe(true)
     expect(formulas.some((f) => f === '$D5=""')).toBe(true)
@@ -80,16 +107,30 @@ describe('el Excel de movimientos', () => {
     expect(filaDe(hoja, 'MyInvestor')).toBeLessThan(filaDe(hoja, 'Vanguard Global Stock Index'))
     expect(hoja.getCell(`G${filaDe(hoja, 'Vanguard Global Stock Index')}`).value).toBe('Marta')
     expect(hoja.getCell(`G${filaDe(hoja, 'Fondo indexado')}`).value).toBe('Fondo ahorro')
-    expect(filaDe(hoja, 'Total MyInvestor')).toBeGreaterThan(filaDe(hoja, 'Fidelity MSCI World Index'))
-    expect(filaDe(hoja, 'TOTAL')).toBeGreaterThan(filaDe(hoja, 'Total MyInvestor'))
+    expect(filaDe(hoja, 'TOTAL')).toBeGreaterThan(filaDe(hoja, 'Total MyInvestor-Marta'))
+  })
+
+  it('acorta los nombres largos y no les añade el titular', async () => {
+    const { hoja } = await generar()
+    const nombres = nombresDelResumen(hoja)
+    expect(nombres).toContain('iShares Developed World Index')
+    expect(nombres.some((n) => n.includes('Fondo ahorro)'))).toBe(false)
+    expect(nombres.some((n) => /\((?!ahorro)/.test(n))).toBe(false)
+    expect(nombres.every((n) => n.length <= 32)).toBe(true)
+  })
+
+  it('no tiene «Interés»: el interés se escribe en el % de cada producto', async () => {
+    const { hoja } = await generar()
+    expect(nombresDelResumen(hoja)).not.toContain('Interés')
+    expect(nombresDelResumen(hoja)[0]).toBe('Exterior')
   })
 
   it('escribe la rentabilidad en % (los euros y el saldo se calculan solos)', async () => {
     const { hoja } = await generar()
     const vanguard = filaDe(hoja, 'Vanguard Global Stock Index')
     expect(hoja.getCell(`I${vanguard}`).value).toBeCloseTo(0.1, 10)
-    expect(hoja.getCell(`K${vanguard}`).value).toEqual({ formula: expect.stringContaining('$H9*(1+$I9') })
-    expect(hoja.getCell(`J${vanguard}`).value).toEqual({ formula: expect.stringContaining('$K9-$H9') })
+    expect(hoja.getCell(`K${vanguard}`).value).toEqual({ formula: expect.stringContaining('$H8*(1+$I8') })
+    expect(hoja.getCell(`J${vanguard}`).value).toEqual({ formula: expect.stringContaining('$K8-$H8') })
   })
 
   it('envuelve todas las fórmulas en SI.ERROR: nunca sale «#¡VALOR!»', async () => {
@@ -109,13 +150,13 @@ describe('el Excel de movimientos', () => {
 
   it('los desplegables salen sin huecos y crecen solos', async () => {
     const { zip, hoja } = await generar()
-    const libro = (await zip.file('xl/workbook.xml')!.async('string')) as string
+    const libro = await xml(zip, 'xl/workbook.xml')
     expect(libro).toContain('name="ListaNombres"')
     expect(libro).toContain('COUNTA(')
-    const hojaXml = (await zip.file('xl/worksheets/sheet1.xml')!.async('string')) as string
+    const hojaXml = await xml(zip, 'xl/worksheets/sheet1.xml')
     expect(hojaXml).toContain('<formula1>ListaNombres</formula1>')
     // Los nombres van seguidos desde la primera fila del resumen: el COUNTA no se equivoca.
-    const hasta = filaDe(hoja, 'Total MyInvestor')
+    const hasta = filaDe(hoja, 'Total MyInvestor-Marta')
     const nombres: (string | null)[] = []
     for (let f = 6; f < hasta; f++) nombres.push(hoja.getCell(`F${f}`).value as string | null)
     const primerVacio = nombres.indexOf(null)
@@ -125,10 +166,10 @@ describe('el Excel de movimientos', () => {
 
   it('pone el gráfico del modelo: dos barras por titular, con el importe encima', async () => {
     const { zip, hoja } = await generar()
-    const chart = (await zip.file('xl/charts/chart1.xml')!.async('string')) as string
-    const dibujo = (await zip.file('xl/drawings/drawing1.xml')!.async('string')) as string
-    const tipos = (await zip.file('[Content_Types].xml')!.async('string')) as string
-    const hojaXml = (await zip.file('xl/worksheets/sheet1.xml')!.async('string')) as string
+    const chart = await xml(zip, 'xl/charts/chart1.xml')
+    const dibujo = await xml(zip, 'xl/drawings/drawing1.xml')
+    const tipos = await xml(zip, '[Content_Types].xml')
+    const hojaXml = await xml(zip, 'xl/worksheets/sheet1.xml')
     expect(chart).toContain('<c:barDir val="col"/>')
     // Dos series: lo que has puesto (azul) y lo que has ganado o perdido (naranja).
     expect(chart).toContain('<c:v>Aportado neto</c:v>')
@@ -143,11 +184,13 @@ describe('el Excel de movimientos', () => {
     expect(chart).toContain('<c:v>Marta</c:v>')
     expect(chart).toContain('<c:v>Fondo ahorro</c:v>')
     // Y los valores salen de las filas de total de cada titular.
-    const marta = filaDe(hoja, 'Total Marta')
+    const marta = filaDe(hoja, 'Total MyInvestor-Marta')
     const fondo = filaDe(hoja, 'Total Fondo ahorro')
     expect(chart).toContain(`$H$${marta}:$H$${fondo}`) // aportado neto
     expect(chart).toContain(`$J$${marta}:$J$${fondo}`) // beneficio / pérdida
-    expect(dibujo).toContain('<xdr:graphicFrame')
+    // Va en las columnas L hasta O.
+    expect(dibujo).toContain('<xdr:col>11</xdr:col>')
+    expect(dibujo).toContain('<xdr:col>14</xdr:col>')
     expect(hojaXml).toContain('<drawing r:id="rId1"/>')
     expect(tipos).toContain('/xl/charts/chart1.xml')
     expect(tipos).toContain('/xl/drawings/drawing1.xml')
@@ -155,101 +198,95 @@ describe('el Excel de movimientos', () => {
 
   it('deja una fila de total por titular, seguidas y en orden: son las del gráfico', async () => {
     const { hoja } = await generar()
-    const marta = filaDe(hoja, 'Total Marta')
+    const marta = filaDe(hoja, 'Total MyInvestor-Marta')
     const fondo = filaDe(hoja, 'Total Fondo ahorro')
     expect(fondo).toBe(marta + 1)
     expect(hoja.getCell(`G${marta}`).value).toBe('Marta')
     expect(hoja.getCell(`G${fondo}`).value).toBe('Fondo ahorro')
     // Y el total del titular es la suma de lo suyo (por titular, no por fila).
     expect(hoja.getCell(`H${marta}`).formula).toContain('SUMIFS')
+    // Si el titular tiene una sola cuenta con inversiones, no se repite su fila de cuenta.
+    expect(() => filaDe(hoja, 'Total MyInvestor')).toThrow()
   })
 
-  it('colorea la lista: negros los tres primeros y después el color de cada titular', async () => {
+  it('colorea la lista: negros los primeros y después el color de cada titular', async () => {
     const { hoja } = await generar()
-    const colorDe = (nombre: string) => (hoja.getCell(`F${filaDe(hoja, nombre)}`).font as { color?: { argb?: string } })?.color?.argb
+    const colorDe = (nombre: string) =>
+      (hoja.getCell(`F${filaDe(hoja, nombre)}`).font as { color?: { argb?: string } })?.color?.argb
     expect(colorDe('Exterior')).toBe('FF0F172A')
-    expect(colorDe('Interés')).toBe('FF0F172A')
-    expect(colorDe('MyInvestor')).toBe('FF0F172A') // el tercero
+    expect(colorDe('MyInvestor')).toBe('FF0F172A')
     expect(colorDe('Fidelity MSCI World Index')).toBe('FF2447B8') // azul de Marta
     expect(colorDe('Fondo indexado')).toBe('FFEA580C') // naranja del «Fondo ahorro»
   })
 
-  it('deja filas libres al final para añadir o quitar inversiones', async () => {
+  it('deja una sola fila amarilla a la vista: al rellenarla sale la siguiente', async () => {
+    const { zip, hoja } = await generar()
+    const hojaXml = await xml(zip, 'xl/worksheets/sheet1.xml')
+    // Hay 15 filas libres escondidas; el formato condicional destapa solo la que toca.
+    const libres = nombresDelResumen(hoja).length
+    expect(hoja.getCell(`F${6 + libres + 14}`).protection).toMatchObject({ locked: false })
+    expect(hoja.getCell(`F${6 + libres + 15}`).value).toBeNull()
+    expect(hojaXml).toContain('AND($F')
+    const reglas = (hoja as unknown as { conditionalFormattings: { ref: string; rules: { formulae: string[] }[] }[] })
+      .conditionalFormattings
+    const lib = reglas.find((cf) => cf.ref.startsWith('F') && cf.ref.includes(':K'))
+    expect(lib).toBeTruthy()
+    const formulas = lib!.rules.map((r) => r.formulae).flat()
+    expect(formulas.some((f) => f.includes(`AND(`) && f.includes(`="")`))).toBe(true)
+    // La fila de antes marca si esta se ve: si está vacía, esta va en blanco.
+    expect(formulas.some((f) => f === `$F${5 + libres}=""`)).toBe(true)
+  })
+
+  it('protege la hoja: solo se puede escribir en los movimientos, las filas nuevas y el %', async () => {
     const { hoja } = await generar()
-    const hasta = filaDe(hoja, 'Total MyInvestor')
-    const libres: unknown[] = []
-    for (let f = 6; f < hasta; f++) libres.push(hoja.getCell(`F${f}`).value)
-    // Seis filas libres (más la línea en blanco antes de los totales) y ningún hueco antes.
-    expect(libres.slice(-7).every((v) => v === null)).toBe(true)
-    expect(libres.slice(0, -7).some((v) => v === null)).toBe(false)
+    const proteccion = (hoja as unknown as { sheetProtection?: { sheet?: boolean } }).sheetProtection
+    expect(proteccion).toMatchObject({ sheet: true })
+    // Los movimientos: fecha, de, a e importe.
+    for (const c of ['A', 'B', 'C', 'D']) {
+      expect(hoja.getCell(`${c}6`).protection).toMatchObject({ locked: false })
+      expect(hoja.getCell(`${c}505`).protection).toMatchObject({ locked: false })
+    }
+    // El % de cada inversión… y nada más del resumen.
+    expect(hoja.getCell(`I${filaDe(hoja, 'Vanguard Global Stock Index')}`).protection).toMatchObject({ locked: false })
+    expect(hoja.getCell(`F${filaDe(hoja, 'Vanguard Global Stock Index')}`).protection?.locked).not.toBe(false)
+    expect(hoja.getCell(`H${filaDe(hoja, 'Vanguard Global Stock Index')}`).protection?.locked).not.toBe(false)
+    // Las filas nuevas: nombre, titular y %.
+    const primeraLibre = 6 + nombresDelResumen(hoja).length
+    for (const c of ['F', 'G', 'I']) {
+      expect(hoja.getCell(`${c}${primeraLibre}`).protection).toMatchObject({ locked: false })
+    }
+    // Los totales, protegidos.
+    expect(hoja.getCell(`H${filaDe(hoja, 'TOTAL')}`).protection?.locked).not.toBe(false)
   })
 })
 
 describe('el Excel se llena con los datos de la app', () => {
-  const posicion = (parcial: Partial<Position>): Position =>
-    ({
-      productoId: 'p1',
-      aportado: 0,
-      traspasoEntrada: 0,
-      reembolsado: 0,
-      traspasoSalida: 0,
-      comisiones: 0,
-      invertido: 0,
-      capital: 0,
-      saldo: 0,
-      ganancia: 0,
-      rentabilidad: null,
-      numMovimientos: 0,
-      primeraFecha: null,
-      ultimaFecha: null,
-      estado: 'activo',
-      metodo: 'sin-valoracion',
-      valoracion: null,
-      deposito: null,
-      ...parcial,
-    }) as Position
-
   const titular = (id: string, nombre: string): Titular =>
-    ({ id, codigo: '0001', nombre, createdAt: '2026-01-01T00:00:00.000Z' }) as Titular
-
-  function finDe(parcial: {
-    cuentas: Dataset['cuentas']
-    productos: Dataset['productos']
-    movimientos: Movimiento[]
-    posiciones?: Map<string, Position>
-  }): FinanceData {
-    const t1 = titular('t1', 'Marta')
-    const ds = {
-      titulares: [t1],
-      cuentas: parcial.cuentas,
-      productos: parcial.productos,
-      movimientos: parcial.movimientos,
-      programadas: [],
-    } as unknown as Dataset
-    const ws = {
-      cuentas: parcial.cuentas,
-      productos: parcial.productos,
-      movimientos: parcial.movimientos,
-    }
-    return {
-      ds,
-      ws,
-      today: HOY,
-      lookup: {} as never,
-      positions: parcial.posiciones ?? new Map(),
-      accounts: new Map(),
-      titulares: [{ titular: t1, index: 0, color: '#2447B8', ws } as never],
-      byTitular: new Map(),
-      owner: () => t1.id,
-    } as unknown as FinanceData
-  }
-
-  const cuenta = (id: string, nombre: string, externa: boolean) =>
-    ({ id, titularId: 't1', nombre, entidad: '', iban: '', color: '', notas: '', externa, createdAt: '2026-01-01T00:00:00.000Z' }) as Dataset['cuentas'][number]
-  const producto = (id: string, nombre: string) =>
     ({
       id,
-      titularId: 't1',
+      nombre,
+      codigo: id,
+      esPrincipal: id === 't1',
+      color: '',
+      createdAt: '2026-01-01T00:00:00.000Z',
+    }) as unknown as Titular
+
+  const cuenta = (id: string, nombre: string, titularId: string, externa = false) =>
+    ({
+      id,
+      titularId,
+      nombre,
+      entidad: '',
+      iban: '',
+      color: '',
+      notas: '',
+      externa,
+    }) as unknown as Dataset['cuentas'][number]
+
+  const producto = (id: string, nombre: string, titularId: string) =>
+    ({
+      id,
+      titularId,
       tipo: 'fondo',
       nombre,
       entidad: '',
@@ -260,60 +297,105 @@ describe('el Excel se llena con los datos de la app', () => {
       valoraciones: [],
       createdAt: '2026-01-01T00:00:00.000Z',
     }) as unknown as Dataset['productos'][number]
-  const movimiento = (de: { kind: 'cuenta' | 'producto'; id: string }, a: { kind: 'cuenta' | 'producto'; id: string }, importe: number): Movimiento =>
+
+  const movimiento = (fecha: string, o: string, d: string, importe: number) =>
     ({
-      id: `m-${Math.random()}`,
-      tipo: 'inversion',
-      fecha: '2026-10-01',
-      origen: de,
-      destino: a,
+      id: `${fecha}-${o}-${d}-${importe}`,
+      fecha,
+      origen: { kind: o.startsWith('c') ? 'cuenta' : 'producto', id: o },
+      destino: { kind: d.startsWith('c') ? 'cuenta' : 'producto', id: d },
       importe,
-      concepto: '',
-      createdAt: '2026-10-01T00:00:00.000Z',
-      updatedAt: '2026-10-01T00:00:00.000Z',
-    }) as Movimiento
+      createdAt: `${fecha}T00:00:00.000Z`,
+    }) as unknown as Movimiento
+
+  const fin = (ds: Dataset, titulares: ReturnType<typeof titular>[]) => {
+    const vacio = {
+      patrimonio: 0,
+      efectivo: 0,
+      invertidoValor: 0,
+      capital: 0,
+      ganancia: 0,
+      rentabilidad: 0,
+      aportado: 0,
+      reembolsado: 0,
+      comisiones: 0,
+      aportadoNeto: 0,
+      resultado: 0,
+      resultadoPct: 0,
+    }
+    const ws = (titularId: string) => ({
+      cuentas: ds.cuentas.filter((c) => c.titularId === titularId),
+      productos: ds.productos.filter((p) => p.titularId === titularId),
+      totales: vacio,
+      byType: new Map(),
+      recibido: 0,
+    })
+    const tfs = titulares.map((t, i) => ({ titular: t, index: i, color: '#2447B8', ws: ws(t.id), positions: [], accounts: [], totals: vacio, byType: new Map(), recibido: 0 }))
+    return {
+      ds,
+      ws: ws(titulares[0].id),
+      today: HOY,
+      lookup: new Map(),
+      positions: new Map<string, Position>(),
+      accounts: new Map(),
+      titulares: tfs,
+      byTitular: new Map(tfs.map((t) => [t.titular.id, t])),
+      owner: (ref: { id: string }) => ref,
+    } as unknown as FinanceData
+  }
 
   it('pone cada inversión debajo de la cuenta que la paga', () => {
-    const fin = finDe({
-      cuentas: [cuenta('c1', 'MyInvestor', false), cuenta('c2', 'Cuenta nómina', true)],
-      productos: [producto('p1', 'Fondo uno'), producto('p2', 'Fondo dos')],
-      movimientos: [
-        movimiento({ kind: 'cuenta', id: 'c1' }, { kind: 'producto', id: 'p1' }, 500),
-        movimiento({ kind: 'cuenta', id: 'c2' }, { kind: 'producto', id: 'p2' }, 100),
-      ],
-    })
-    const entrada = entradaDesdeApp(fin, HOY)
-    const grupos = entrada.titulares[0].grupos
-    expect(grupos.find((g) => g.cuenta === 'MyInvestor')?.inversiones.map((i) => i.nombre)).toEqual(['Fondo uno'])
-    expect(grupos.find((g) => g.cuenta === 'Cuenta nómina')?.inversiones.map((i) => i.nombre)).toEqual(['Fondo dos'])
+    const ds = {
+      cuentas: [cuenta('c1', 'Cuenta Myinvestor', 't1'), cuenta('c2', 'Otra', 't1')],
+      productos: [producto('p1', 'Fondo indexado', 't1')],
+      movimientos: [movimiento('2026-10-01', 'c1', 'p1', 500)],
+    } as unknown as Dataset
+    const entrada = entradaDesdeApp(fin(ds, [titular('t1', 'Marta')]), HOY)
+    const grupo = entrada.titulares[0].grupos.find((g) => g.cuenta === 'Cuenta Myinvestor')
+    expect(grupo?.inversiones.map((i) => i.nombre)).toEqual(['Fondo indexado'])
+  })
+
+  it('las cuentas externas no salen en el resumen: ese dinero es «Exterior»', () => {
+    const ds = {
+      cuentas: [cuenta('c1', 'Cuenta Myinvestor', 't1'), cuenta('c2', 'Cuenta nómina', 't1', true)],
+      productos: [],
+      movimientos: [movimiento('2026-10-01', 'c2', 'c1', 1000)],
+    } as unknown as Dataset
+    const entrada = entradaDesdeApp(fin(ds, [titular('t1', 'Marta')]), HOY)
+    expect(entrada.titulares[0].grupos.map((g) => g.cuenta)).toEqual(['Cuenta Myinvestor'])
+    expect(entrada.movimientos).toEqual([
+      { fecha: '2026-10-01', de: 'Exterior', a: 'Cuenta nómina', importe: 1000 },
+      { fecha: '2026-10-01', de: 'Cuenta nómina', a: 'Cuenta Myinvestor', importe: 1000 },
+    ])
   })
 
   it('el dinero que llega de una cuenta externa se ve como «Exterior → cuenta externa → destino»', () => {
-    const fin = finDe({
-      cuentas: [cuenta('c1', 'MyInvestor', false), cuenta('c2', 'Cuenta nómina', true)],
-      productos: [producto('p1', 'Fondo uno')],
-      movimientos: [movimiento({ kind: 'cuenta', id: 'c2' }, { kind: 'cuenta', id: 'c1' }, 900)],
-    })
-    const entrada = entradaDesdeApp(fin, HOY)
-    expect(entrada.movimientos).toEqual([
-      { fecha: '2026-10-01', de: 'Exterior', a: 'Cuenta nómina', importe: 900 },
-      { fecha: '2026-10-01', de: 'Cuenta nómina', a: 'MyInvestor', importe: 900 },
+    const ds = {
+      cuentas: [cuenta('c1', 'Cuenta Myinvestor', 't1'), cuenta('c2', 'Otro banco', 't1', true)],
+      productos: [producto('p1', 'Fondo indexado', 't1')],
+      movimientos: [movimiento('2026-10-02', 'c2', 'p1', 300)],
+    } as unknown as Dataset
+    const entrada = entradaDesdeApp(fin(ds, [titular('t1', 'Marta')]), HOY)
+    expect(entrada.movimientos.map((m) => [m.de, m.a])).toEqual([
+      ['Exterior', 'Otro banco'],
+      ['Otro banco', 'Fondo indexado'],
     ])
   })
 
   it('lleva la rentabilidad de cada inversión tal y como la ve la app', () => {
-    const fin = finDe({
-      cuentas: [cuenta('c1', 'MyInvestor', false)],
-      productos: [producto('p1', 'Fondo uno'), producto('p2', 'Fondo dos')],
-      movimientos: [movimiento({ kind: 'cuenta', id: 'c1' }, { kind: 'producto', id: 'p1' }, 100)],
-      posiciones: new Map([
-        ['p1', posicion({ productoId: 'p1', rentabilidad: 0.07, capital: 100, saldo: 107 })],
-        ['p2', posicion({ productoId: 'p2', capital: 200, saldo: 210 })],
-      ]),
-    })
-    const entrada = entradaDesdeApp(fin, HOY)
-    const inversiones = entrada.titulares[0].grupos.flatMap((g) => g.inversiones)
-    expect(inversiones.find((i) => i.nombre === 'Fondo uno')?.rentabilidad).toBeCloseTo(0.07, 10)
-    expect(inversiones.find((i) => i.nombre === 'Fondo dos')?.rentabilidad).toBeCloseTo(0.05, 10)
+    const ds = {
+      cuentas: [cuenta('c1', 'Cuenta Myinvestor', 't1')],
+      productos: [producto('p1', 'Fondo indexado', 't1'), producto('p2', 'Depósito', 't1')],
+      movimientos: [movimiento('2026-10-01', 'c1', 'p1', 100), movimiento('2026-10-01', 'c1', 'p2', 200)],
+    } as unknown as Dataset
+    const base = fin(ds, [titular('t1', 'Marta')])
+    base.positions.set('p1', { rentabilidad: 0.1, capital: 100, saldo: 110 } as unknown as Position)
+    base.positions.set('p2', { rentabilidad: null, capital: 200, saldo: 220 } as unknown as Position)
+    const entrada = entradaDesdeApp(base, HOY)
+    const nombres = Object.fromEntries(
+      entrada.titulares[0].grupos.flatMap((g) => g.inversiones.map((i) => [i.nombre, i.rentabilidad])),
+    )
+    expect(nombres['Fondo indexado']).toBe(0.1)
+    expect(nombres['Depósito']).toBeCloseTo(0.1, 10) // 220 / 200 − 1
   })
 })
