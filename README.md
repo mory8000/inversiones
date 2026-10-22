@@ -254,12 +254,13 @@ viene el dinero y ver el resumen. Es un archivo aparte de la app: ábrelo con Ex
   cambiar): en cuanto la rellenas, se abre la siguiente.
 - **De** y **A** son desplegables con los nombres del resumen. `Exterior` es el dinero que entra (o sale) de
   fuera; `Interés`, lo que paga el banco o la inversión (cuenta como rentabilidad, no como dinero aportado).
-- **Resumen** (derecha): una fila por cuenta y por inversión con **Capital aportado · Rentabilidad (% y €) ·
-  Saldo**. Primero por separado, después el total de cada titular y el **TOTAL** de todo junto.
+- **Resumen** (derecha): cada **cuenta** y, debajo de ella **sangradas, las inversiones que se pagan desde
+  esa cuenta**, cada una con **Capital aportado · Rentabilidad (% y €) · Saldo**. Después el **total de cada
+  cuenta**, el de cada **titular** y el **TOTAL** de todo junto.
 - Todo se calcula con fórmulas (`SUMIFS`) a partir de la tabla de movimientos, así que el resumen se actualiza
   solo. El saldo de las cuentas sale de los movimientos; el de las inversiones lo escribes tú (celda amarilla).
-- **Añadir o quitar productos**: escribe el nombre (y el titular) en una fila libre del resumen; para quitarlo,
-  borra la fila. Entra en el desplegable de los movimientos al momento.
+- **Añadir o quitar productos**: escribe el nombre (y el titular) en una fila libre, debajo de la cuenta desde
+  la que lo pagas; para quitarlo, borra la fila. Entra en el desplegable de los movimientos al momento.
 - Lo que se va de una cuenta a otro titular (la transferencia al «Fondo ahorro», por ejemplo) no cuenta en la
   cuenta que lo envía: si traes 1.000 € y se van 400, la cuenta principal marca 600 de aportado y el «Fondo
   ahorro» 400.

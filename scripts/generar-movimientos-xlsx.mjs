@@ -6,14 +6,15 @@
  *     (con la fecha de hoy, que se puede cambiar): en cuanto la rellenas, aparece la siguiente.
  *   · «De» es de dónde sale el dinero y «A» a dónde va. Los dos son desplegables con los nombres
  *     del resumen de la derecha, así que para añadir un producto basta con escribir su nombre en
- *     una fila libre del resumen (y para quitarlo, borrar la fila).
+ *     una fila libre (y para quitarlo, borrar la fila).
  *   · «Exterior» es el dinero que entra desde fuera (o que sale). «Interés» es lo que paga el banco
  *     o la inversión: no cuenta como dinero aportado, sino como rentabilidad.
- *   · A la derecha, el resumen de cada cuenta y de cada inversión: Capital aportado, Rentabilidad
- *     (en % y en €) y Saldo. Primero por separado, después el total de cada titular y el TOTAL.
- *   · Todo se calcula con fórmulas (SUMIF.S) a partir de la tabla de movimientos.
+ *   · A la derecha, el resumen de cada cuenta: cuánto dinero ha entrado de fuera (Capital aportado),
+ *     lo invertido en cada inversión (las filas que van debajo de la cuenta), la Rentabilidad
+ *     (en % y en €) y el Saldo. Después, el total de cada cuenta, el de cada titular y el TOTAL.
+ *   · Todo se calcula con fórmulas (SUMIFS) a partir de la tabla de movimientos.
  *
- * Para regenerar el archivo:
+ * Para regenerar el archivo (los nombres se cambian aquí arriba):
  *   npm i --no-save exceljs && node scripts/generar-movimientos-xlsx.mjs
  */
 
@@ -25,31 +26,42 @@ const aqui = dirname(fileURLToPath(import.meta.url))
 const SALIDA = resolve(aqui, '..', 'Movimientos.xlsx')
 
 // ── Lo que lleva la hoja ───────────────────────────────────────────────────
-// Cámbialo aquí si quieres otros nombres: es lo único que hay que tocar.
+// Es lo único que hay que tocar: titulares, sus cuentas y las inversiones que
+// se pagan desde cada cuenta (`libres` son las filas vacías que se dejan para
+// añadir productos nuevos debajo de esa cuenta).
 const HOY = '2026-10-22'
 
-/** Titulares, con sus cuentas (del banco) y sus inversiones (productos). */
 const TITULARES = [
   {
     nombre: 'Marta',
-    cuentas: ['MyInvestor', 'Cuenta nómina · BBVA', 'Cuenta ahorro · ING'],
-    inversiones: [
-      'Vanguard Global Stock Index',
-      'Fidelity MSCI World Index',
-      'Cartera indexada Metal',
-      'Depósito 12 meses',
-      'Plan de pensiones indexado global',
+    cuentas: [
+      {
+        nombre: 'MyInvestor',
+        inversiones: [
+          'Vanguard Global Stock Index',
+          'Fidelity MSCI World Index',
+          'Cartera indexada Metal',
+          'Depósito 12 meses',
+          'Plan de pensiones indexado global',
+        ],
+        libres: 3,
+      },
+      { nombre: 'Cuenta nómina · BBVA', inversiones: [], libres: 0 },
+      { nombre: 'Cuenta ahorro · ING', inversiones: [], libres: 0 },
     ],
   },
   {
     nombre: 'Fondo ahorro',
-    cuentas: [],
-    inversiones: ['Fondo indexado', 'Depósito ahorro'],
+    cuentas: [
+      {
+        nombre: null, // El «Fondo ahorro» no tiene cuenta: el dinero va directo a sus productos.
+        inversiones: ['Fondo indexado', 'Depósito ahorro'],
+        libres: 2,
+      },
+    ],
   },
 ]
 
-/** Filas libres al final del resumen para añadir productos nuevos. */
-const LIBRES = 6
 /** Filas para escribir movimientos (solo se ve una; el resto aparecen al rellenar). */
 const FILAS_MOV = 200
 
@@ -97,7 +109,7 @@ const ws = wb.addWorksheet('Movimientos', {
     paperSize: 9, // A4
     fitToPage: true,
     fitToWidth: 1,
-    fitToHeight: 0,
+    fitToHeight: 1,
     margins: { left: 0.3, right: 0.3, top: 0.4, bottom: 0.4, header: 0, footer: 0 },
   },
 })
@@ -108,11 +120,11 @@ ws.getColumn(COL.de).width = 21
 ws.getColumn(COL.a).width = 21
 ws.getColumn(COL.importe).width = 12
 ws.getColumn(5).width = 2 // separación
-ws.getColumn(COL.nombre).width = 27
-ws.getColumn(COL.titular).width = 10
-ws.getColumn(COL.aportado).width = 16
+ws.getColumn(COL.nombre).width = 29
+ws.getColumn(COL.titular).width = 11
+ws.getColumn(COL.aportado).width = 15
 ws.getColumn(COL.rentabPct).width = 10
-ws.getColumn(COL.rentabEur).width = 13
+ws.getColumn(COL.rentabEur).width = 12
 ws.getColumn(COL.saldo).width = 13
 
 const celda = (f, c) => ws.getCell(f, c)
@@ -127,6 +139,7 @@ const poner = (f, c, valor, estilo = {}) => {
   return x
 }
 const relleno = (argb) => ({ type: 'pattern', pattern: 'solid', fgColor: { argb } })
+const bordeFino = { bottom: { style: 'thin', color: { argb: BORDE } } }
 
 // ── Títulos y esquema ──────────────────────────────────────────────────────
 ws.mergeCells(1, 1, 1, COL.saldo)
@@ -141,27 +154,26 @@ poner(2, 1, 'Escribe cada movimiento: fecha, de dónde sale (De), a dónde va (A
   font: { size: 9, color: { argb: GRIS } },
   alignment: { wrapText: true, vertical: 'top' },
 })
+ws.getRow(2).height = 18
+ws.getRow(3).height = 26
 
 // Pequeño esquema: Capital aportado + Rentabilidad = Saldo
 const caja = (c1, c2, texto) => {
-  const x = poner(2, c1, texto, {
+  poner(2, c1, texto, {
     font: { bold: true, size: 10, color: { argb: AZUL } },
     fill: relleno('FFEFF6FF'),
     alignment: { horizontal: 'center', vertical: 'middle' },
   })
   if (c2 !== c1) ws.mergeCells(2, c1, 2, c2)
-  return x
 }
 caja(COL.nombre, COL.nombre, 'Capital aportado')
 poner(2, COL.titular, '+', { font: { bold: true, size: 11, color: { argb: GRIS } }, alignment: { horizontal: 'center' } })
 caja(COL.aportado, COL.rentabPct, 'Rentabilidad')
 poner(2, COL.rentabEur, '=', { font: { bold: true, size: 11, color: { argb: GRIS } }, alignment: { horizontal: 'center' } })
 caja(COL.saldo, COL.saldo, 'Saldo')
-ws.getRow(2).height = 18
-ws.getRow(3).height = 26
 
 ws.mergeCells(3, COL.nombre, 3, COL.saldo)
-poner(3, COL.nombre, 'Cada cuenta y cada inversión, por separado; abajo, el total de cada titular y el TOTAL de todo junto.', {
+poner(3, COL.nombre, 'Resumen de cada cuenta, con lo invertido en cada inversión debajo; después, el total de cada cuenta, el de cada titular y el TOTAL.', {
   font: { size: 9, italic: true, color: { argb: GRIS } },
   alignment: { vertical: 'middle' },
 })
@@ -187,7 +199,7 @@ const cabeceras = (fila, pares) => {
       fill: relleno(CABECERA_FILL),
       font: { bold: true, size: 10, color: { argb: 'FF334155' } },
       alignment: { horizontal: c >= COL.aportado ? 'right' : 'left', vertical: 'middle' },
-      border: { bottom: { style: 'thin', color: { argb: BORDE } } },
+      border: bordeFino,
     })
   }
   ws.getRow(fila).height = 16
@@ -197,7 +209,7 @@ cabeceras(5, [
   [COL.de, 'De  (de dónde sale)'],
   [COL.a, 'A  (a dónde va)'],
   [COL.importe, 'Importe'],
-  [COL.nombre, 'Cuenta o inversión'],
+  [COL.nombre, 'Cuenta e inversiones'],
   [COL.titular, 'Titular'],
   [COL.aportado, 'Capital aportado'],
   [COL.rentabPct, 'Rentab. %'],
@@ -230,7 +242,7 @@ ws.addConditionalFormatting({
       style: {
         fill: relleno(AMARILLO_FUERTE),
         font: { size: 10, color: { argb: TINTA } },
-        border: { bottom: { style: 'thin', color: { argb: BORDE } } },
+        border: bordeFino,
       },
     },
     {
@@ -238,10 +250,7 @@ ws.addConditionalFormatting({
       type: 'expression',
       formulae: [`$${L.importe}${FILA_MOV_1 - 1}<>""`],
       priority: 2,
-      style: {
-        font: { size: 10, color: { argb: TINTA } },
-        border: { bottom: { style: 'thin', color: { argb: BORDE } } },
-      },
+      style: { font: { size: 10, color: { argb: TINTA } }, border: bordeFino },
     },
     {
       // El resto: letra blanca, como si no existieran, hasta que llegue su turno.
@@ -253,34 +262,18 @@ ws.addConditionalFormatting({
   ],
 })
 
-// Desplegables con los nombres del resumen (añadir un producto = escribirlo en una fila libre).
-const RANGO_NOMBRES = `$${L.nombre}$${RES_1}:$${L.nombre}$${RES_1 + ESPECIALES.length + TITULARES.reduce((n, t) => n + t.cuentas.length + t.inversiones.length, 0) + LIBRES - 1}`
-for (const c of [COL.de, COL.a]) {
-  ws.dataValidations.add(`${letra(c)}${FILA_MOV_1}:${letra(c)}${FILA_MOV_N}`, {
-    type: 'list',
-    formulae: [RANGO_NOMBRES],
-    allowBlank: true,
-    showErrorMessage: false,
-  })
-}
-ws.dataValidations.add(`${L.importe}${FILA_MOV_1}:${L.importe}${FILA_MOV_N}`, {
-  type: 'decimal',
-  operator: 'greaterThan',
-  formulae: ['0'],
-  allowBlank: true,
-  showErrorMessage: false,
-})
-
 // ── Resumen ────────────────────────────────────────────────────────────────
 const IMPORTE = `$${L.importe}$${FILA_MOV_1}:$${L.importe}$${FILA_MOV_N}`
 const DE = `$${L.de}$${FILA_MOV_1}:$${L.de}$${FILA_MOV_N}`
 const A = `$${L.a}$${FILA_MOV_1}:$${L.a}$${FILA_MOV_N}`
-const INTERES = `"Interés"`
+const INTERES = '"Interés"'
 
 /**
- * Capital aportado de lo que haya en la fila `f`: lo que ha entrado menos lo que ha salido,
- * sin contar el interés (que es rentabilidad, no dinero tuyo). En una cuenta es el dinero que
- * has traído de fuera y sigue ahí; en una inversión, el capital que le has puesto.
+ * Capital aportado de la fila `f`: lo que ha entrado menos lo que ha salido, sin contar el
+ * interés (que es rentabilidad, no dinero tuyo). En una cuenta es el dinero que has traído de
+ * fuera y sigue ahí (lo que se vaya a otra cuenta o a un producto de otro titular no cuenta:
+ * si traes 1.000 € y se van 400 al Fondo ahorro, aquí marcan 600); en una inversión, el capital
+ * que le has puesto.
  */
 const fAportado = (f) =>
   `IF($${L.nombre}${f}="","",SUMIFS(${IMPORTE},${A},$${L.nombre}${f})` +
@@ -297,7 +290,7 @@ const fRentabEur = (f) =>
 const fRentabPct = (f) => `IF($${L.nombre}${f}="","",IF($${L.aportado}${f}=0,"",$${L.rentabEur}${f}/$${L.aportado}${f}))`
 
 let fila = RES_1
-const filasDatos = []
+const grupos = [] // {nombre, desde, hasta}: para el total de cada cuenta
 
 const filaEspecial = (nombre) => {
   poner(fila, COL.nombre, nombre, {
@@ -309,10 +302,18 @@ const filaEspecial = (nombre) => {
 }
 ESPECIALES.forEach(filaEspecial)
 
-const filaResumen = (nombre, titular, clase) => {
-  filasDatos.push(fila)
-  poner(fila, COL.nombre, nombre, { font: { size: 10, color: { argb: TINTA } } })
-  poner(fila, COL.titular, titular, { font: { size: 9, color: { argb: GRIS } }, alignment: { horizontal: 'center' } })
+/** Una fila del resumen: cuenta, inversión (sangrada, debajo de su cuenta) o libre. */
+const filaResumen = ({ nombre, titular, clase, sangria = 0 }) => {
+  poner(fila, COL.nombre, nombre, {
+    font: { size: 10, bold: clase === 'cuenta', color: { argb: TINTA } },
+    alignment: { indent: sangria },
+    fill: clase === 'libre' ? relleno(AMARILLO) : undefined,
+  })
+  poner(fila, COL.titular, titular, {
+    font: { size: 9, color: { argb: GRIS } },
+    alignment: { horizontal: 'center' },
+    fill: clase === 'libre' ? relleno(AMARILLO) : undefined,
+  })
   poner(fila, COL.aportado, { formula: fAportado(fila) }, { numFmt: MONEDA, font: { size: 10 } })
   poner(fila, COL.rentabPct, { formula: fRentabPct(fila) }, { numFmt: PORCENTAJE, font: { size: 10 } })
   poner(fila, COL.rentabEur, { formula: fRentabEur(fila) }, { numFmt: MONEDA, font: { size: 10 } })
@@ -322,29 +323,19 @@ const filaResumen = (nombre, titular, clase) => {
     // El saldo de una inversión es su valor de hoy: lo escribes tú.
     poner(fila, COL.saldo, null, { numFmt: MONEDA, font: { size: 10 }, fill: relleno(AMARILLO) })
   }
-  for (let c = COL.nombre; c <= COL.saldo; c++) {
-    celda(fila, c).border = { bottom: { style: 'thin', color: { argb: BORDE } } }
-  }
+  for (let c = COL.nombre; c <= COL.saldo; c++) celda(fila, c).border = bordeFino
   fila++
 }
 
 for (const t of TITULARES) {
-  t.cuentas.forEach((n) => filaResumen(n, t.nombre, 'cuenta'))
-  t.inversiones.forEach((n) => filaResumen(n, t.nombre, 'inversion'))
-}
-// Filas libres: escribe aquí el nombre de un producto nuevo y se calcula solo.
-for (let i = 0; i < LIBRES; i++) {
-  filasDatos.push(fila)
-  poner(fila, COL.nombre, null, { font: { size: 10 }, fill: relleno(AMARILLO) })
-  poner(fila, COL.titular, null, { font: { size: 9 }, alignment: { horizontal: 'center' }, fill: relleno(AMARILLO) })
-  poner(fila, COL.aportado, { formula: fAportado(fila) }, { numFmt: MONEDA, font: { size: 10 } })
-  poner(fila, COL.rentabPct, { formula: fRentabPct(fila) }, { numFmt: PORCENTAJE, font: { size: 10 } })
-  poner(fila, COL.rentabEur, { formula: fRentabEur(fila) }, { numFmt: MONEDA, font: { size: 10 } })
-  poner(fila, COL.saldo, null, { numFmt: MONEDA, font: { size: 10 }, fill: relleno(AMARILLO) })
-  for (let c = COL.nombre; c <= COL.saldo; c++) {
-    celda(fila, c).border = { bottom: { style: 'thin', color: { argb: BORDE } } }
+  for (const cuenta of t.cuentas) {
+    const desde = fila
+    if (cuenta.nombre) filaResumen({ nombre: cuenta.nombre, titular: t.nombre, clase: 'cuenta' })
+    for (const inv of cuenta.inversiones) filaResumen({ nombre: inv, titular: t.nombre, clase: 'inversion', sangria: 1 })
+    for (let i = 0; i < (cuenta.libres ?? 0); i++) filaResumen({ nombre: null, titular: null, clase: 'libre', sangria: 1 })
+    // Total de la cuenta con lo que tiene puesto en sus inversiones (si la cuenta tiene nombre).
+    if (cuenta.nombre && cuenta.inversiones.length) grupos.push({ nombre: cuenta.nombre, desde, hasta: fila - 1 })
   }
-  fila++
 }
 const RES_N = fila - 1
 const RANGO_RES = (c) => `$${letra(c)}$${RES_1}:$${letra(c)}$${RES_N}`
@@ -358,38 +349,51 @@ ws.addConditionalFormatting({
   ],
 })
 
-// Totales: uno por titular y, después, todo junto.
-const filasTotales = []
-fila += 1
-for (const t of TITULARES) {
-  filasTotales.push(fila)
-  const f = fila
-  poner(f, COL.nombre, `Total ${t.nombre}`, { font: { bold: true, size: 10, color: { argb: TINTA } } })
-  poner(f, COL.titular, t.nombre, { font: { size: 9, color: { argb: GRIS } }, alignment: { horizontal: 'center' } })
-  poner(f, COL.aportado, { formula: `SUMIF(${RANGO_RES(COL.titular)},$${L.titular}${f},${RANGO_RES(COL.aportado)})` }, { numFmt: MONEDA, font: { bold: true, size: 10 } })
-  poner(f, COL.rentabPct, { formula: `IF($${L.aportado}${f}=0,"",$${L.rentabEur}${f}/$${L.aportado}${f})` }, { numFmt: PORCENTAJE, font: { bold: true, size: 10 } })
-  poner(f, COL.rentabEur, { formula: `SUMIF(${RANGO_RES(COL.titular)},$${L.titular}${f},${RANGO_RES(COL.rentabEur)})` }, { numFmt: MONEDA, font: { bold: true, size: 10 } })
-  poner(f, COL.saldo, { formula: `SUMIF(${RANGO_RES(COL.titular)},$${L.titular}${f},${RANGO_RES(COL.saldo)})` }, { numFmt: MONEDA, font: { bold: true, size: 10 } })
+// ── Totales: por cuenta, por titular y todo junto ──────────────────────────
+const filaTotal = (nombre, titular, formulas, fuerte = false) => {
+  poner(fila, COL.nombre, nombre, { font: { bold: true, size: fuerte ? 11 : 10, color: { argb: TINTA } } })
+  poner(fila, COL.titular, titular, { font: { size: 9, color: { argb: GRIS } }, alignment: { horizontal: 'center' } })
+  poner(fila, COL.aportado, { formula: `IF(${formulas.aportado}=0,"",${formulas.aportado})` }, { numFmt: MONEDA, font: { bold: true, size: fuerte ? 11 : 10 } })
+  poner(fila, COL.rentabPct, { formula: `IF($${L.aportado}${fila}=0,"",$${L.rentabEur}${fila}/$${L.aportado}${fila})` }, { numFmt: PORCENTAJE, font: { bold: true, size: fuerte ? 11 : 10 } })
+  poner(fila, COL.rentabEur, { formula: `IF(${formulas.rentab}=0,"",${formulas.rentab})` }, { numFmt: MONEDA, font: { bold: true, size: fuerte ? 11 : 10 } })
+  poner(fila, COL.saldo, { formula: `IF(${formulas.saldo}=0,"",${formulas.saldo})` }, { numFmt: MONEDA, font: { bold: true, size: fuerte ? 11 : 10 } })
   for (let c = COL.nombre; c <= COL.saldo; c++) {
-    celda(f, c).fill = relleno(CABECERA_FILL)
-    celda(f, c).border = { bottom: { style: 'thin', color: { argb: BORDE } } }
+    const x = celda(fila, c)
+    x.fill = relleno(fuerte ? AZUL : CABECERA_FILL)
+    if (fuerte) x.font = { bold: true, size: 11, color: { argb: 'FFFFFFFF' }, name: x.font?.name }
+    if (c >= COL.aportado) x.alignment = { horizontal: 'right' }
   }
   fila++
 }
 
-const FILA_TOTAL = fila
-poner(FILA_TOTAL, COL.nombre, 'TOTAL', { font: { bold: true, size: 11, color: { argb: 'FFFFFFFF' } } })
-poner(FILA_TOTAL, COL.titular, null, {})
-poner(FILA_TOTAL, COL.aportado, { formula: `SUM(${RANGO_RES(COL.aportado)})` }, { numFmt: MONEDA, font: { bold: true, size: 11 } })
-poner(FILA_TOTAL, COL.rentabPct, { formula: `IF($${L.aportado}${FILA_TOTAL}=0,"",$${L.rentabEur}${FILA_TOTAL}/$${L.aportado}${FILA_TOTAL})` }, { numFmt: PORCENTAJE, font: { bold: true, size: 11 } })
-poner(FILA_TOTAL, COL.rentabEur, { formula: `SUM(${RANGO_RES(COL.rentabEur)})` }, { numFmt: MONEDA, font: { bold: true, size: 11 } })
-poner(FILA_TOTAL, COL.saldo, { formula: `SUM(${RANGO_RES(COL.saldo)})` }, { numFmt: MONEDA, font: { bold: true, size: 11 } })
-for (let c = COL.nombre; c <= COL.saldo; c++) {
-  const x = celda(FILA_TOTAL, c)
-  x.fill = relleno(AZUL)
-  x.font = { bold: true, size: 11, color: { argb: 'FFFFFFFF' } }
-  if (c >= COL.aportado) x.alignment = { horizontal: 'right' }
+fila += 1 // línea en blanco antes de los totales
+const suma = (c, desde, hasta) => `SUM($${letra(c)}$${desde}:$${letra(c)}$${hasta})`
+// Cada cuenta con sus inversiones: lo aportado, lo que vale hoy y lo ganado.
+for (const g of grupos) {
+  filaTotal(`Total ${g.nombre}`, null, {
+    aportado: suma(COL.aportado, g.desde, g.hasta),
+    rentab: suma(COL.rentabEur, g.desde, g.hasta),
+    saldo: suma(COL.saldo, g.desde, g.hasta),
+  })
 }
+// Cada titular.
+const filasTitulares = []
+for (const t of TITULARES) {
+  filasTitulares.push(fila)
+  const sumaSi = (c) => `SUMIFS(${RANGO_RES(c)},${RANGO_RES(COL.titular)},$${L.titular}${fila})`
+  filaTotal(`Total ${t.nombre}`, t.nombre, {
+    aportado: sumaSi(COL.aportado),
+    rentab: sumaSi(COL.rentabEur),
+    saldo: sumaSi(COL.saldo),
+  })
+}
+// Y todo junto.
+const FILA_TOTAL = fila
+filaTotal('TOTAL', null, {
+  aportado: suma(COL.aportado, RES_1, RES_N),
+  rentab: suma(COL.rentabEur, RES_1, RES_N),
+  saldo: suma(COL.saldo, RES_1, RES_N),
+}, true)
 ws.getRow(FILA_TOTAL).height = 18
 
 // Notas finales.
@@ -398,17 +402,34 @@ const nota = (f, texto) => {
   poner(f, 1, texto, { font: { size: 9, italic: true, color: { argb: GRIS } } })
 }
 const ULTIMA = FILA_TOTAL + 3
-nota(FILA_TOTAL + 2, 'Para añadir un producto: escribe su nombre (y su titular) en una fila libre del resumen. Para quitarlo: borra su fila.')
+nota(FILA_TOTAL + 2, 'Para añadir un producto: escribe su nombre (y su titular) en una fila libre, debajo de la cuenta desde la que lo pagas. Para quitarlo: borra su fila.')
 nota(ULTIMA, 'El saldo de las inversiones es su valor de hoy: escríbelo tú en la celda amarilla. «Exterior» es el dinero que entra o sale de fuera; «Interés», lo que paga el banco o la inversión (rentabilidad, no dinero aportado).')
+
+// ── Desplegables ───────────────────────────────────────────────────────────
+const RANGO_NOMBRES = `$${L.nombre}$${RES_1}:$${L.nombre}$${RES_N}`
+for (const c of [COL.de, COL.a]) {
+  ws.dataValidations.add(`${letra(c)}${FILA_MOV_1}:${letra(c)}${FILA_MOV_N}`, {
+    type: 'list',
+    formulae: [RANGO_NOMBRES],
+    allowBlank: true,
+    showErrorMessage: false,
+  })
+}
+ws.dataValidations.add(`${L.importe}${FILA_MOV_1}:${L.importe}${FILA_MOV_N}`, {
+  type: 'decimal',
+  operator: 'greaterThan',
+  formulae: ['0'],
+  allowBlank: true,
+  showErrorMessage: false,
+})
 
 // ── Impresión: una página ──────────────────────────────────────────────────
 ws.pageSetup.printArea = `A1:${L.saldo}${ULTIMA}`
-ws.pageSetup.fitToHeight = 1
 ws.pageSetup.printTitlesRow = '1:5'
 
 // ── Escribir ───────────────────────────────────────────────────────────────
 const buf = await wb.xlsx.writeBuffer()
 writeFileSync(SALIDA, Buffer.from(buf))
 console.log(`✅ ${SALIDA}`)
-console.log(`   resumen: filas ${RES_1}-${RES_N} · totales: ${filasTotales.join(', ')} · TOTAL: ${FILA_TOTAL}`)
-console.log(`   movimientos: filas ${FILA_MOV_1}-${FILA_MOV_N}`)
+console.log(`   resumen: filas ${RES_1}-${RES_N} · grupos: ${grupos.map((g) => `${g.nombre} (${g.desde}-${g.hasta})`).join(', ')}`)
+console.log(`   titulares: ${filasTitulares.join(', ')} · TOTAL: ${FILA_TOTAL} · movimientos: ${FILA_MOV_1}-${FILA_MOV_N}`)
