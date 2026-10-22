@@ -50,6 +50,33 @@ const ENTRADA: EntradaExcel = {
   ],
 }
 
+/** Dos cuentas con el mismo fondo: es el caso real que había que区分. */
+const ENTRADA_REPETIDOS: EntradaExcel = {
+  ...ENTRADA,
+  titulares: [
+    {
+      nombre: 'Marta',
+      color: '#2447B8',
+      grupos: [
+        {
+          cuenta: 'Cuenta Myinvestor',
+          inversiones: [{ nombre: 'iShares Developed World Index (IE) Acc EUR clase s', rentabilidad: 0.02 }],
+        },
+      ],
+    },
+    {
+      nombre: 'Fondo ahorro',
+      color: '#EA580C',
+      grupos: [
+        {
+          cuenta: null,
+          inversiones: [{ nombre: 'iShares Developed World Index (IE) Acc EUR clase s', rentabilidad: 0.03 }],
+        },
+      ],
+    },
+  ],
+}
+
 async function generar(entrada: EntradaExcel = ENTRADA) {
   const buffer = await generarExcelMovimientos(entrada)
   const zip = await JSZip.loadAsync(buffer)
@@ -117,6 +144,14 @@ describe('el Excel de movimientos', () => {
     expect(nombres.some((n) => n.includes('Fondo ahorro)'))).toBe(false)
     expect(nombres.some((n) => /\((?!ahorro)/.test(n))).toBe(false)
     expect(nombres.every((n) => n.length <= 32)).toBe(true)
+  })
+
+  it('si dos inversiones se llaman igual, salen las dos en corto y distintas', async () => {
+    const { hoja } = await generar(ENTRADA_REPETIDOS)
+    const nombres = nombresDelResumen(hoja)
+    expect(nombres).toContain('iShares Developed World Index')
+    expect(nombres).toContain('iShares Developed World Index 2')
+    expect(nombres.filter((n) => n.startsWith('iShares')).length).toBe(2)
   })
 
   it('no tiene «Interés»: el interés se escribe en el % de cada producto', async () => {
@@ -222,10 +257,12 @@ describe('el Excel de movimientos', () => {
   it('deja una sola fila amarilla a la vista: al rellenarla sale la siguiente', async () => {
     const { zip, hoja } = await generar()
     const hojaXml = await xml(zip, 'xl/worksheets/sheet1.xml')
-    // Hay 15 filas libres escondidas; el formato condicional destapa solo la que toca.
+    // Dos filas libres: la de arriba a la vista y la otra de reserva.
     const libres = nombresDelResumen(hoja).length
-    expect(hoja.getCell(`F${6 + libres + 14}`).protection).toMatchObject({ locked: false })
-    expect(hoja.getCell(`F${6 + libres + 15}`).value).toBeNull()
+    expect(hoja.getCell(`F${6 + libres + 1}`).protection).toMatchObject({ locked: false })
+    expect(hoja.getCell(`F${6 + libres + 2}`).value).toBeNull()
+    // Y los totales quedan justo debajo: solo una fila en blanco de separación.
+    expect(filaDe(hoja, 'Total MyInvestor-Marta')).toBe(6 + libres + 2 + 1)
     expect(hojaXml).toContain('AND($F')
     const reglas = (hoja as unknown as { conditionalFormattings: { ref: string; rules: { formulae: string[] }[] }[] })
       .conditionalFormattings
@@ -239,8 +276,13 @@ describe('el Excel de movimientos', () => {
 
   it('protege la hoja: solo se puede escribir en los movimientos, las filas nuevas y el %', async () => {
     const { hoja } = await generar()
-    const proteccion = (hoja as unknown as { sheetProtection?: { sheet?: boolean } }).sheetProtection
+    const proteccion = (hoja as unknown as { sheetProtection?: Record<string, boolean> }).sheetProtection
     expect(proteccion).toMatchObject({ sheet: true })
+    // Se puede elegir cualquier celda y borrar o añadir filas: así se quita una inversión a cero.
+    const { zip } = await generar()
+    const hojaXml = await xml(zip, 'xl/worksheets/sheet1.xml')
+    for (const permite of ['selectLockedCells', 'selectUnlockedCells', 'deleteRows', 'insertRows'])
+      expect(hojaXml).toContain(`${permite}="0"`)
     // Los movimientos: fecha, de, a e importe.
     for (const c of ['A', 'B', 'C', 'D']) {
       expect(hoja.getCell(`${c}6`).protection).toMatchObject({ locked: false })
@@ -331,12 +373,16 @@ describe('el Excel se llena con los datos de la app', () => {
       recibido: 0,
     })
     const tfs = titulares.map((t, i) => ({ titular: t, index: i, color: '#2447B8', ws: ws(t.id), positions: [], accounts: [], totals: vacio, byType: new Map(), recibido: 0 }))
+    // Todas las inversiones con datos, salvo que la prueba diga otra cosa.
+    const posiciones = new Map<string, Position>(
+      ds.productos.map((p) => [p.id, { rentabilidad: null, capital: 0, saldo: 0, numMovimientos: 1 } as unknown as Position]),
+    )
     return {
       ds,
       ws: ws(titulares[0].id),
       today: HOY,
       lookup: new Map(),
-      positions: new Map<string, Position>(),
+      positions: posiciones,
       accounts: new Map(),
       titulares: tfs,
       byTitular: new Map(tfs.map((t) => [t.titular.id, t])),
@@ -380,6 +426,36 @@ describe('el Excel se llena con los datos de la app', () => {
       ['Exterior', 'Otro banco'],
       ['Otro banco', 'Fondo indexado'],
     ])
+  })
+
+  it('escribe «Cuenta Myinvestor» aunque en la app se llame «Myinvestor»', () => {
+    const ds = {
+      cuentas: [cuenta('c1', 'Myinvestor', 't1')],
+      productos: [producto('p1', 'Fondo indexado', 't1')],
+      movimientos: [movimiento('2026-10-01', 'c1', 'p1', 300)],
+    } as unknown as Dataset
+    const entrada = entradaDesdeApp(fin(ds, [titular('t1', 'Marta')]), HOY)
+    expect(entrada.titulares[0].grupos[0].cuenta).toBe('Cuenta Myinvestor')
+    expect(entrada.movimientos[0]).toEqual({
+      fecha: '2026-10-01',
+      de: 'Cuenta Myinvestor',
+      a: 'Fondo indexado',
+      importe: 300,
+    })
+  })
+
+  it('las inversiones que quedan a cero y sin movimientos no salen en el resumen', () => {
+    const ds = {
+      cuentas: [cuenta('c1', 'Cuenta Myinvestor', 't1')],
+      productos: [producto('p1', 'Fondo indexado', 't1'), producto('p2', 'Fondo viejo', 't1')],
+      movimientos: [movimiento('2026-10-01', 'c1', 'p1', 300)],
+    } as unknown as Dataset
+    const base = fin(ds, [titular('t1', 'Marta')])
+    base.positions.set('p2', { rentabilidad: null, capital: 0, saldo: 0, numMovimientos: 0 } as unknown as Position)
+    const entrada = entradaDesdeApp(base, HOY)
+    const nombres = entrada.titulares[0].grupos.flatMap((g) => g.inversiones.map((i) => i.nombre))
+    expect(nombres).toContain('Fondo indexado')
+    expect(nombres).not.toContain('Fondo viejo')
   })
 
   it('lleva la rentabilidad de cada inversión tal y como la ve la app', () => {

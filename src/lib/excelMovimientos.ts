@@ -108,7 +108,10 @@ function acortar(nombre: string): string {
   return s || nombre
 }
 
-/** Nombres cortos: si al acortar dos chocan, se queda el nombre entero. */
+/**
+ * Nombres cortos y distintos: si dos inversiones se llaman igual («iShares Developed World Index (IE)
+ * Acc EUR clase s» en dos cuentas), salen las dos en corto y la segunda con un número al final.
+ */
 function nombresCortos(entrada: EntradaExcel) {
   const conteo = new Map<string, number>()
   const cuenta = (nombre: string) => conteo.set(nombre, (conteo.get(nombre) ?? 0) + 1)
@@ -117,7 +120,23 @@ function nombresCortos(entrada: EntradaExcel) {
       if (g.cuenta) cuenta(acortar(g.cuenta))
       for (const i of g.inversiones) cuenta(acortar(i.nombre))
     }
-  return (nombre: string) => ((conteo.get(acortar(nombre)) ?? 0) > 1 ? nombre : acortar(nombre))
+  const visto = new Map<string, number>()
+  const asignar = (nombre: string) => {
+    const corto = acortar(nombre)
+    if ((conteo.get(corto) ?? 0) <= 1) return corto
+    const n = (visto.get(corto) ?? 0) + 1
+    visto.set(corto, n)
+    return n === 1 ? corto : `${corto} ${n}`
+  }
+  // Se reparten una sola vez y en el orden en que salen las filas.
+  const enOrden: string[] = []
+  for (const t of entrada.titulares)
+    for (const g of [...t.grupos].sort((a, b) => b.inversiones.length - a.inversiones.length)) {
+      if (g.cuenta) enOrden.push(asignar(g.cuenta))
+      for (const i of g.inversiones) enOrden.push(asignar(i.nombre))
+    }
+  let siguiente = 0
+  return () => enOrden[siguiente++] ?? ''
 }
 
 /** RANGO con el que se alimentan los desplegables: solo los nombres escritos, sin huecos. */
@@ -148,7 +167,8 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
   libro.calcProperties = { fullCalcOnLoad: true }
 
   const HOJA = 'Movimientos'
-  const libres = entrada.libres ?? 15
+  // Dos filas libres: una a la vista y otra lista para cuando rellenes la primera.
+  const libres = entrada.libres ?? 2
   const FILAS_MOV = Math.max(FILAS_MOV_TOTAL, entrada.movimientos.length + 1)
   const FILA_MOV_N = RES_1 + FILAS_MOV - 1
 
@@ -393,17 +413,18 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
     for (const g of ordenados) {
       const desde = fila
       const titular = t.nombre
-      if (g.cuenta) filaResumen({ nombre: nombreDe(g.cuenta), titular, clase: 'cuenta' })
+      const nombreCuenta = g.cuenta ? nombreDe() : ''
+      if (g.cuenta) filaResumen({ nombre: nombreCuenta, titular, clase: 'cuenta' })
       for (const inv of g.inversiones)
         filaResumen({
-          nombre: nombreDe(inv.nombre),
+          nombre: nombreDe(),
           titular,
           clase: 'inversion',
           pct: inv.rentabilidad,
           sangria: g.cuenta ? 1 : 0,
         })
       if (g.inversiones.length)
-        grupos.push({ nombre: g.cuenta ? nombreDe(g.cuenta) : titular, titular, desde, hasta: fila - 1 })
+        grupos.push({ nombre: g.cuenta ? nombreCuenta : titular, titular, desde, hasta: fila - 1 })
     }
   }
   // Filas libres al final: solo se ve una. Al escribir el nombre sale la siguiente; al borrarlo,
@@ -569,13 +590,16 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
 
 
   // ── Impresión: una página ────────────────────────────────────────────────
-  const FILA_GRAFICO = FILA_TOTAL + 4
+  // El gráfico arranca a la altura del resumen (a su derecha, en las columnas L hasta O).
+  const FILA_GRAFICO = RES_1
   const ALTO_GRAFICO = 12
-  ws.pageSetup.printArea = `A1:O${FILA_GRAFICO + ALTO_GRAFICO}`
+  ws.pageSetup.printArea = `A1:O${Math.max(FILA_TOTAL + 4, FILA_GRAFICO + ALTO_GRAFICO)}`
   ws.pageSetup.printTitlesRow = `1:${FILA_CABECERAS}`
 
   // Protegida: solo se puede escribir en los movimientos, en las filas nuevas y en el % de cada
-  // inversión. Sin contraseña: «Revisar → Desproteger hoja» si quieres cambiar algo más.
+  // inversión. Se puede elegir cualquier celda y borrar o añadir filas (para quitar una inversión
+  // que quede a cero o para meter una nueva). Sin contraseña: «Revisar → Desproteger hoja».
+  // (Los permisos concretos se escriben a mano en terminar(): exceljs no saca todas las opciones.)
   await ws.protect('')
 
   const buffer = (await libro.xlsx.writeBuffer()) as ArrayBuffer
@@ -655,13 +679,18 @@ function xmlChart(op: OpcionesGrafico): string {
   <c:roundedCorners val="0"/>
   <c:chart>
     <c:title>
-      <c:tx><c:v>${xml(op.titulo)}</c:v></c:tx>
+      <c:tx>
+        <c:rich>
+          <a:bodyPr/>
+          <a:lstStyle/>
+          <a:p>
+            <a:pPr><a:defRPr sz="1000" b="0"><a:solidFill><a:srgbClr val="334155"/></a:solidFill></a:defRPr></a:pPr>
+            <a:r><a:rPr lang="es-ES" sz="1000"/><a:t>${xml(op.titulo)}</a:t></a:r>
+            <a:endParaRPr/>
+          </a:p>
+        </c:rich>
+      </c:tx>
       <c:overlay val="0"/>
-      <c:txPr>
-        <a:bodyPr/>
-        <a:lstStyle/>
-        <a:p><a:pPr><a:defRPr sz="1000" b="0"><a:solidFill><a:srgbClr val="334155"/></a:solidFill></a:defRPr></a:pPr><a:endParaRPr/></a:p>
-      </c:txPr>
     </c:title>
     <c:autoTitleDeleted val="0"/>
     <c:plotArea>
@@ -775,6 +804,20 @@ async function terminar(
   const REL_DIBUJO = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing'
   const REL_CHART = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart'
 
+  // Protección, escrita a mano: el «0» es lo que se PERMITE (o sea, lo que no se prohíbe).
+  // Se puede elegir cualquier celda, dar formato y borrar o añadir filas; lo demás, no.
+  const PROTECCION =
+    '<sheetProtection sheet="1" objects="0" scenarios="0" selectLockedCells="0" ' +
+    'selectUnlockedCells="0" formatCells="0" formatRows="0" insertRows="0" deleteRows="0"/>'
+  const rutaHoja = 'xl/worksheets/sheet1.xml'
+  const hoja0 = await zip.file(rutaHoja)!.async('string')
+  zip.file(
+    rutaHoja,
+    hoja0.includes('<sheetProtection')
+      ? hoja0.replace(/<sheetProtection[^>]*\/>/, PROTECCION)
+      : hoja0.replace('</worksheet>', `${PROTECCION}</worksheet>`),
+  )
+
   // Nombre definido: la lista de los desplegables, sin huecos.
   const libroXml = await zip.file('xl/workbook.xml')!.async('string')
   const definido = `<definedName name="${op.nombre.nombre}">${op.nombre.formula}</definedName>`
@@ -808,8 +851,8 @@ async function terminar(
     relsHoja.replace('</Relationships>', `<Relationship Id="rId${id}" Type="${REL_DIBUJO}" Target="../drawings/drawing1.xml"/></Relationships>`),
   )
 
-  const hoja = await zip.file('xl/worksheets/sheet1.xml')!.async('string')
-  zip.file('xl/worksheets/sheet1.xml', hoja.replace('</worksheet>', `<drawing r:id="rId${id}"/></worksheet>`))
+  const hoja = await zip.file(rutaHoja)!.async('string')
+  zip.file(rutaHoja, hoja.replace('</worksheet>', `<drawing r:id="rId${id}"/></worksheet>`))
 
   // Y los tipos de contenido de las partes nuevas.
   const tipos = await zip.file('[Content_Types].xml')!.async('string')

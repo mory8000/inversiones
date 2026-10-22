@@ -270,13 +270,18 @@ La hoja, en una sola página:
   30 letras («iShares Developed World Index (IE) Acc EUR clase s» → «iShares Developed World Index»).
 - **Añadir o quitar inversiones:** al final del resumen se ve **una sola fila amarilla**. Escribes el
   nombre (y el titular) y aparece la siguiente; si borras el nombre, la fila desaparece. Entran al
-  momento en los desplegables (que no muestran huecos y crecen solos). Hay 15 filas disponibles.
+  momento en los desplegables (que no muestran huecos y crecen solos). Detrás queda **una fila de
+  separación** y luego los totales, que suben o bajan solos.
+- Si dos productos se llaman igual, el segundo lleva un **2** al final («iShares… Index» e «iShares…
+  Index 2»): así el dinero va al que corresponde. Las **inversiones a cero y sin movimientos** no
+  salen en el resumen.
 - Después, el total de cada cuenta (si el titular tiene más de una), el de cada **titular** (si solo
   tiene una cuenta, el renglón lleva los dos nombres: «Total Cuenta Myinvestor-Luis») y el **TOTAL**.
 - Y en las **columnas L hasta O**, el **gráfico**: dos barras por titular — **Aportado neto** (azul) y
   **Beneficio-pérdida** (naranja) — con el importe encima de cada barra.
 - **Protegida:** solo se puede escribir en los movimientos, en las filas amarillas nuevas y en el %
-  de cada inversión. Sin contraseña: «Revisar → Desproteger hoja» si quieres tocar algo más.
+  de cada inversión. Se puede elegir cualquier celda y **borrar o añadir filas** (para quitar una
+  inversión que llegue a cero o meter una nueva). Sin contraseña: «Revisar → Desproteger hoja».
 - Todo son fórmulas (`SUMIFS`) envueltas en `SI.ERROR`: una celda sin datos sale en blanco, nunca
   con `#¡VALOR!`.
 

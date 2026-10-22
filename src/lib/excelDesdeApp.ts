@@ -15,8 +15,10 @@ export function entradaDesdeApp(fin: FinanceData, hoy: string): EntradaExcel {
   const nombreCuenta = new Map(ds.cuentas.map((c) => [c.id, c.nombre]))
   const nombreProducto = new Map(ds.productos.map((p) => [p.id, p.nombre]))
   const externa = new Map(ds.cuentas.map((c) => [c.id, c.externa]))
+  // «Myinvestor» se escribe siempre «Cuenta Myinvestor» (es el nombre que usa quien lleva las cuentas).
+  const bonito = (nombre: string) => (/^my\s*investor$/i.test(nombre.trim()) ? 'Cuenta Myinvestor' : nombre)
   const nombreDe = (ref: EntityRef) =>
-    ref.kind === 'cuenta' ? nombreCuenta.get(ref.id) ?? '' : nombreProducto.get(ref.id) ?? ''
+    bonito(ref.kind === 'cuenta' ? nombreCuenta.get(ref.id) ?? '' : nombreProducto.get(ref.id) ?? '')
 
   // ── Titulares: cada cuenta con las inversiones que paga ──────────────────
   const titulares = fin.titulares.map((tf) => {
@@ -40,13 +42,14 @@ export function entradaDesdeApp(fin: FinanceData, hoy: string): EntradaExcel {
     const grupos: GrupoExcel[] = []
     for (const cuenta of cuentas) {
       const inversiones: InversionExcel[] = productos
+        .filter((p) => conDatos(fin, p.id))
         .filter((p) => cuentaDe(p.id) === cuenta.id)
         .map((p) => ({ nombre: p.nombre, rentabilidad: rentabilidadDe(fin, p.id) }))
-      grupos.push({ cuenta: cuenta.nombre, inversiones })
+      grupos.push({ cuenta: bonito(cuenta.nombre), inversiones })
     }
     const sueltos = productos.filter((p) => {
       const id = cuentaDe(p.id)
-      return !id || !cuentas.some((c) => c.id === id)
+      return conDatos(fin, p.id) && (!id || !cuentas.some((c) => c.id === id))
     })
     if (sueltos.length)
       grupos.push({
@@ -90,6 +93,13 @@ function anadirMovimiento(
   } else {
     anade(m.fecha, de, a, m.importe)
   }
+}
+
+/** Las inversiones que quedan a cero (sin dinero y sin movimientos) no salen en el resumen. */
+function conDatos(fin: FinanceData, productoId: string): boolean {
+  const p = fin.positions.get(productoId)
+  if (!p) return false
+  return p.numMovimientos > 0 || p.saldo !== 0 || p.capital !== 0
 }
 
 /** Rentabilidad en tanto por uno (0,05 = 5 %): la de la app, o la que sale del valor actual. */

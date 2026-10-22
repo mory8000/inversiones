@@ -22,8 +22,8 @@ const HOY = '2026-10-22'
 const PLANTILLA = {
   hoy: HOY,
   movimientos: [],
-  // Una sola fila amarilla a la vista: al rellenarla sale la siguiente (hay 15).
-  libres: 15,
+  // Dos filas amarillas: una a la vista y otra lista para cuando rellenes la primera.
+  libres: 2,
   titulares: [
     {
       nombre: 'Marta',
