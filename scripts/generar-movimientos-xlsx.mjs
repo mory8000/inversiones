@@ -1,6 +1,6 @@
 /**
- * Genera «Movimientos.xlsx»: la misma hoja que descarga la app en Ajustes, pero vacía
- * (una plantilla con los nombres de ejemplo y sin movimientos).
+ * Genera «Movimientos.xlsx»: la misma hoja que descarga la app en Ajustes, pero con datos de
+ * ejemplo (una plantilla con los nombres de ejemplo y unos cuantos movimientos).
  *
  * Uso:
  *   npm install && node --experimental-strip-types scripts/generar-movimientos-xlsx.mjs
@@ -21,7 +21,13 @@ const HOY = '2026-10-22'
 /** Los mismos colores que la app: azul el primer titular, naranja el segundo. */
 const PLANTILLA = {
   hoy: HOY,
-  movimientos: [],
+  movimientos: [
+    { fecha: '2026-10-01', de: 'Exterior', a: 'Cuenta Myinvestor', importe: 1000 },
+    { fecha: '2026-10-02', de: 'Cuenta Myinvestor', a: 'Vanguard Global Stock Index', importe: 300 },
+    { fecha: '2026-10-02', de: 'Cuenta Myinvestor', a: 'Fidelity MSCI World Index', importe: 200 },
+    { fecha: '2026-10-03', de: 'Exterior', a: 'Fondo indexado', importe: 400 },
+    { fecha: '2026-10-05', de: 'Cuenta Myinvestor', a: 'iShares Developed World Index', importe: 150 },
+  ],
   // Dos filas amarillas: una a la vista y otra lista para cuando rellenes la primera.
   libres: 2,
   titulares: [

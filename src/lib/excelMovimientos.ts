@@ -589,8 +589,10 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
   }
   // Un renglón por titular, seguidos y en orden: son las del gráfico. Si el titular tiene una sola
   // cuenta, el renglón lleva los dos nombres («Total Cuenta Myinvestor-Luis»).
+  const filaTotalTitular = new Map<string, number>()
   for (const t of entrada.titulares) {
     if (t.grupos.length < 1) continue
+    filaTotalTitular.set(t.nombre, fila)
     const conInversiones = t.grupos.filter((g) => g.cuenta && g.inversiones.length)
     const nombre =
       conInversiones.length === 1 && conInversiones[0].cuenta !== t.nombre
@@ -651,22 +653,19 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
   const dibujos: Dibujo[] = []
   const graficos: Omit<OpcionesGrafico, 'desde' | 'hasta'>[] = []
 
-  // Uno por titular: sus cuentas y sus inversiones (el primero, las de Luis; el segundo, las del
-  // «Fondo ahorro»). Dos barras en cada una: lo puesto y lo ganado o perdido.
+  // Uno por titular (Luis, y el «Fondo ahorro»): todo junto —la cuenta y las inversiones— en tres
+  // barras: lo aportado, la rentabilidad y las dos cosas sumadas.
   for (const t of entrada.titulares) {
-    const filas = hechas.filter((h) => h.titular === t.nombre)
-    if (!filas.length) continue
-    const desde = filas[0].fila
-    const hasta = filas[filas.length - 1].fila
-    const conCuenta = filas.some((h) => h.clase === 'cuenta')
+    const total = filaTotalTitular.get(t.nombre)
+    if (total === undefined) continue
     graficos.push({
       hoja: HOJA,
-      titulo: `${t.nombre}: ${conCuenta ? 'cuentas e inversiones' : 'inversiones'}`,
-      categorias: filas.map((h) => h.corto),
+      titulo: t.nombre,
+      categorias: [t.nombre],
       series: [
-        // Lo que has puesto (azul) y lo que has ganado o perdido (naranja), como en el modelo.
-        { nombre: 'Aportado neto', valores: `$${L.aportado}$${desde}:$${L.aportado}$${hasta}`, color: '2563EB' },
-        { nombre: 'Beneficio-pérdida', valores: `$${L.euros}$${desde}:$${L.euros}$${hasta}`, color: 'E67E22' },
+        { nombre: 'Aportado', valores: `$${L.aportado}$${total}`, color: '2563EB' },
+        { nombre: 'Rentabilidad', valores: `$${L.euros}$${total}`, color: 'E67E22' },
+        { nombre: 'Aportado + rentabilidad', valores: `$${L.saldo}$${total}`, color: '0F766E' },
       ],
     })
   }
@@ -715,8 +714,9 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
   rotulo(hojaG, 2, 'Todo sale de la hoja «Movimientos»: lo que cambies allí, cambia aquí.', 9, true)
   hojaG.pageSetup.printArea = `A1:O${ultimaGraficos}`
 
-  // ── El flujo del dinero, en otra hoja: celdas pintadas (una caja por nombre y una flecha con
-  // el dinero que va de una a otra). Se hace con celdas porque las formas a veces no se ven. ──
+  // ── El flujo del dinero, en otra hoja: celdas pintadas (una caja por nombre y una flecha con el
+  // dinero que va de una a otra) y, debajo, los movimientos uno a uno. Se hace con celdas porque
+  // las formas a veces no se ven. ───────────────────────────────────────────────────────────────
   const HOJA_FLUJO = 'Flujo'
   // Tres pisos: lo que llega, por donde pasa y donde se queda. Entre ellos, la flecha.
   const CAJAS = [
@@ -725,6 +725,10 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
     [11, 14],
   ]
   const rutas = rutasDelFlujo(entrada, caminos, new Map(hechas.map((h) => [h.corto, h.clase])))
+  const movimientos = entrada.movimientos.slice(0, 40)
+  const FILA_MOVS = 4 + rutas.length * 2 + 3
+  const ultimaFlujo = FILA_MOVS + movimientos.length + 1
+
   const hojaF = libro.addWorksheet(HOJA_FLUJO, {
     views: [{ showGridLines: false }],
     pageSetup: {
@@ -732,53 +736,103 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
       paperSize: 9,
       fitToPage: true,
       fitToWidth: 1,
-      fitToHeight: 1,
+      fitToHeight: 0,
       margins: { left: 0.3, right: 0.3, top: 0.4, bottom: 0.4, header: 0, footer: 0 },
     },
   })
   hojaF.properties.tabColor = { argb: AZUL }
-  const ultimaFlujo = 4 + rutas.length * 2
   for (let c = 1; c <= 15; c++) hojaF.getColumn(c).width = c === 15 ? 3 : c % 5 === 0 ? 13 : 22
   for (let f = 1; f <= ultimaFlujo; f++) hojaF.getRow(f).height = f <= 3 ? 20 : 22
   rotulo(hojaF, 1, 'Flujo del dinero: de dónde llega, por dónde pasa y a dónde va', 14)
   rotulo(hojaF, 2, 'Se dibuja con los movimientos de hoy: vuelve a descargar el Excel para tenerlo al día.', 9, true)
 
-  const cajaFlujo = (f: number, piso: number, texto: string) => {
-    const [c1, c2] = CAJAS[piso]
-    hojaF.mergeCells(f, c1, f, c2)
+  /** Escribe un trozo de la hoja del flujo (y lo centra si ocupa varias columnas). */
+  const trozo = (
+    f: number,
+    c1: number,
+    c2: number,
+    valor: unknown,
+    op: {
+      relleno?: string
+      tinta?: string
+      tamano?: number
+      negrita?: boolean
+      alinear?: 'left' | 'center' | 'right'
+      formato?: string
+    } = {},
+  ) => {
+    if (c2 > c1) hojaF.mergeCells(f, c1, f, c2)
     const celda = hojaF.getCell(f, c1)
-    celda.value = texto
-    celda.fill = relleno(`FF${colorDePiso(piso)}`)
-    celda.font = { bold: true, size: 11, color: { argb: 'FFFFFFFF' } }
-    celda.alignment = { horizontal: 'center', vertical: 'middle' }
+    celda.value = valor as never
+    celda.font = { size: op.tamano ?? 10, bold: op.negrita ?? false, color: { argb: op.tinta ?? TINTA } }
+    celda.alignment = { horizontal: op.alinear ?? 'center', vertical: 'middle' }
+    if (op.relleno) celda.fill = relleno(op.relleno)
+    if (op.formato) celda.numFmt = op.formato
+    return celda
   }
-  const flechaFlujo = (f: number, de: number, a: number, importe: number, delante: boolean) => {
-    const c1 = CAJAS[Math.min(de, a)][1] + 1
-    const c2 = CAJAS[Math.max(de, a)][0] - 1
-    hojaF.mergeCells(f, c1, f, c2)
-    const celda = hojaF.getCell(f, c1)
-    const flecha = delante ? '\u25b6' : '\u25c0'
-    celda.value = importe > 0 ? (delante ? `${euros(importe)}  ${flecha}` : `${flecha}  ${euros(importe)}`) : flecha
-    celda.fill = relleno(importe > 0 ? 'FFEFF6FF' : 'FFF8FAFC')
-    celda.font = { bold: true, size: 10, color: { argb: importe > 0 ? 'FF1D4ED8' : 'FF94A3B8' } }
-    celda.alignment = { horizontal: 'center', vertical: 'middle' }
-  }
+
   // Encima, a qué corresponde cada piso.
-  for (const [i, texto] of ['De dónde llega', 'Por dónde pasa', 'A dónde va'].entries()) {
-    const [c1, c2] = CAJAS[i]
-    hojaF.mergeCells(3, c1, 3, c2)
-    const celda = hojaF.getCell(3, c1)
-    celda.value = texto
-    celda.font = { bold: true, size: 10, color: { argb: GRIS } }
-    celda.alignment = { horizontal: 'center', vertical: 'middle' }
-  }
+  for (const [i, texto] of ['De dónde llega', 'Por dónde pasa', 'A dónde va'].entries())
+    trozo(3, CAJAS[i][0], CAJAS[i][1], texto, { tinta: GRIS, negrita: true })
+
+  // Una fila por camino: la caja de donde sale, la flecha con el dinero y la caja de donde llega.
   rutas.forEach((r, i) => {
     const f = 4 + i * 2
-    cajaFlujo(f, r.deCol, r.de)
-    flechaFlujo(f, r.deCol, r.aCol, r.importe, r.delante)
-    cajaFlujo(f, r.aCol, r.a)
-    if (f + 1 <= ultimaFlujo) hojaF.getRow(f + 1).height = 5
+    trozo(f, CAJAS[r.deCol][0], CAJAS[r.deCol][1], r.de, {
+      relleno: `FF${colorDePiso(r.deCol)}`,
+      tinta: 'FFFFFFFF',
+      tamano: 11,
+      negrita: true,
+    })
+    const flecha = r.delante ? '\u25b6' : '\u25c0'
+    trozo(f, CAJAS[Math.min(r.deCol, r.aCol)][1] + 1, CAJAS[Math.max(r.deCol, r.aCol)][0] - 1, r.importe > 0 ? (r.delante ? `${euros(r.importe)}   ${flecha}` : `${flecha}   ${euros(r.importe)}`) : flecha, {
+      relleno: r.importe > 0 ? 'FFEFF6FF' : 'FFF8FAFC',
+      tinta: r.importe > 0 ? 'FF1D4ED8' : 'FF94A3B8',
+      tamano: 12,
+      negrita: true,
+    })
+    trozo(f, CAJAS[r.aCol][0], CAJAS[r.aCol][1], r.a, {
+      relleno: `FF${colorDePiso(r.aCol)}`,
+      tinta: 'FFFFFFFF',
+      tamano: 11,
+      negrita: true,
+    })
+    hojaF.getRow(f + 1).height = 5
   })
+
+  // Y los movimientos, uno a uno: es el dinero moviéndose, con su fecha y su importe.
+  rotulo(hojaF, FILA_MOVS - 1, 'Movimientos, uno a uno', 12)
+  const COLS_MOV = [
+    [1, 2],
+    [3, 6],
+    [7, 10],
+    [11, 14],
+  ]
+  for (const [i, texto] of ['Fecha', 'De', 'A', 'Importe'].entries())
+    trozo(FILA_MOVS, COLS_MOV[i][0], COLS_MOV[i][1], texto, {
+      relleno: CABECERA_FILL,
+      tinta: 'FF334155',
+      negrita: true,
+    })
+  movimientos.forEach((m, i) => {
+    const f = FILA_MOVS + 1 + i
+    const [y, mes, d] = m.fecha.split('-').map(Number)
+    trozo(f, 1, 2, new Date(Date.UTC(y, (mes || 1) - 1, d || 1)), { formato: FECHA })
+    trozo(f, 3, 6, m.de, { alinear: 'left' })
+    trozo(f, 7, 10, m.a, { alinear: 'left' })
+    trozo(f, 11, 14, m.importe, { formato: MONEDA, alinear: 'right', negrita: true })
+    for (const [c1, c2] of COLS_MOV) {
+      const celda = hojaF.getCell(f, c1)
+      celda.border = bordeFino
+      if (c2 > c1) for (let c = c1 + 1; c <= c2; c++) hojaF.getCell(f, c).border = bordeFino
+    }
+  })
+  const totalMovido = movimientos.reduce((t, m) => t + m.importe, 0)
+  if (movimientos.length) {
+    const f = FILA_MOVS + 1 + movimientos.length
+    trozo(f, 1, 10, `Total de los ${movimientos.length} movimientos`, { negrita: true, alinear: 'right' })
+    trozo(f, 11, 14, totalMovido, { formato: MONEDA, alinear: 'right', negrita: true, relleno: CABECERA_FILL })
+  }
   hojaF.pageSetup.printArea = `A1:O${ultimaFlujo}`
 
   // Protegida: solo se puede escribir en los movimientos, en las filas nuevas y en el % de cada
@@ -1001,13 +1055,19 @@ function rutasDelFlujo(
   papeles: Map<string, 'cuenta' | 'inversion'>,
 ): RutaFlujo[] {
   const importes = new Map<string, number>()
+  const conDinero = new Set<string>()
   const clave = (de: string, a: string) => `${de}\u0000${a}`
   const anotar = (de: string, a: string, importe: number) => {
     if (!de || !a || de === a) return
     importes.set(clave(de, a), (importes.get(clave(de, a)) ?? 0) + importe)
   }
-  for (const m of entrada.movimientos) anotar(m.de, m.a, m.importe)
-  for (const c of caminos) if (!importes.has(clave(c.de, c.a))) anotar(c.de, c.a, 0)
+  for (const m of entrada.movimientos) {
+    anotar(m.de, m.a, m.importe)
+    conDinero.add(m.a)
+  }
+  // Los caminos de la estructura solo salen si por ahí no ha pasado dinero todavía.
+  for (const c of caminos)
+    if (!importes.has(clave(c.de, c.a)) && !conDinero.has(c.a)) anotar(c.de, c.a, 0)
 
   const piso = (nombre: string) =>
     nombre === EXTERIOR ? 0 : papeles.get(nombre) === 'inversion' ? 2 : 1
