@@ -337,7 +337,7 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
   especial(INTERES)
 
   const filaResumen = (op: { nombre: string | null; titular: string; clase: 'cuenta' | 'inversion' | 'libre'; pct?: number | null; sangria?: number }) => {
-    const color = numeroConcepto < 3 ? TINTA : hexArgb(op.titular ? colorDe(op.titular) : '#000000')
+    const color = numeroConcepto < 3 || op.clase === 'libre' ? TINTA : hexArgb(colorDe(op.titular))
     const esLibre = op.clase === 'libre'
     poner(fila, COL.nombre, op.nombre, {
       font: { size: 10, bold: op.clase === 'cuenta', color: { argb: color } },
@@ -397,6 +397,17 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
 
   const RES_N = fila - 1
   const rango = (c: Col) => `$${L[c]}$${RES_1}:$${L[c]}$${RES_N}`
+
+  // El color de cada fila lo marca su titular: así quedan también las inversiones que añadas.
+  ws.addConditionalFormatting({
+    ref: `${L.nombre}${RES_1 + 3}:${L.nombre}${RES_N}`,
+    rules: entrada.titulares.map((t, i) => ({
+      type: 'expression' as const,
+      formulae: [`AND($${L.nombre}${RES_1 + 3}<>"",$${L.titular}${RES_1 + 3}="${t.nombre}")`],
+      priority: 6 + i,
+      style: { font: { color: { argb: hexArgb(t.color) } } },
+    })),
+  })
 
   // Rentabilidad en verde si se gana y en rojo si se pierde.
   ws.addConditionalFormatting({
