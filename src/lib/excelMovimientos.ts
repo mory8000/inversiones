@@ -1,3 +1,5 @@
+import { ANCHO_GRAFICO, dibujarGraficoDinero, graficoPNG } from './graficoDineroExcel.ts'
+
 /**
  * Hoja de cálculo de los movimientos: UNA sola hoja, compacta y viva.
  *
@@ -8,7 +10,7 @@
  * A la derecha, el resumen de cada cuenta y, debajo de ella, las inversiones que se pagan desde
  * esa cuenta: Capital aportado, Rentabilidad (se escribe el %, y de ahí salen los euros), y Saldo.
  * Después, el total de cada cuenta, el de cada titular y el TOTAL. El recorrido del dinero se
- * ve en la hoja «Mapa del dinero» como ORIGEN → PASO INTERMEDIO → DESTINO FINAL.
+ * ve en la hoja «Gráfico del dinero» con bandas ORIGEN → INVERSIÓN → DESTINO.
  *
  * El dinero que llega de fuera («Exterior») entra en la cuenta principal; lo que de ahí se va a
  * otro titular (p. ej. al «Fondo ahorro») no cuenta en esa cuenta: si traes 1.000 € y se van 400,
@@ -307,7 +309,6 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
    */
   // Siempre por fecha: así se lee de arriba abajo y el saldo de cada fila cuadra con el de antes.
   const movimientos = entrada.movimientos
-    .filter((m) => m.importe > NADA) // a cero se descarta: la primera fila libre conserva la fecha de hoy
     .map((m) => ({ ...m, de: nombres.corto(m.de), a: nombres.corto(m.a) }))
     .sort((x, y) => (x.fecha === y.fecha ? 0 : x.fecha < y.fecha ? -1 : 1))
   const fechaHoy = (() => {
@@ -331,17 +332,11 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
     celda(f, COL.fecha).value = new Date(Date.UTC(y, (mo || 1) - 1, d || 1))
   }
 
-  // La fila a cero se oculta SOLO en De/A/Importe; la fecha nunca desaparece. El .xlsx no puede
-  // sustituir por sí mismo la fecha al editar un 0: requiere un evento de macro de Excel.
+  // Una fila que ya estaba a cero no se elimina ni se oculta al descargar. El cambio posterior
+  // de positivo a cero requiere la macro opcional: un .xlsx no tiene eventos de cambio.
   ws.addConditionalFormatting({
-    ref: `${L.de}${RES_1}:${L.importe}${FILA_MOV_N}`,
+    ref: `${L.fecha}${RES_1}:${L.importe}${FILA_MOV_N}`,
     rules: [
-      {
-        type: 'expression',
-        formulae: [`AND($${L.importe}${RES_1}<>"",$${L.importe}${RES_1}=0)`],
-        priority: 1,
-        style: { font: { size: 10, color: { argb: 'FFFFFFFF' } } },
-      },
       {
         type: 'expression',
         formulae: [`AND($${L.importe}${RES_1 - 1}<>"",$${L.importe}${RES_1}="")`],
@@ -657,7 +652,7 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
     poner(f, 1, texto, { font: { size: 9, italic: true, color: { argb: GRIS } } })
   }
   nota(FILA_TOTAL + 2, 'Para añadir una inversión: escribe su nombre (y su titular) en la fila amarilla; al rellenarla sale la siguiente. Para quitarla: borra su nombre y desaparece. Entra al momento en los desplegables.')
-  nota(FILA_TOTAL + 3, 'La rentabilidad de cada cuenta o inversión se escribe en %. Para quitar un movimiento de este .xlsx, borra De, A e Importe y pon la fecha de hoy: escribir 0 solo oculta los datos. Al volver a descargar el Excel desde la app, los movimientos a cero se omiten de verdad.')
+  nota(FILA_TOTAL + 3, 'Al poner 0 en un .xlsx no se borra solo. Para eliminarlo, borra De, A e Importe y pon Fecha a hoy. Si quieres que lo haga automáticamente SOLO al cambiar de positivo a 0, sigue las instrucciones de la macro opcional en README.md.')
 
   // ── Desplegables ─────────────────────────────────────────────────────────
   const NOMBRES = 'ListaNombres'
@@ -767,83 +762,60 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
   rotulo(hojaG, 2, 'Todo sale de la hoja «Movimientos»: lo que cambies allí, cambia aquí.', 9, true)
   hojaG.pageSetup.printArea = `A1:O${ultimaGraficos}`
 
-  // ── Mapa visual nuevo: una tarjeta por destino, sin dibujos flotantes ni hoja «Flujo». ──────────
-  // Cada línea es un recorrido completo; el grosor de la banda indica su importe relativo.
+  // ── Un Sankey de bandas, como la referencia: nodos a tres alturas y cintas proporcionales. ───
+  // La hoja «Mapa del dinero» de tarjetas desaparece. ExcelJS coloca un PNG nítido para que el
+  // diagrama se vea también en Excel de escritorio y móvil (las formas flotantes fallaban).
   const papeles = new Map(hechas.map((h) => [h.corto, h.clase]))
-  const mapa = viajesDelFlujo({ ...entrada, movimientos }, caminos, papeles)
-  const CAJAS = [[1, 4], [6, 9], [11, 14]] as const
-  const INICIO = 9
-  const PASO = 4
-  const FIN = INICIO + Math.max(mapa.viajes.length, 1) * PASO + 2
-  const hojaM = libro.addWorksheet('Mapa del dinero', {
+  const viajes = viajesDelFlujo({ ...entrada, movimientos }, caminos, papeles)
+  const propietarios = new Map(hechas.map((h) => [h.corto, h.titular]))
+  const porcentajes = new Map<string, number>()
+  for (const titular of titulares)
+    for (const grupo of titular.grupos)
+      for (const inv of grupo.inversiones) {
+        const pct = inv.rentabilidad
+        if (pct !== null && Number.isFinite(pct)) porcentajes.set(nombres.corto(inv.nombre), pct)
+      }
+  const { svg, alto } = dibujarGraficoDinero(viajes.viajes, propietarios, porcentajes)
+  const grafico = await graficoPNG(svg)
+  const idImagen = libro.addImage({ base64: grafico, extension: 'png' })
+  const hojaR = libro.addWorksheet('Gráfico del dinero', {
     views: [{ showGridLines: false }],
     pageSetup: {
       orientation: 'landscape', paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 0,
       margins: { left: 0.3, right: 0.3, top: 0.4, bottom: 0.4, header: 0, footer: 0 },
     },
   })
-  hojaM.properties.tabColor = { argb: 'FF0F766E' }
-  for (let c = 1; c <= 15; c++) hojaM.getColumn(c).width = c === 15 ? 3 : c % 5 === 0 ? 23 : 22
-  for (let f = 1; f <= FIN; f++) hojaM.getRow(f).height = 19
-  rotulo(hojaM, 1, 'Mapa del dinero', 16)
-  rotulo(hojaM, 2, 'Lee cada recorrido de izquierda a derecha: origen → paso intermedio → destino. Una banda más larga significa más dinero.', 9, true)
-
-  const pieza = (
-    fila: number, primero: number, ultimo: number, contenido: string,
-    op: { fondo?: string; letra?: string; alto?: number; tamano?: number; negrita?: boolean } = {},
-  ) => {
-    const fin = fila + (op.alto ?? 1) - 1
-    if (primero < ultimo || fin > fila) hojaM.mergeCells(fila, primero, fin, ultimo)
-    const c = hojaM.getCell(fila, primero)
-    c.value = contenido
-    c.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true }
-    c.font = { size: op.tamano ?? 11, bold: op.negrita ?? true, color: { argb: op.letra ?? TINTA } }
-    if (op.fondo) c.fill = relleno(op.fondo)
-    return c
+  hojaR.properties.tabColor = { argb: 'FF0F766E' }
+  for (let col = 1; col <= 13; col++) hojaR.getColumn(col).width = 17
+  hojaR.mergeCells('A1:M1')
+  hojaR.getCell('A1').value = '¿De dónde viene y a dónde va el dinero?'
+  hojaR.getCell('A1').font = { bold: true, size: 17, color: { argb: TINTA } }
+  hojaR.getRow(1).height = 28
+  hojaR.mergeCells('A2:M2')
+  hojaR.getCell('A2').value = 'El grosor de cada banda es proporcional al importe. Gris/azul/naranja: origen · colores: inversiones · azul oscuro: destino.'
+  hojaR.getCell('A2').font = { size: 10, color: { argb: GRIS } }
+  hojaR.getRow(2).height = 25
+  hojaR.addImage(idImagen, { tl: { col: 0, row: 3 }, ext: { width: ANCHO_GRAFICO, height: alto } })
+  // Tabla de lectura debajo del gráfico: valores disponibles también cuando se imprime en B/N.
+  const inicioTabla = Math.ceil(3 + alto / 26.5) + 3
+  const encabezado = hojaR.getRow(inicioTabla)
+  for (const [col, texto] of [[1, 'Origen'], [5, 'Paso'], [9, 'Destino'], [13, 'Importe']] as const) {
+    const c = encabezado.getCell(col)
+    c.value = texto
+    c.font = { bold: true, color: { argb: TINTA } }
+    c.fill = relleno(CABECERA_FILL)
   }
-
-  // Tres indicadores de contexto; los importes de los caminos son los que quedan en cada destino.
-  const cifras: [string, number, string][] = [
-    ['ENTRA DE FUERA', mapa.entra, 'FF475569'],
-    ['SIGUE EN CUENTAS', mapa.enCuentas, 'FF1D4ED8'],
-    ['ESTÁ INVERTIDO', mapa.invertido, 'FF0F766E'],
-  ]
-  for (let i = 0; i < 3; i++) {
-    const [texto, valor, fondo] = cifras[i]
-    pieza(4, CAJAS[i][0], CAJAS[i][1], `${texto}\n${euros(valor)}`, {
-      fondo, letra: 'FFFFFFFF', alto: 2, tamano: 12,
-    })
+  for (const [i, camino] of viajes.viajes.entries()) {
+    const row = hojaR.getRow(inicioTabla + i + 1)
+    const medio = camino.pasos[camino.pasos.length - 1]
+    const titular = propietarios.get(medio) ?? 'Mi dinero'
+    row.getCell(1).value = camino.pasos.length >= 3 ? camino.pasos[camino.pasos.length - 2] : `Aportaciones · ${titular}`
+    row.getCell(5).value = medio
+    row.getCell(9).value = camino.seQueda ? `Sigue en cuenta · ${titular}` : `Sigue invertido · ${titular}`
+    row.getCell(13).value = camino.importe
+    row.getCell(13).numFmt = MONEDA
   }
-  hojaM.getRow(6).height = 10
-  for (const [i, nombre] of ['ORIGEN', 'PASO INTERMEDIO', 'DESTINO FINAL'].entries())
-    pieza(7, CAJAS[i][0], CAJAS[i][1], nombre, { fondo: CABECERA_FILL, letra: GRIS, tamano: 10 })
-  hojaM.getRow(8).height = 9
-
-  const maximo = Math.max(1, ...mapa.viajes.map((v) => v.importe))
-  for (const [i, viaje] of mapa.viajes.entries()) {
-    const f = INICIO + i * PASO
-    const primero = viaje.pasos[0]
-    const ultimo = viaje.pasos[viaje.pasos.length - 1]
-    const tienePaso = viaje.pasos.length > 2 || viaje.seQueda
-    const paso = viaje.pasos.length > 2 ? viaje.pasos[1] : viaje.seQueda ? ultimo : 'Sin cuenta intermedia'
-    const destino = viaje.seQueda ? `Sigue en ${ultimo}` : ultimo
-    const cifra = euros(viaje.importe)
-    const caja = (indice: number, texto: string, fondo: string, letra: string) =>
-      pieza(f, CAJAS[indice][0], CAJAS[indice][1], texto, { fondo, letra, alto: 2 })
-    caja(0, `${primero}\n${cifra}`, 'FF475569', 'FFFFFFFF')
-    caja(1, tienePaso ? paso : 'Sin cuenta intermedia', tienePaso ? 'FF1D4ED8' : 'FFF1F5F9', tienePaso ? 'FFFFFFFF' : GRIS)
-    caja(2, `${destino}\n${cifra}`, viaje.seQueda ? 'FFEFF6FF' : 'FF0F766E', viaje.seQueda ? AZUL : 'FFFFFFFF')
-    pieza(f, 5, 5, `${cifra}  ▶`, { fondo: 'FFDBEAFE', letra: AZUL, alto: 2, tamano: 10 })
-    pieza(f, 10, 10, tienePaso ? `${cifra}  ▶` : '▶', { fondo: 'FFCCFBF1', letra: 'FF0F766E', alto: 2, tamano: 10 })
-    // Banda proporcional y en su propio renglón: no pisa nombres ni cifras.
-    const ancho = viaje.importe > NADA ? Math.max(1, Math.round(viaje.importe / maximo * 14)) : 0
-    hojaM.getRow(f + 2).height = 6
-    for (let c = 1; c <= 14; c++) hojaM.getCell(f + 2, c).fill = relleno(c <= ancho ? 'FF14B8A6' : 'FFE2E8F0')
-    hojaM.getRow(f + 3).height = 10
-  }
-  if (!mapa.viajes.length) pieza(INICIO, 1, 14, 'Todavía no hay movimientos: añade uno y descarga de nuevo el Excel.', { fondo: CABECERA_FILL, letra: GRIS, alto: 2 })
-  rotulo(hojaM, FIN, 'El mapa refleja los movimientos al descargar el Excel. Para actualizarlo tras editarlo, vuelve a descargarlo desde la app.', 9, true)
-  hojaM.pageSetup.printArea = `A1:O${FIN}`
+  hojaR.pageSetup.printArea = `A1:M${inicioTabla + viajes.viajes.length + 1}`
 
   // Protegida: solo se puede escribir en los movimientos, en las filas nuevas y en el % de cada
   // cuenta o inversión. Se puede elegir cualquier celda y borrar o añadir filas (para quitar una inversión
@@ -856,7 +828,8 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
   // El nombre definido de los desplegables y la protección se añaden a mano.
   return terminar(buffer, {
     nombre: { nombre: NOMBRES, formula: nombreDefinido(HOJA, RES_1, RES_N) },
-    hojas: [{ hoja: 'xl/worksheets/sheet2.xml', dibujo: 'xl/drawings/drawing1.xml', dibujos, saltos: [] }],
+    // ExcelJS reserva drawing1.xml para la imagen del gráfico del dinero (sheet3).
+    hojas: [{ hoja: 'xl/worksheets/sheet2.xml', dibujo: 'xl/drawings/drawing2.xml', dibujos, saltos: [] }],
   })
 }
 
@@ -1058,9 +1031,6 @@ interface Flujo {
   invertido: number
 }
 
-const euros = (n: number) =>
-  `${new Intl.NumberFormat('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n)} €`
-
 const NADA = 0.005
 
 /**
@@ -1154,6 +1124,13 @@ async function terminar(
 ): Promise<ArrayBuffer> {
   const JSZip = await cargarJSZip()
   const zip = await new JSZip().loadAsync(buffer)
+  // ExcelJS pone editAs en oneCellAnchor de las imágenes; OOXML solo lo admite en twoCellAnchor.
+  // Se retira sin cambiar la imagen ni el ancla para que el dibujo valide y abra sin avisos.
+  const imagen = zip.file('xl/drawings/drawing1.xml')
+  if (imagen) {
+    const dibujo = await imagen.async('string')
+    zip.file('xl/drawings/drawing1.xml', dibujo.replace(/<xdr:oneCellAnchor\s+editAs="[^"]*"/g, '<xdr:oneCellAnchor'))
+  }
   const REL_DIBUJO = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing'
   const REL_CHART = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart'
   const DIBUJO_XML = 'application/vnd.openxmlformats-officedocument.drawing+xml'

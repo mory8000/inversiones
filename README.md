@@ -280,30 +280,45 @@ El archivo contiene tres hojas:
   **una fila de separación** y los totales, que suben o bajan solos.
 - Si dos productos se llaman igual, el segundo lleva un **2** al final («iShares… Index» e «iShares…
   Index 2»): así el dinero va al que corresponde.
-- **Un movimiento a cero al generar el Excel:** no se escribe esa fila. Los siguientes movimientos
-  ocupan su lugar y la primera fila libre queda **sin De, A ni Importe, pero con la fecha de hoy**.
-  Dentro de un `.xlsx` **ya abierto**, al escribir 0 se ocultan visualmente De, A e Importe, pero
-  **las celdas aún contienen datos y la fecha no cambia sola**. Para borrar de verdad esas celdas y
-  poner la fecha actual al teclear 0 se necesita un `.xlsm` con macro habilitada. En el `.xlsx`,
-  borra manualmente De, A e Importe y cambia Fecha por la de hoy, o corrígelo en la app y descarga
-  de nuevo el Excel. Cambiar una fecha dentro del archivo tampoco reordena automáticamente las filas.
+- **Cero al descargar frente a cambiar a cero:** un movimiento que **ya está a cero** se
+  conserva en el Excel con su fecha, origen, destino e importe 0. Lo que quieres limpiar es un
+  movimiento que **era positivo y se cambia a 0**. La app y un archivo `.xlsx` normal no pueden
+  detectar ese cambio anterior ni borrar otras celdas automáticamente. La macro opcional que
+  incluyo abajo lo hace en Excel al cambiar un único importe positivo a 0: vacía **De, A e Importe**
+  de esa fila y pone **Fecha = hoy**. Si ya estaba a cero, no lo toca.
 - Después, el total de cada cuenta (si el titular tiene más de una), el de cada **titular** (si solo
   tiene una cuenta, el renglón lleva los dos nombres: «Total Cuenta Myinvestor-Luis») y el **TOTAL**.
 - **«Gráficos»**: recupera los gráficos por titular de las cuentas y sus inversiones juntas,
   con tres barras —**Aportado, Rentabilidad y Aportado + rentabilidad**—. La leyenda se sitúa abajo
   y las cifras no tienen decimales para dejar más espacio a las etiquetas.
-- **«Mapa del dinero»**: sustituye a la antigua hoja «Flujo», que ya no existe. Es una hoja gráfica
-  distinta que se lee de izquierda a derecha: **ORIGEN → PASO INTERMEDIO → DESTINO FINAL**. Cada
-  destino ocupa su propia tarjeta: cajas grises, azules y verdes, flechas con el importe, y una
-  banda de longitud proporcional al dinero. Si termina en la cuenta, lo indica; si va directo
-  a una inversión, el paso central dice «Sin cuenta intermedia». Arriba aparecen las cifras
-  globales. El mapa representa los movimientos del momento de la descarga; para actualizarlo tras
-  editar el archivo, vuelve a descargarlo desde la app.
+- **«Gráfico del dinero»**: reemplaza por completo el antiguo «Mapa del dinero». Es un
+  diagrama de **bandas curvas**, basado en el ejemplo facilitado: **DE DÓNDE VIENE → DÓNDE ESTÁ →
+  A DÓNDE VA**. El grosor de cada banda representa el importe, con nombres, cantidades, dinero
+  todavía en cuenta, inversiones, rentabilidad y pérdidas. Debajo hay una tabla de lectura para
+  quien prefiera cifras. La imagen se genera localmente al descargar el Excel; no se suben datos
+  a un servidor. Para actualizarla tras cambios, descarga otro Excel desde la app.
 - **Protegida:** solo se puede escribir en los movimientos, en las filas amarillas nuevas y en el %
   de cada cuenta o inversión. Se puede elegir cualquier celda y **borrar o añadir filas** (para quitar una
   inversión que llegue a cero o meter una nueva). Sin contraseña: «Revisar → Desproteger hoja».
 - Todo son fórmulas (`SUMIFS`) envueltas en `SI.ERROR`: una celda sin datos sale en blanco, nunca
   con `#¡VALOR!`.
+
+### Limpieza automática al cambiar un importe positivo a cero (Excel de escritorio)
+
+El archivo público `.xlsx` **no contiene macros**. Si aceptas habilitar una en tu propia copia:
+
+1. Descarga `Movimientos.xlsx` y ábrelo en Excel de escritorio.
+2. Pulsa **Alt + F11**. En la columna izquierda, abre **Microsoft Excel Objects → Movimientos**
+   (la hoja del libro). No elijas «Insertar módulo».
+3. Copia allí todo el texto de `scripts/LimpiarMovimientoAlPonerCero.vba` de este proyecto.
+4. Cierra el editor. Ve a **Archivo → Guardar como → Libro de Excel habilitado para macros (*.xlsm)**.
+5. Al abrir tu copia `.xlsm`, Excel te preguntará si permites macros. Solo actívalas si confías en
+   tu archivo. Al cambiar **una** celda de Importe de un número positivo a **0**, se vacían las
+   columnas **B, C y D** de esa fila y la **A** recibe la fecha actual de tu ordenador. Un cero que
+   ya estaba ahí, un importe vacío o un pegado de varias celdas no borran nada.
+
+Si no quieres macros, puedes borrar manualmente De, A e Importe y poner la fecha actual. No afirmamos
+que el `.xlsx` pueda hacerlo solo.
 
 Para volver a generar la plantilla (los nombres se cambian arriba del script):
 
