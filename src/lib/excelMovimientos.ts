@@ -73,6 +73,10 @@ const letra = (n: number) => {
 const L = Object.fromEntries(Object.entries(COL).map(([k, v]) => [k, letra(v)])) as Record<Col, string>
 
 const FILA_TITULO = 1
+/** Ancho de cada columna (A hasta O), en caracteres: lo usa la hoja y el dibujo del flujo. */
+const ANCHO_COL = [11, 21, 21, 12, 2, 29, 11, 15, 10, 12, 13, 15, 15, 15, 15]
+/** Lo que mide la hoja de ancho, en píxeles. */
+const ANCHO_HOJA = ANCHO_COL.reduce((total, ancho) => total + Math.round(ancho * 7) + 5, 0)
 const FILA_CABECERAS = 5
 const RES_1 = 6 // Primera fila del resumen (y de los movimientos).
 const EXTERIOR = 'Exterior'
@@ -167,8 +171,8 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
   libro.calcProperties = { fullCalcOnLoad: true }
 
   const HOJA = 'Movimientos'
-  // Dos filas libres: una a la vista y otra lista para cuando rellenes la primera.
-  const libres = entrada.libres ?? 2
+  // Siete filas libres: una a la vista y seis listas para cuando rellenes la primera.
+  const libres = entrada.libres ?? 7
   const FILAS_MOV = Math.max(FILAS_MOV_TOTAL, entrada.movimientos.length + 1)
   const FILA_MOV_N = RES_1 + FILAS_MOV - 1
 
@@ -179,25 +183,13 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
       paperSize: 9, // A4
       fitToPage: true,
       fitToWidth: 1,
-      fitToHeight: 1,
+      fitToHeight: 0,
       margins: { left: 0.3, right: 0.3, top: 0.4, bottom: 0.4, header: 0, footer: 0 },
     },
   })
   ws.properties.tabColor = { argb: AZUL }
 
-  ws.getColumn(COL.fecha).width = 11
-  ws.getColumn(COL.de).width = 21
-  ws.getColumn(COL.a).width = 21
-  ws.getColumn(COL.importe).width = 12
-  ws.getColumn(5).width = 2
-  ws.getColumn(COL.nombre).width = 29
-  ws.getColumn(COL.titular).width = 11
-  ws.getColumn(COL.aportado).width = 15
-  ws.getColumn(COL.pct).width = 10
-  ws.getColumn(COL.euros).width = 12
-  ws.getColumn(COL.saldo).width = 13
-  // El gráfico vive en las columnas L hasta O.
-  for (const c of [12, 13, 14, 15]) ws.getColumn(c).width = 15
+  ANCHO_COL.forEach((ancho, i) => (ws.getColumn(i + 1).width = ancho))
 
   const celda = (f: number, c: number) => ws.getCell(f, c)
   const relleno = (argb: string) => ({ type: 'pattern' as const, pattern: 'solid' as const, fgColor: { argb } })
@@ -215,7 +207,7 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
 
   // ── Títulos y esquema ────────────────────────────────────────────────────
   ws.mergeCells(FILA_TITULO, 1, FILA_TITULO, COL.saldo)
-  poner(FILA_TITULO, 1, 'MIS INVERSIONES · MOVIMIENTOS: DE DÓNDE VIENE EL DINERO', {
+  poner(FILA_TITULO, 1, 'Myinvestor', {
     font: { bold: true, size: 14, color: { argb: TINTA } },
     alignment: { vertical: 'middle' },
   })
@@ -339,22 +331,43 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
   const A = `$${L.a}$${RES_1}:$${L.a}$${FILA_MOV_N}`
   const siError = (formula: string) => `IFERROR(${formula},"")`
 
+  const literal = (s: string) => `"${s.replace(/"/g, '""')}"`
+  /** Lo que ha entrado en un nombre (o en la celda que se le pase, p. ej. «$F7»). */
+  const entra = (nombre: string) => `SUMIFS(${IMP},${A},${nombre})`
+  const sale = (nombre: string) => `SUMIFS(${IMP},${DE},${nombre})`
+  const seMueve = (nombre: string) => `COUNTIF(${A},${nombre})+COUNTIF(${DE},${nombre})`
+  const H = (f: number) => `$${L.aportado}${f}`
+  /**
+   * «Cerrado»: el dinero que entró ya se ha ido. Lo que sale de una inversión es su saldo (lo
+   * aportado más la rentabilidad), así que al sacarlo todo el capital queda a cero y la fila
+   * desaparece del resumen. Una cuenta solo desaparece si, además, no le queda ninguna inversión
+   * a la vista (si el dinero está invertido, la cuenta sigue ahí aunque marque cero).
+   */
+  const cerrado = (nombre: string, clase: string, filasInv: [number, number] | null) => {
+    const vacias = filasInv ? `SUMPRODUCT(--(${H(filasInv[0])}:${H(filasInv[1])}<>""))=0` : null
+    const condiciones =
+      clase === 'cuenta'
+        ? [`${seMueve(nombre)}>0`, `${entra(nombre)}-${sale(nombre)}<=0`, ...(vacias ? [vacias] : [])]
+        : [`${entra(nombre)}>0`, `${entra(nombre)}-${sale(nombre)}<=0`]
+    return `AND(${condiciones.join(',')})`
+  }
   /** Capital aportado: lo que entra menos lo que sale. */
-  const fAportado = (f: number) =>
-    siError(
-      `IF($${L.nombre}${f}="","",SUMIFS(${IMP},${A},$${L.nombre}${f})-SUMIFS(${IMP},${DE},$${L.nombre}${f}))`,
-    )
+  const fAportado = (f: number, nombre: string, cierra: string) =>
+    siError(`IF($${L.nombre}${f}="","",IF(${cierra},"",${entra(nombre)}-${sale(nombre)}))`)
   /** Saldo de una cuenta: lo que entra menos lo que sale. */
-  const fSaldoCuenta = (f: number) =>
-    siError(`IF($${L.nombre}${f}="","",SUMIFS(${IMP},${A},$${L.nombre}${f})-SUMIFS(${IMP},${DE},$${L.nombre}${f}))`)
+  const fSaldoCuenta = (f: number, nombre: string, cierra: string) =>
+    siError(`IF($${L.nombre}${f}="","",IF(${cierra},"",${entra(nombre)}-${sale(nombre)}))`)
   /** Saldo de una inversión: su capital por lo que suba o baje el % que escribas. */
-  const fSaldoInversion = (f: number) =>
+  const fSaldoInversion = (f: number, cierra: string) =>
     siError(
-      `IF($${L.nombre}${f}="","",IF($${L.aportado}${f}=0,"",IF($${L.pct}${f}="",$${L.aportado}${f},$${L.aportado}${f}*(1+$${L.pct}${f}))))`,
+      `IF($${L.nombre}${f}="","",IF(${cierra},"",IF(OR(${H(f)}="",${H(f)}=0),"",IF($${L.pct}${f}="",${H(f)},${H(f)}*(1+$${L.pct}${f})))))`,
     )
-  const fEuros = (f: number) => siError(`IF($${L.nombre}${f}="","",$${L.saldo}${f}-$${L.aportado}${f})`)
-  const fPct = (f: number) =>
-    siError(`IF($${L.nombre}${f}="","",IF($${L.aportado}${f}=0,"",$${L.euros}${f}/$${L.aportado}${f}))`)
+  const fEuros = (f: number, cierra: string) =>
+    siError(
+      `IF($${L.nombre}${f}="","",IF(${cierra},"",IF(OR(${H(f)}="",$${L.saldo}${f}=""),"",$${L.saldo}${f}-${H(f)})))`,
+    )
+  const fPct = (f: number, cierra: string) =>
+    siError(`IF($${L.nombre}${f}="","",IF(${cierra},"",IF(OR(${H(f)}=0,${H(f)}=""),"",$${L.euros}${f}/${H(f)})))`)
 
   // ── Resumen ──────────────────────────────────────────────────────────────
   const nombreDe = nombresCortos(entrada)
@@ -369,8 +382,18 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
   }
   especial(EXTERIOR)
 
-  const filaResumen = (op: { nombre: string | null; titular: string; clase: 'cuenta' | 'inversion' | 'libre'; pct?: number | null; sangria?: number }) => {
+  const filaResumen = (op: {
+    nombre: string | null
+    titular: string
+    clase: 'cuenta' | 'inversion' | 'libre'
+    pct?: number | null
+    sangria?: number
+    /** Filas de las inversiones de esta cuenta (para que la cuenta no desaparezca antes). */
+    filasInv?: [number, number] | null
+  }) => {
     const esLibre = op.clase === 'libre'
+    const nombre = op.nombre ? literal(op.nombre) : `$${L.nombre}${fila}`
+    const cierra = cerrado(nombre, op.clase, op.filasInv ?? null)
     // Las filas libres empiezan escondidas (letra blanca): el formato condicional las destapa.
     const color = esLibre ? 'FFFFFFFF' : numeroConcepto < 3 ? TINTA : hexArgb(colorDe(op.titular))
     const letra = (size = 10) => ({ size, color: { argb: color } })
@@ -382,16 +405,16 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
       font: { size: 9, color: { argb: esLibre ? 'FFFFFFFF' : GRIS } },
       alignment: { horizontal: 'center' },
     })
-    poner(fila, COL.aportado, { formula: fAportado(fila) }, { numFmt: MONEDA, font: letra() })
+    poner(fila, COL.aportado, { formula: fAportado(fila, nombre, cierra) }, { numFmt: MONEDA, font: letra() })
     if (op.clase === 'inversion' || esLibre) {
       // El % lo escribes tú (el de la app); de ahí salen los euros y el saldo.
       poner(fila, COL.pct, op.pct ?? null, { numFmt: PORCENTAJE, font: letra() })
-      poner(fila, COL.euros, { formula: fEuros(fila) }, { numFmt: MONEDA, font: letra() })
-      poner(fila, COL.saldo, { formula: fSaldoInversion(fila) }, { numFmt: MONEDA, font: letra() })
+      poner(fila, COL.euros, { formula: fEuros(fila, cierra) }, { numFmt: MONEDA, font: letra() })
+      poner(fila, COL.saldo, { formula: fSaldoInversion(fila, cierra) }, { numFmt: MONEDA, font: letra() })
     } else {
-      poner(fila, COL.pct, { formula: fPct(fila) }, { numFmt: PORCENTAJE, font: letra() })
-      poner(fila, COL.euros, { formula: fEuros(fila) }, { numFmt: MONEDA, font: letra() })
-      poner(fila, COL.saldo, { formula: fSaldoCuenta(fila) }, { numFmt: MONEDA, font: letra() })
+      poner(fila, COL.pct, { formula: fPct(fila, cierra) }, { numFmt: PORCENTAJE, font: letra() })
+      poner(fila, COL.euros, { formula: fEuros(fila, cierra) }, { numFmt: MONEDA, font: letra() })
+      poner(fila, COL.saldo, { formula: fSaldoCuenta(fila, nombre, cierra) }, { numFmt: MONEDA, font: letra() })
     }
     if (!esLibre) for (let c = COL.nombre; c <= COL.saldo; c++) celda(fila, c).border = bordeFino
     // Lo único que se puede escribir: el nombre y el titular de las filas libres, y el % de cada
@@ -407,6 +430,10 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
     entrada.titulares.find((t) => t.nombre === titular)?.color ?? '#2447B8'
 
   const grupos: { nombre: string; titular: string; desde: number; hasta: number }[] = []
+  // Cada fila escrita: para el gráfico de las inversiones de cada titular y para el flujo.
+  const hechas: { clase: 'cuenta' | 'inversion'; corto: string; titular: string; fila: number }[] = []
+  // Los caminos del dinero que existen aunque no haya movimientos: así se ve también la plantilla.
+  const caminos: { de: string; a: string }[] = []
   for (const t of entrada.titulares) {
     // Primero las cuentas con inversiones, después las que no tienen.
     const ordenados = [...t.grupos].sort((a, b) => b.inversiones.length - a.inversiones.length)
@@ -414,15 +441,25 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
       const desde = fila
       const titular = t.nombre
       const nombreCuenta = g.cuenta ? nombreDe() : ''
-      if (g.cuenta) filaResumen({ nombre: nombreCuenta, titular, clase: 'cuenta' })
-      for (const inv of g.inversiones)
+      const cuantas = g.inversiones.length
+      if (g.cuenta) {
+        const f = fila
         filaResumen({
-          nombre: nombreDe(),
+          nombre: nombreCuenta,
           titular,
-          clase: 'inversion',
-          pct: inv.rentabilidad,
-          sangria: g.cuenta ? 1 : 0,
+          clase: 'cuenta',
+          filasInv: cuantas ? [f + 1, f + cuantas] : null,
         })
+        hechas.push({ clase: 'cuenta', corto: nombreCuenta, titular, fila: f })
+        if (cuantas) caminos.push({ de: EXTERIOR, a: nombreCuenta })
+      }
+      for (const inv of g.inversiones) {
+        const f = fila
+        const corto = nombreDe()
+        filaResumen({ nombre: corto, titular, clase: 'inversion', pct: inv.rentabilidad, sangria: g.cuenta ? 1 : 0 })
+        hechas.push({ clase: 'inversion', corto, titular, fila: f })
+        caminos.push({ de: g.cuenta ? nombreCuenta : EXTERIOR, a: corto })
+      }
       if (g.inversiones.length)
         grupos.push({ nombre: g.cuenta ? nombreCuenta : titular, titular, desde, hasta: fila - 1 })
     }
@@ -477,6 +514,20 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
       },
     ],
   })
+
+  // Lo que se queda a cero desaparece: las fórmulas se vacían y lo que quede se va en blanco.
+  if (LIBRE_1 - 1 > RES_1)
+    ws.addConditionalFormatting({
+      ref: `${L.nombre}${RES_1 + 1}:${L.saldo}${LIBRE_1 - 1}`,
+      rules: [
+        {
+          type: 'expression',
+          formulae: [`$${L.aportado}${RES_1 + 1}=""`],
+          priority: 1,
+          style: { font: { size: 10, color: { argb: 'FFFFFFFF' } } },
+        },
+      ],
+    })
 
   const RES_N = fila - 1
   const rango = (c: Col) => `$${L[c]}$${RES_1}:$${L[c]}$${RES_N}`
@@ -589,12 +640,78 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
   })
 
 
-  // ── Impresión: una página ────────────────────────────────────────────────
-  // El gráfico arranca a la altura del resumen (a su derecha, en las columnas L hasta O).
-  const FILA_GRAFICO = RES_1
-  const ALTO_GRAFICO = 12
-  ws.pageSetup.printArea = `A1:O${Math.max(FILA_TOTAL + 4, FILA_GRAFICO + ALTO_GRAFICO)}`
+  // ── Impresión: el resumen en la página 1, los gráficos en la 2 y el flujo en la 3 ─────────
+  const FILA_GRAFICOS = FILA_TOTAL + 6
+  const ALTO_GRAFICO = 30
+  // Medias hojas: el primer gráfico a la izquierda y el segundo a la derecha.
+  const MEDIAS = [
+    { desde: 0, hasta: 6 },
+    { desde: 8, hasta: 14 },
+  ]
+  const dibujos: Dibujo[] = []
+  const graficos: Omit<OpcionesGrafico, 'desde' | 'hasta'>[] = []
+
+  // El de siempre: dos barras por titular (lo puesto y lo ganado o perdido).
+  if (filasGrafico.length)
+    graficos.push({
+      hoja: HOJA,
+      titulo: 'Aportado neto y beneficio / pérdida por titular',
+      categorias: nombresGrafico,
+      series: [
+        // Lo que has puesto (azul) y lo que has ganado o perdido (naranja), como en el modelo.
+        {
+          nombre: 'Aportado neto',
+          valores: `$${L.aportado}$${filasGrafico[0]}:$${L.aportado}$${filasGrafico[filasGrafico.length - 1]}`,
+          color: '2563EB',
+        },
+        {
+          nombre: 'Beneficio-pérdida',
+          valores: `$${L.euros}$${filasGrafico[0]}:$${L.euros}$${filasGrafico[filasGrafico.length - 1]}`,
+          color: 'E67E22',
+        },
+      ],
+    })
+  // Y uno por titular con sus inversiones: es el del «Fondo ahorro» (inversión por inversión).
+  for (const t of entrada.titulares) {
+    const filas = hechas.filter((h) => h.clase === 'inversion' && h.titular === t.nombre).map((h) => h.fila)
+    if (!filas.length) continue
+    const desde = filas[0]
+    const hasta = filas[filas.length - 1]
+    graficos.push({
+      hoja: HOJA,
+      titulo: `${t.nombre}: inversión por inversión`,
+      categorias: hechas.filter((h) => h.clase === 'inversion' && h.titular === t.nombre).map((h) => h.corto),
+      series: [
+        { nombre: 'Aportado neto', valores: `$${L.aportado}$${desde}:$${L.aportado}$${hasta}`, color: '2563EB' },
+        { nombre: 'Beneficio-pérdida', valores: `$${L.euros}$${desde}:$${L.euros}$${hasta}`, color: 'E67E22' },
+      ],
+    })
+  }
+  graficos.slice(0, 4).forEach((g, i) => {
+    const media = MEDIAS[i % 2]
+    const arriba = FILA_GRAFICOS + Math.floor(i / 2) * (ALTO_GRAFICO + 2)
+    dibujos.push({
+      grafico: g,
+      desde: { col: media.desde, fila: arriba },
+      hasta: { col: media.hasta, fila: arriba + ALTO_GRAFICO },
+    })
+  })
+
+  // El flujo del dinero, en su página.
+  const FILA_FLUJO =
+    FILA_GRAFICOS + Math.ceil(Math.min(graficos.length, 4) / 2) * (ALTO_GRAFICO + 2) + 2
+  const rutas = rutasDelFlujo(entrada, caminos)
+  const altoFlujo = rutas.length ? Math.ceil((40 + rutas.length * PASO_FLUJO) / 20) + 2 : 0
+  if (rutas.length)
+    dibujos.push({
+      formas: xmlFlujo(rutas, altoFlujo),
+      desde: { col: 0, fila: FILA_FLUJO },
+      hasta: { col: 14, fila: FILA_FLUJO + altoFlujo },
+    })
+
+  ws.pageSetup.printArea = `A1:O${FILA_FLUJO + Math.max(altoFlujo, 4)}`
   ws.pageSetup.printTitlesRow = `1:${FILA_CABECERAS}`
+  const saltos = [FILA_GRAFICOS, ...(rutas.length ? [FILA_FLUJO] : [])]
 
   // Protegida: solo se puede escribir en los movimientos, en las filas nuevas y en el % de cada
   // inversión. Se puede elegir cualquier celda y borrar o añadir filas (para quitar una inversión
@@ -604,25 +721,11 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
 
   const buffer = (await libro.xlsx.writeBuffer()) as ArrayBuffer
 
-  // El nombre definido de los desplegables y el gráfico hay que añadirlos a mano.
-  const ultima = (lista: number[]) => lista[lista.length - 1]
+  // El nombre definido de los desplegables, los gráficos y el flujo hay que añadirlos a mano.
   return terminar(buffer, {
     nombre: { nombre: NOMBRES, formula: nombreDefinido(HOJA, RES_1, RES_N) },
-    grafico: filasGrafico.length
-      ? {
-          hoja: HOJA,
-          titulo: 'Aportado neto y beneficio / pérdida por titular',
-          categorias: nombresGrafico,
-          series: [
-            // Lo que has puesto (azul) y lo que has ganado o perdido (naranja), como en el modelo.
-            { nombre: 'Aportado neto', valores: `$${L.aportado}$${filasGrafico[0]}:$${L.aportado}$${ultima(filasGrafico)}`, color: '2563EB' },
-            { nombre: 'Beneficio-pérdida', valores: `$${L.euros}$${filasGrafico[0]}:$${L.euros}$${ultima(filasGrafico)}`, color: 'E67E22' },
-          ],
-          // En las columnas L hasta O, al lado del resumen (el ancla se cuenta desde cero).
-          desde: { col: 11, fila: FILA_GRAFICO },
-          hasta: { col: 14, fila: FILA_GRAFICO + ALTO_GRAFICO },
-        }
-      : null,
+    dibujos,
+    saltos,
   })
 }
 
@@ -646,12 +749,24 @@ interface OpcionesGrafico {
   hasta: { col: number; fila: number }
 }
 
+/** Algo que se dibuja encima de la hoja: un gráfico de barras o las formas del flujo. */
+interface Dibujo {
+  /** Esquina de arriba a la izquierda (las columnas y las filas se cuentan desde cero). */
+  desde: { col: number; fila: number }
+  /** Esquina de abajo a la derecha. */
+  hasta: { col: number; fila: number }
+  /** Un gráfico de barras. */
+  grafico?: Omit<OpcionesGrafico, 'desde' | 'hasta'>
+  /** Las formas del flujo del dinero, ya en XML. */
+  formas?: string
+}
+
 /** Texto seguro para el XML del gráfico. */
 function xml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 }
 
-function xmlChart(op: OpcionesGrafico): string {
+function xmlChart(op: Omit<OpcionesGrafico, 'desde' | 'hasta'>): string {
   const categorias =
     `<c:cat><c:strLit><c:ptCount val="${op.categorias.length}"/>` +
     op.categorias.map((c, i) => `<c:pt idx="${i}"><c:v>${xml(c)}</c:v></c:pt>`).join('') +
@@ -753,27 +868,32 @@ function xmlChart(op: OpcionesGrafico): string {
 </c:chartSpace>`
 }
 
-function xmlDrawing(op: OpcionesGrafico): string {
-  const desde = { col: op.desde.col, row: op.desde.fila - 1 }
-  const hasta = { col: op.hasta.col, row: op.hasta.fila - 1 }
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+/** Un ancla: lo que se dibuja va dentro, entre la celda de arriba y la de abajo. */
+function xmlAncla(d: Dibujo, cuerpo: string): string {
+  return `
   <xdr:twoCellAnchor>
     <xdr:from>
-      <xdr:col>${desde.col}</xdr:col>
+      <xdr:col>${d.desde.col}</xdr:col>
       <xdr:colOff>0</xdr:colOff>
-      <xdr:row>${desde.row}</xdr:row>
+      <xdr:row>${d.desde.fila - 1}</xdr:row>
       <xdr:rowOff>0</xdr:rowOff>
     </xdr:from>
     <xdr:to>
-      <xdr:col>${hasta.col}</xdr:col>
+      <xdr:col>${d.hasta.col}</xdr:col>
       <xdr:colOff>0</xdr:colOff>
-      <xdr:row>${hasta.row}</xdr:row>
+      <xdr:row>${d.hasta.fila - 1}</xdr:row>
       <xdr:rowOff>0</xdr:rowOff>
-    </xdr:to>
+    </xdr:to>${cuerpo}
+    <xdr:clientData/>
+  </xdr:twoCellAnchor>`
+}
+
+/** Un gráfico colgado de una relación del dibujo (rId1, rId2…). */
+function xmlGrafico(id: number, nombre: string): string {
+  return `
     <xdr:graphicFrame macro="">
       <xdr:nvGraphicFramePr>
-        <xdr:cNvPr id="2" name="Grafico"/>
+        <xdr:cNvPr id="${id + 1}" name="${nombre}"/>
         <xdr:cNvGraphicFramePr/>
       </xdr:nvGraphicFramePr>
       <xdr:xfrm>
@@ -782,22 +902,232 @@ function xmlDrawing(op: OpcionesGrafico): string {
       </xdr:xfrm>
       <a:graphic>
         <a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/chart">
-          <c:chart xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:id="rId1"/>
+          <c:chart xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:id="rId${id}"/>
         </a:graphicData>
       </a:graphic>
-    </xdr:graphicFrame>
-    <xdr:clientData/>
-  </xdr:twoCellAnchor>
-</xdr:wsDr>`
+    </xdr:graphicFrame>`
+}
+
+// ── El flujo del dinero: de dónde llega, por dónde pasa y a dónde va ────────
+
+/** Un píxel, en EMU (lo que usa el XML para medir). */
+const PX = 9525
+/** Alto de cada línea del flujo, en píxeles. */
+const PASO_FLUJO = 76
+/** Ancho de cada una de las tres columnas del flujo: llega · pasa · se queda. */
+const COL_FLUJO = 520
+const ANCHO_CAJA = 300
+const ALTO_CAJA = 46
+
+interface RutaFlujo {
+  de: string
+  a: string
+  importe: number
+  /** Columna en la que se dibuja cada nombre: 0 llega, 1 pasa, 2 se queda. */
+  deCol: number
+  aCol: number
+}
+
+const euros = (n: number) =>
+  `${new Intl.NumberFormat('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n)} €`
+
+/**
+ * Los caminos del dinero: los de los movimientos (con su importe) y, si no hay movimientos, los
+ * que marca la estructura («Exterior → cuenta → inversión») para que la plantilla también se vea.
+ */
+function rutasDelFlujo(entrada: EntradaExcel, caminos: { de: string; a: string }[]): RutaFlujo[] {
+  const importes = new Map<string, number>()
+  const clave = (de: string, a: string) => `${de}\u0000${a}`
+  const anotar = (de: string, a: string, importe: number) => {
+    if (!de || !a || de === a) return
+    importes.set(clave(de, a), (importes.get(clave(de, a)) ?? 0) + importe)
+  }
+  for (const m of entrada.movimientos) anotar(m.de, m.a, m.importe)
+  for (const c of caminos) if (!importes.has(clave(c.de, c.a))) anotar(c.de, c.a, 0)
+
+  const rutas = [...importes].map(([k, importe]) => {
+    const [de, a] = k.split('\u0000')
+    return { de, a, importe }
+  })
+  // El piso de cada nombre: 0 si el dinero llega de fuera, 1 si pasa por una cuenta y 2 si es
+  // donde se queda. El «Exterior» siempre es el principio del camino.
+  const nivel = new Map<string, number>([[EXTERIOR, 0]])
+  for (const r of rutas) {
+    nivel.set(r.de, nivel.get(r.de) ?? 0)
+    nivel.set(r.a, nivel.get(r.a) ?? 0)
+  }
+  for (let vez = 0; vez < 6; vez++)
+    for (const r of rutas) {
+      if (r.a === EXTERIOR) continue
+      const nuevo = Math.min(2, (nivel.get(r.de) ?? 0) + 1)
+      if (nuevo > (nivel.get(r.a) ?? 0)) nivel.set(r.a, nuevo)
+    }
+  return rutas
+    .map((r) => ({ ...r, deCol: nivel.get(r.de) ?? 0, aCol: nivel.get(r.a) ?? 1 }))
+    .filter((r) => r.aCol > r.deCol && r.aCol <= 2)
+    .sort(
+      (x, y) =>
+        x.deCol - y.deCol ||
+        Number(y.importe > 0) - Number(x.importe > 0) ||
+        y.importe - x.importe ||
+        x.de.localeCompare(y.de, 'es'),
+    )
+    .slice(0, 14)
+}
+
+const colorDePiso = (piso: number) => (piso === 0 ? '64748B' : piso === 1 ? '1D4ED8' : '0F766E')
+
+interface Forma {
+  id: number
+  nombre: string
+  x: number
+  y: number
+  ancho: number
+  alto: number
+  texto: string
+  /** Relleno: `null` si la caja va sin pintar. */
+  relleno: string | null
+  linea: string | null
+  tinta: string
+  tamano?: number
+  negrita?: boolean
+  /** Una flecha en vez de una caja. */
+  flecha?: boolean
+}
+
+function xmlForma(op: Forma): string {
+  const emu = (n: number) => Math.round(n * PX)
+  const sz = (op.tamano ?? 10) * 100
+  const b = op.negrita ? '1' : '0'
+  const geom = op.flecha
+    ? '<a:prstGeom prst="rightArrow"><a:avLst><a:gd name="adj1" fmla="50000"/><a:gd name="adj2" fmla="50000"/></a:avLst></a:prstGeom>'
+    : '<a:prstGeom prst="roundRect"><a:avLst><a:gd name="adj" fmla="16667"/></a:avLst></a:prstGeom>'
+  const relleno = op.relleno ? `<a:solidFill><a:srgbClr val="${op.relleno}"/></a:solidFill>` : '<a:noFill/>'
+  const linea = op.linea
+    ? `<a:ln w="9525"><a:solidFill><a:srgbClr val="${op.linea}"/></a:solidFill></a:ln>`
+    : '<a:ln><a:noFill/></a:ln>'
+  return `
+    <xdr:sp>
+      <xdr:nvSpPr><xdr:cNvPr id="${op.id}" name="${xml(op.nombre)}"/><xdr:cNvSpPr/></xdr:nvSpPr>
+      <xdr:spPr>
+        <a:xfrm><a:off x="${emu(op.x)}" y="${emu(op.y)}"/><a:ext cx="${emu(op.ancho)}" cy="${emu(op.alto)}"/></a:xfrm>
+        ${geom}${relleno}${linea}
+      </xdr:spPr>
+      <xdr:txBody>
+        <a:bodyPr wrap="square" lIns="27432" tIns="18288" rIns="27432" bIns="18288" anchor="ctr"><a:noAutofit/></a:bodyPr>
+        <a:lstStyle/>
+        <a:p>
+          <a:pPr algn="ctr"><a:defRPr sz="${sz}" b="${b}"><a:solidFill><a:srgbClr val="${op.tinta}"/></a:solidFill></a:defRPr></a:pPr>
+          <a:r><a:rPr lang="es-ES" sz="${sz}" b="${b}"><a:solidFill><a:srgbClr val="${op.tinta}"/></a:solidFill></a:rPr><a:t>${xml(op.texto)}</a:t></a:r>
+          <a:endParaRPr/>
+        </a:p>
+      </xdr:txBody>
+    </xdr:sp>`
+}
+
+/**
+ * El dibujo del flujo: una caja por nombre y una flecha con el dinero que va de una a otra. Va
+ * dentro de un grupo (el ancla del dibujo solo admite una forma).
+ */
+function xmlFlujo(rutas: RutaFlujo[], altoFilas: number): string {
+  const formas: string[] = [
+    xmlForma({
+      id: 1,
+      nombre: 'Titulo del flujo',
+      x: 0,
+      y: 0,
+      ancho: COL_FLUJO * 3,
+      alto: 32,
+      texto: 'Flujo del dinero: de dónde llega, por dónde pasa y a dónde va',
+      relleno: null,
+      linea: null,
+      tinta: '0F172A',
+      tamano: 12,
+      negrita: true,
+    }),
+  ]
+  const ancho = ANCHO_HOJA * PX
+  const alto = altoFilas * 20 * PX
+  rutas.forEach((r, i) => {
+    const y = 40 + i * PASO_FLUJO
+    const xDe = 110 + r.deCol * COL_FLUJO
+    const xA = 110 + r.aCol * COL_FLUJO
+    formas.push(
+      xmlForma({
+        id: 2 + i * 3,
+        nombre: `De ${i + 1}`,
+        x: xDe,
+        y,
+        ancho: ANCHO_CAJA,
+        alto: ALTO_CAJA,
+        texto: r.de,
+        relleno: colorDePiso(r.deCol),
+        linea: null,
+        tinta: 'FFFFFF',
+      }),
+    )
+    const x = xDe + ANCHO_CAJA + 8
+    formas.push(
+      xmlForma({
+        id: 3 + i * 3,
+        nombre: `Flecha ${i + 1}`,
+        x,
+        y: y + 8,
+        ancho: xA - 8 - x,
+        alto: 30,
+        texto: r.importe > 0 ? euros(r.importe) : '',
+        relleno: r.importe > 0 ? 'EFF6FF' : 'F1F5F9',
+        linea: r.importe > 0 ? '93C5FD' : 'CBD5E1',
+        tinta: '1D4ED8',
+        tamano: 9,
+        flecha: true,
+      }),
+    )
+    formas.push(
+      xmlForma({
+        id: 4 + i * 3,
+        nombre: `A ${i + 1}`,
+        x: xA,
+        y,
+        ancho: ANCHO_CAJA,
+        alto: ALTO_CAJA,
+        texto: r.a,
+        relleno: colorDePiso(r.aCol),
+        linea: null,
+        tinta: 'FFFFFF',
+      }),
+    )
+  })
+  return `
+    <xdr:grpSp>
+      <xdr:nvGrpSpPr><xdr:cNvPr id="1" name="Flujo del dinero"/><xdr:cNvGrpSpPr/></xdr:nvGrpSpPr>
+      <xdr:grpSpPr>
+        <a:xfrm>
+          <a:off x="0" y="0"/>
+          <a:ext cx="${ancho}" cy="${alto}"/>
+          <a:chOff x="0" y="0"/>
+          <a:chExt cx="${ancho}" cy="${alto}"/>
+        </a:xfrm>
+      </xdr:grpSpPr>${formas.join('')}
+    </xdr:grpSp>`
 }
 
 /**
  * Remata el archivo: le mete el nombre definido de los desplegables (exceljs solo escribe rangos
  * fijos) y, si hay titulares, el gráfico de dos barras por titular.
  */
+/**
+ * Remata el archivo: le mete el nombre definido de los desplegables (exceljs solo escribe rangos
+ * fijos), los gráficos y el flujo del dinero, y los saltos de página.
+ */
 async function terminar(
   buffer: ArrayBuffer,
-  op: { nombre: { nombre: string; formula: string }; grafico: OpcionesGrafico | null },
+  op: {
+    nombre: { nombre: string; formula: string }
+    dibujos: Dibujo[]
+    /** Filas por las que se parte la hoja al imprimir (1-based). */
+    saltos: number[]
+  },
 ): Promise<ArrayBuffer> {
   const JSZip = await cargarJSZip()
   const zip = await new JSZip().loadAsync(buffer)
@@ -811,6 +1141,14 @@ async function terminar(
     'selectUnlockedCells="0" formatCells="0" formatRows="0" insertRows="0" deleteRows="0"/>'
   const rutaHoja = 'xl/worksheets/sheet1.xml'
   const hoja0 = await zip.file(rutaHoja)!.async('string')
+
+  // Saltos de página: el resumen en la primera, los gráficos en la segunda y el flujo en la tercera.
+  const saltos = op.saltos.length
+    ? `<rowBreaks count="${op.saltos.length}" manualBreakCount="${op.saltos.length}">` +
+      op.saltos.map((f) => `<brk id="${f - 1}" min="0" max="16383" man="1"/>`).join('') +
+      '</rowBreaks>'
+    : ''
+
   zip.file(
     rutaHoja,
     hoja0.includes('<sheetProtection')
@@ -828,14 +1166,44 @@ async function terminar(
       : libroXml.replace('</workbook>', `<definedNames>${definido}</definedNames></workbook>`),
   )
 
-  if (!op.grafico) return zip.generateAsync({ type: 'arraybuffer', compression: 'DEFLATE' })
+  if (!op.dibujos.length) {
+    const hojaSinDibujo = await zip.file(rutaHoja)!.async('string')
+    zip.file(rutaHoja, hojaSinDibujo.replace('<drawing', `${saltos}<drawing`))
+    return zip.generateAsync({ type: 'arraybuffer', compression: 'DEFLATE' })
+  }
 
-  zip.file('xl/charts/chart1.xml', xmlChart(op.grafico))
-  zip.file('xl/drawings/drawing1.xml', xmlDrawing(op.grafico))
+  // Cada gráfico va en su parte; las formas del flujo van dentro del mismo dibujo.
+  const relaciones: string[] = []
+  const tipos = [
+    '<Override PartName="/xl/drawings/drawing1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>',
+  ]
+  let cuantosGraficos = 0
+  const anclas = op.dibujos.map((d, i) => {
+    if (d.grafico) {
+      cuantosGraficos++
+      zip.file(`xl/charts/chart${cuantosGraficos}.xml`, xmlChart(d.grafico))
+      relaciones.push(
+        `<Relationship Id="rId${cuantosGraficos}" Type="${REL_CHART}" Target="../charts/chart${cuantosGraficos}.xml"/>`,
+      )
+      tipos.push(
+        `<Override PartName="/xl/charts/chart${cuantosGraficos}.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/>`,
+      )
+      return xmlAncla(d, xmlGrafico(cuantosGraficos, `Grafico ${i + 1}`))
+    }
+    return xmlAncla(d, d.formas ?? '')
+  })
+  zip.file(
+    'xl/drawings/drawing1.xml',
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" ' +
+      'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">' +
+      anclas.join('') +
+      '</xdr:wsDr>',
+  )
   zip.file(
     'xl/drawings/_rels/drawing1.xml.rels',
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="${REL_CHART}" Target="../charts/chart1.xml"/></Relationships>`,
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${relaciones.join('')}</Relationships>`,
   )
 
   // La hoja apunta al dibujo (si la hoja no tenía relaciones todavía, se crean).
@@ -847,23 +1215,21 @@ async function terminar(
   const ids = [...relsHoja.matchAll(/Id="rId(\d+)"/g)].map((m) => Number(m[1]))
   const id = Math.max(0, ...ids) + 1
   zip.file(
-    'xl/worksheets/_rels/sheet1.xml.rels',
+    RELS,
     relsHoja.replace('</Relationships>', `<Relationship Id="rId${id}" Type="${REL_DIBUJO}" Target="../drawings/drawing1.xml"/></Relationships>`),
   )
 
   const hoja = await zip.file(rutaHoja)!.async('string')
-  zip.file(rutaHoja, hoja.replace('</worksheet>', `<drawing r:id="rId${id}"/></worksheet>`))
+  zip.file(
+    rutaHoja,
+    hoja.includes('<drawing')
+      ? hoja.replace('<drawing', `${saltos}<drawing`)
+      : hoja.replace('</worksheet>', `${saltos}<drawing r:id="rId${id}"/></worksheet>`),
+  )
 
   // Y los tipos de contenido de las partes nuevas.
-  const tipos = await zip.file('[Content_Types].xml')!.async('string')
-  zip.file(
-    '[Content_Types].xml',
-    tipos.replace(
-      '</Types>',
-      '<Override PartName="/xl/drawings/drawing1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>' +
-        '<Override PartName="/xl/charts/chart1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/></Types>',
-    ),
-  )
+  const tiposXml = await zip.file('[Content_Types].xml')!.async('string')
+  zip.file('[Content_Types].xml', tiposXml.replace('</Types>', tipos.join('') + '</Types>'))
 
   return zip.generateAsync({ type: 'arraybuffer', compression: 'DEFLATE' })
 }

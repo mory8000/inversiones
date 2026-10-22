@@ -270,15 +270,22 @@ La hoja, en una sola página:
   30 letras («iShares Developed World Index (IE) Acc EUR clase s» → «iShares Developed World Index»).
 - **Añadir o quitar inversiones:** al final del resumen se ve **una sola fila amarilla**. Escribes el
   nombre (y el titular) y aparece la siguiente; si borras el nombre, la fila desaparece. Entran al
-  momento en los desplegables (que no muestran huecos y crecen solos). Detrás queda **una fila de
-  separación** y luego los totales, que suben o bajan solos.
+  momento en los desplegables (que no muestran huecos y crecen solos). Hay **siete filas** y, detrás,
+  **una fila de separación** y los totales, que suben o bajan solos.
 - Si dos productos se llaman igual, el segundo lleva un **2** al final («iShares… Index» e «iShares…
   Index 2»): así el dinero va al que corresponde. Las **inversiones a cero y sin movimientos** no
   salen en el resumen.
+- **Lo que se queda a cero desaparece:** si sacas de una inversión todo su saldo (lo aportado más la
+  rentabilidad), su fila se queda en blanco y deja de contar en los totales, y una cuenta sin
+  inversiones a la vista desaparece igual. Si vuelves a meter dinero, la fila reaparece.
 - Después, el total de cada cuenta (si el titular tiene más de una), el de cada **titular** (si solo
   tiene una cuenta, el renglón lleva los dos nombres: «Total Cuenta Myinvestor-Luis») y el **TOTAL**.
-- Y en las **columnas L hasta O**, el **gráfico**: dos barras por titular — **Aportado neto** (azul) y
-  **Beneficio-pérdida** (naranja) — con el importe encima de cada barra.
+- **Página 2, los gráficos:** uno con dos barras por titular — **Aportado neto** (azul) y
+  **Beneficio-pérdida** (naranja) — con el importe encima de cada barra, y **uno por cada titular**
+  con una barra por inversión (es el del «Fondo ahorro»).
+- **Página 3, el flujo del dinero:** de dónde llega, por dónde pasa y a dónde va. Una caja por nombre
+  y una flecha con el dinero que va de uno a otro (se dibuja con los movimientos de hoy: vuelve a
+  descargar el Excel para verlo al día).
 - **Protegida:** solo se puede escribir en los movimientos, en las filas amarillas nuevas y en el %
   de cada inversión. Se puede elegir cualquier celda y **borrar o añadir filas** (para quitar una
   inversión que llegue a cero o meter una nueva). Sin contraseña: «Revisar → Desproteger hoja».

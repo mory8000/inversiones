@@ -223,12 +223,57 @@ describe('el Excel de movimientos', () => {
     const fondo = filaDe(hoja, 'Total Fondo ahorro')
     expect(chart).toContain(`$H$${marta}:$H$${fondo}`) // aportado neto
     expect(chart).toContain(`$J$${marta}:$J$${fondo}`) // beneficio / pérdida
-    // Va en las columnas L hasta O.
-    expect(dibujo).toContain('<xdr:col>11</xdr:col>')
-    expect(dibujo).toContain('<xdr:col>14</xdr:col>')
+    // Va colgado del dibujo de la hoja.
     expect(hojaXml).toContain('<drawing r:id="rId1"/>')
     expect(tipos).toContain('/xl/charts/chart1.xml')
     expect(tipos).toContain('/xl/drawings/drawing1.xml')
+    expect(dibujo).toContain('<xdr:graphicFrame')
+  })
+
+  it('pone otro gráfico con las inversiones de cada titular: es el del «Fondo ahorro»', async () => {
+    const { zip, hoja } = await generar()
+    // Uno por titular (Marta y Fondo ahorro) más el de los dos juntos: tres gráficos.
+    expect(zip.file('xl/charts/chart2.xml')).toBeTruthy()
+    expect(zip.file('xl/charts/chart3.xml')).toBeTruthy()
+    const dibujo = await xml(zip, 'xl/drawings/drawing1.xml')
+    expect((dibujo.match(/<xdr:graphicFrame/g) ?? []).length).toBe(3)
+    const graficos = [
+      await xml(zip, 'xl/charts/chart1.xml'),
+      await xml(zip, 'xl/charts/chart2.xml'),
+      await xml(zip, 'xl/charts/chart3.xml'),
+    ]
+    // En el del «Fondo ahorro» sale cada una de sus inversiones…
+    const delFondo = graficos.find((g) => g.includes('<c:v>Fondo indexado</c:v>'))
+    expect(delFondo).toBeTruthy()
+    expect(delFondo).toContain('<c:v>iShares Developed World Index</c:v>')
+    // …y sus barras salen de la fila de cada inversión.
+    expect(delFondo).toContain(`$H$${filaDe(hoja, 'Fondo indexado')}`)
+    expect(delFondo).toContain(`$J$${filaDe(hoja, 'Fondo indexado')}`)
+  })
+
+  it('dibuja el flujo del dinero: de dónde llega, por dónde pasa y a dónde va', async () => {
+    const { zip } = await generar()
+    const dibujo = await xml(zip, 'xl/drawings/drawing1.xml')
+    expect(dibujo).toContain('Flujo del dinero')
+    // Una caja por nombre (redonda) y una flecha con el importe que va de una a otra.
+    expect(dibujo).toContain('prst="roundRect"')
+    expect(dibujo).toContain('prst="rightArrow"')
+    expect(dibujo).toContain('Exterior')
+    expect(dibujo).toContain('MyInvestor')
+    const euros = new Intl.NumberFormat('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    expect(dibujo).toContain(`${euros.format(1000)} €`)
+  })
+
+  it('imprime el resumen en la página 1, los gráficos en la 2 y el flujo en la 3', async () => {
+    const { zip, hoja } = await generar()
+    const hojaXml = await xml(zip, 'xl/worksheets/sheet1.xml')
+    expect(hojaXml).toContain('<rowBreaks')
+    const saltos = [...hojaXml.matchAll(/<brk id="(\d+)"/g)].map((m) => Number(m[1]) + 1)
+    expect(saltos.length).toBe(2)
+    // Los gráficos empiezan después del TOTAL y el flujo, después de los gráficos.
+    expect(saltos[0]).toBeGreaterThan(filaDe(hoja, 'TOTAL'))
+    expect(saltos[1]).toBeGreaterThan(saltos[0])
+    expect(hojaXml).toContain('fitToWidth="1"')
   })
 
   it('deja una fila de total por titular, seguidas y en orden: son las del gráfico', async () => {
@@ -257,12 +302,14 @@ describe('el Excel de movimientos', () => {
   it('deja una sola fila amarilla a la vista: al rellenarla sale la siguiente', async () => {
     const { zip, hoja } = await generar()
     const hojaXml = await xml(zip, 'xl/worksheets/sheet1.xml')
-    // Dos filas libres: la de arriba a la vista y la otra de reserva.
-    const libres = nombresDelResumen(hoja).length
-    expect(hoja.getCell(`F${6 + libres + 1}`).protection).toMatchObject({ locked: false })
-    expect(hoja.getCell(`F${6 + libres + 2}`).value).toBeNull()
+    // Siete filas libres: la de arriba a la vista y seis de reserva.
+    const nombres = nombresDelResumen(hoja).length
+    const LIBRES = 7
+    expect(hoja.getCell(`F${6 + nombres}`).protection).toMatchObject({ locked: false })
+    expect(hoja.getCell(`F${6 + nombres + LIBRES - 1}`).protection).toMatchObject({ locked: false })
+    expect(hoja.getCell(`F${6 + nombres + LIBRES}`).value).toBeNull()
     // Y los totales quedan justo debajo: solo una fila en blanco de separación.
-    expect(filaDe(hoja, 'Total MyInvestor-Marta')).toBe(6 + libres + 2 + 1)
+    expect(filaDe(hoja, 'Total MyInvestor-Marta')).toBe(6 + nombres + LIBRES + 1)
     expect(hojaXml).toContain('AND($F')
     const reglas = (hoja as unknown as { conditionalFormattings: { ref: string; rules: { formulae: string[] }[] }[] })
       .conditionalFormattings
@@ -271,7 +318,30 @@ describe('el Excel de movimientos', () => {
     const formulas = lib!.rules.map((r) => r.formulae).flat()
     expect(formulas.some((f) => f.includes(`AND(`) && f.includes(`="")`))).toBe(true)
     // La fila de antes marca si esta se ve: si está vacía, esta va en blanco.
-    expect(formulas.some((f) => f === `$F${5 + libres}=""`)).toBe(true)
+    expect(formulas.some((f) => f === `$F${5 + nombres}=""`)).toBe(true)
+  })
+
+  it('lo que se queda a cero desaparece del resumen', async () => {
+    const { zip, hoja } = await generar()
+    const fila = filaDe(hoja, 'Vanguard Global Stock Index')
+    // El capital se vacía en cuanto lo que sale (el saldo: lo aportado más la rentabilidad) se
+    // ha llevado todo lo que entró.
+    const bruto = hoja.getCell(`H${fila}`).value as { formula?: string } | string
+    const capital = typeof bruto === 'string' ? bruto : String(bruto.formula)
+    expect(capital).toContain('AND(SUMIFS($D$6:$D$505,$C$6:$C$505,"Vanguard Global Stock Index")>0')
+    // Y la fila entera se queda en blanco.
+    const reglas = (hoja as unknown as { conditionalFormattings: { ref: string; rules: { formulae: string[] }[] }[] })
+      .conditionalFormattings
+    const seVa = reglas.find((cf) => cf.rules.some((r) => r.formulae[0] === '$H7=""'))
+    expect(seVa).toBeTruthy()
+    expect(seVa!.ref.startsWith('F7:')).toBe(true)
+    // La letra en blanco: la fila se ve vacía.
+    expect(await xml(zip, 'xl/styles.xml')).toContain('<color rgb="FFFFFFFF"/>')
+  })
+
+  it('lleva «Myinvestor» de título', async () => {
+    const { hoja } = await generar()
+    expect(hoja.getCell('A1').value).toBe('Myinvestor')
   })
 
   it('protege la hoja: solo se puede escribir en los movimientos, las filas nuevas y el %', async () => {
