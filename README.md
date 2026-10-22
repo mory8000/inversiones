@@ -280,12 +280,12 @@ La hoja, en una sola página:
   inversiones a la vista desaparece igual. Si vuelves a meter dinero, la fila reaparece.
 - Después, el total de cada cuenta (si el titular tiene más de una), el de cada **titular** (si solo
   tiene una cuenta, el renglón lleva los dos nombres: «Total Cuenta Myinvestor-Luis») y el **TOTAL**.
-- **Página 2, los gráficos:** uno con dos barras por titular — **Aportado neto** (azul) y
-  **Beneficio-pérdida** (naranja) — con el importe encima de cada barra, y **uno por cada titular**
-  con una barra por inversión (es el del «Fondo ahorro»).
-- **Página 3, el flujo del dinero:** de dónde llega, por dónde pasa y a dónde va. Una caja por nombre
-  y una flecha con el dinero que va de uno a otro (se dibuja con los movimientos de hoy: vuelve a
-  descargar el Excel para verlo al día).
+- **La hoja «Gráficos»** (una pestaña aparte): un gráfico con dos barras por titular — **Aportado
+  neto** (azul) y **Beneficio-pérdida** (naranja) — con el importe encima de cada barra, y **uno por
+  cada titular** con una barra por inversión (es el del «Fondo ahorro»).
+- **La hoja «Flujo»** (otra pestaña): el flujo del dinero, de dónde llega, por dónde pasa y a dónde
+  va. Una caja por nombre y una flecha con el dinero que va de uno a otro (se dibuja con los
+  movimientos de hoy: vuelve a descargar el Excel para verlo al día).
 - **Protegida:** solo se puede escribir en los movimientos, en las filas amarillas nuevas y en el %
   de cada inversión. Se puede elegir cualquier celda y **borrar o añadir filas** (para quitar una
   inversión que llegue a cero o meter una nueva). Sin contraseña: «Revisar → Desproteger hoja».

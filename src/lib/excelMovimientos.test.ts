@@ -223,11 +223,30 @@ describe('el Excel de movimientos', () => {
     const fondo = filaDe(hoja, 'Total Fondo ahorro')
     expect(chart).toContain(`$H$${marta}:$H$${fondo}`) // aportado neto
     expect(chart).toContain(`$J$${marta}:$J$${fondo}`) // beneficio / pérdida
-    // Va colgado del dibujo de la hoja.
-    expect(hojaXml).toContain('<drawing r:id="rId1"/>')
+    // Va colgado del dibujo de la hoja «Gráficos» (la de los movimientos no lleva ninguno).
+    expect(hojaXml).not.toContain('<drawing')
+    const hojaGraficos = await xml(zip, 'xl/worksheets/sheet2.xml')
+    expect(hojaGraficos).toContain('<drawing r:id="rId1"/>')
     expect(tipos).toContain('/xl/charts/chart1.xml')
     expect(tipos).toContain('/xl/drawings/drawing1.xml')
     expect(dibujo).toContain('<xdr:graphicFrame')
+  })
+
+  it('lleva los gráficos en una hoja aparte, «Gráficos»', async () => {
+    const { zip, buffer } = await generar()
+    const libro = new ExcelJS.Workbook()
+    await libro.xlsx.load(buffer)
+    const nombres = libro.worksheets.map((h) => h.name)
+    expect(nombres).toEqual(['Movimientos', 'Gráficos', 'Flujo'])
+    // La hoja nueva tiene los títulos y las medidas de los dibujos.
+    const hojaGraficos = libro.getWorksheet('Gráficos')!
+    expect(hojaGraficos.getCell('A1').value).toBe('Gráficos')
+    for (const c of [1, 8, 15]) expect(hojaGraficos.getColumn(c).width).toBe(15)
+    // Y el dibujo cuelga de ella.
+    const rels = await xml(zip, 'xl/worksheets/_rels/sheet2.xml.rels')
+    expect(rels).toContain('../drawings/drawing1.xml')
+    const workbook = await xml(zip, 'xl/workbook.xml')
+    expect(workbook).toContain('name="Gráficos"')
   })
 
   it('pone otro gráfico con las inversiones de cada titular: es el del «Fondo ahorro»', async () => {
@@ -252,9 +271,19 @@ describe('el Excel de movimientos', () => {
   })
 
   it('dibuja el flujo del dinero: de dónde llega, por dónde pasa y a dónde va', async () => {
-    const { zip } = await generar()
-    const dibujo = await xml(zip, 'xl/drawings/drawing1.xml')
-    expect(dibujo).toContain('Flujo del dinero')
+    const { zip, buffer } = await generar()
+    // Va en su propia hoja y en su propio dibujo: si algo falla, no se lleva los gráficos.
+    const dibujo = await xml(zip, 'xl/drawings/drawing2.xml')
+    expect((await xml(zip, 'xl/worksheets/sheet3.xml')).includes('<drawing')).toBe(true)
+    // Su título, en la hoja del flujo.
+    const libro = new ExcelJS.Workbook()
+    await libro.xlsx.load(buffer)
+    const textos = libro
+      .getWorksheet('Flujo')!
+      .getSheetValues()
+      .flat()
+      .filter((v): v is string => typeof v === 'string')
+    expect(textos.some((t) => t.includes('Flujo del dinero'))).toBe(true)
     // Una caja por nombre (redonda) y una flecha con el importe que va de una a otra.
     expect(dibujo).toContain('prst="roundRect"')
     expect(dibujo).toContain('prst="rightArrow"')
@@ -264,16 +293,18 @@ describe('el Excel de movimientos', () => {
     expect(dibujo).toContain(`${euros.format(1000)} €`)
   })
 
-  it('imprime el resumen en la página 1, los gráficos en la 2 y el flujo en la 3', async () => {
-    const { zip, hoja } = await generar()
-    const hojaXml = await xml(zip, 'xl/worksheets/sheet1.xml')
-    expect(hojaXml).toContain('<rowBreaks')
-    const saltos = [...hojaXml.matchAll(/<brk id="(\d+)"/g)].map((m) => Number(m[1]) + 1)
-    expect(saltos.length).toBe(2)
-    // Los gráficos empiezan después del TOTAL y el flujo, después de los gráficos.
-    expect(saltos[0]).toBeGreaterThan(filaDe(hoja, 'TOTAL'))
-    expect(saltos[1]).toBeGreaterThan(saltos[0])
-    expect(hojaXml).toContain('fitToWidth="1"')
+  it('imprime cada hoja en su página: el resumen, los gráficos y el flujo', async () => {
+    const { zip } = await generar()
+    // Una página por hoja: se imprimen en orden (Movimientos, Gráficos y Flujo).
+    for (const hoja of ['sheet1', 'sheet2', 'sheet3']) {
+      const xmlHoja = await xml(zip, `xl/worksheets/${hoja}.xml`)
+      expect(xmlHoja).toContain('fitToWidth="1"')
+      expect(xmlHoja).toContain('fitToHeight="1"')
+    }
+    const libro = await xml(zip, 'xl/workbook.xml')
+    expect(libro).toContain('&apos;Movimientos&apos;!$A1:$O')
+    expect(libro).toContain('&apos;Gráficos&apos;!$A1:$O')
+    expect(libro).toContain('&apos;Flujo&apos;!$A1:$O')
   })
 
   it('deja una fila de total por titular, seguidas y en orden: son las del gráfico', async () => {

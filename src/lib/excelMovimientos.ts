@@ -75,8 +75,6 @@ const L = Object.fromEntries(Object.entries(COL).map(([k, v]) => [k, letra(v)]))
 const FILA_TITULO = 1
 /** Ancho de cada columna (A hasta O), en caracteres: lo usa la hoja y el dibujo del flujo. */
 const ANCHO_COL = [11, 21, 21, 12, 2, 29, 11, 15, 10, 12, 13, 15, 15, 15, 15]
-/** Lo que mide la hoja de ancho, en píxeles. */
-const ANCHO_HOJA = ANCHO_COL.reduce((total, ancho) => total + Math.round(ancho * 7) + 5, 0)
 const FILA_CABECERAS = 5
 const RES_1 = 6 // Primera fila del resumen (y de los movimientos).
 const EXTERIOR = 'Exterior'
@@ -183,7 +181,7 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
       paperSize: 9, // A4
       fitToPage: true,
       fitToWidth: 1,
-      fitToHeight: 0,
+      fitToHeight: 1,
       margins: { left: 0.3, right: 0.3, top: 0.4, bottom: 0.4, header: 0, footer: 0 },
     },
   })
@@ -640,10 +638,19 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
   })
 
 
-  // ── Impresión: el resumen en la página 1, los gráficos en la 2 y el flujo en la 3 ─────────
-  const FILA_GRAFICOS = FILA_TOTAL + 6
-  const ALTO_GRAFICO = 30
-  // Medias hojas: el primer gráfico a la izquierda y el segundo a la derecha.
+  // La hoja «Movimientos» se imprime en una página.
+  ws.pageSetup.printArea = `A1:O${FILA_TOTAL + 4}`
+  ws.pageSetup.printTitlesRow = `1:${FILA_CABECERAS}`
+
+  // ── Los gráficos: en una hoja aparte ──────────────────────────────────────
+  const HOJA_GRAFICOS = 'Gráficos'
+  const COLS_GRAFICOS = 15
+  /** Ancho de una columna y alto de una fila de la hoja de gráficos, en píxeles. */
+  const PX_COL = Math.round(15 * 7) + 5
+  const PX_FILA = (20 * 96) / 72
+  const FILA_1_G = 4
+  const ALTO_GRAFICO = 22
+  // Medias hojas: un gráfico a la izquierda y otro a la derecha.
   const MEDIAS = [
     { desde: 0, hasta: 6 },
     { desde: 8, hasta: 14 },
@@ -673,45 +680,103 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
     })
   // Y uno por titular con sus inversiones: es el del «Fondo ahorro» (inversión por inversión).
   for (const t of entrada.titulares) {
-    const filas = hechas.filter((h) => h.clase === 'inversion' && h.titular === t.nombre).map((h) => h.fila)
-    if (!filas.length) continue
-    const desde = filas[0]
-    const hasta = filas[filas.length - 1]
+    const inversas = hechas.filter((h) => h.clase === 'inversion' && h.titular === t.nombre)
+    if (!inversas.length) continue
+    const desde = inversas[0].fila
+    const hasta = inversas[inversas.length - 1].fila
     graficos.push({
       hoja: HOJA,
       titulo: `${t.nombre}: inversión por inversión`,
-      categorias: hechas.filter((h) => h.clase === 'inversion' && h.titular === t.nombre).map((h) => h.corto),
+      categorias: inversas.map((h) => h.corto),
       series: [
         { nombre: 'Aportado neto', valores: `$${L.aportado}$${desde}:$${L.aportado}$${hasta}`, color: '2563EB' },
         { nombre: 'Beneficio-pérdida', valores: `$${L.euros}$${desde}:$${L.euros}$${hasta}`, color: 'E67E22' },
       ],
     })
   }
-  graficos.slice(0, 4).forEach((g, i) => {
+  const puestos = Math.min(graficos.length, 4)
+  graficos.slice(0, 4).forEach((grafico, i) => {
     const media = MEDIAS[i % 2]
-    const arriba = FILA_GRAFICOS + Math.floor(i / 2) * (ALTO_GRAFICO + 2)
+    const arriba = FILA_1_G + Math.floor(i / 2) * (ALTO_GRAFICO + 2)
     dibujos.push({
-      grafico: g,
+      grafico,
       desde: { col: media.desde, fila: arriba },
       hasta: { col: media.hasta, fila: arriba + ALTO_GRAFICO },
     })
   })
 
-  // El flujo del dinero, en su página.
-  const FILA_FLUJO =
-    FILA_GRAFICOS + Math.ceil(Math.min(graficos.length, 4) / 2) * (ALTO_GRAFICO + 2) + 2
-  const rutas = rutasDelFlujo(entrada, caminos)
-  const altoFlujo = rutas.length ? Math.ceil((40 + rutas.length * PASO_FLUJO) / 20) + 2 : 0
-  if (rutas.length)
-    dibujos.push({
-      formas: xmlFlujo(rutas, altoFlujo),
-      desde: { col: 0, fila: FILA_FLUJO },
-      hasta: { col: 14, fila: FILA_FLUJO + altoFlujo },
-    })
+  // La hoja de los gráficos: títulos y medidas.
+  const ultimaGraficos = FILA_1_G + Math.ceil(puestos / 2) * (ALTO_GRAFICO + 2)
+  const hojaG = libro.addWorksheet(HOJA_GRAFICOS, {
+    views: [{ showGridLines: false }],
+    pageSetup: {
+      orientation: 'landscape',
+      paperSize: 9,
+      fitToPage: true,
+      fitToWidth: 1,
+      fitToHeight: 1,
+      margins: { left: 0.3, right: 0.3, top: 0.4, bottom: 0.4, header: 0, footer: 0 },
+    },
+  })
+  hojaG.properties.tabColor = { argb: AZUL }
+  /** Deja la hoja a medida: columnas de 15 y filas de 20 puntos, que es lo que miden los dibujos. */
+  const aMedida = (hojaNueva: any, hasta: number) => {
+    for (let c = 1; c <= COLS_GRAFICOS; c++) hojaNueva.getColumn(c).width = 15
+    for (let f = 1; f <= hasta; f++) hojaNueva.getRow(f).height = 20
+  }
+  const titular = (hojaNueva: any, f: number, texto: string, tamano: number, gris = false) => {
+    hojaNueva.mergeCells(f, 1, f, COLS_GRAFICOS)
+    const celda = hojaNueva.getCell(f, 1)
+    celda.value = texto
+    celda.font = gris
+      ? { size: 9, italic: true, color: { argb: GRIS } }
+      : { bold: true, size: tamano, color: { argb: TINTA } }
+    celda.alignment = { vertical: 'middle' }
+  }
+  aMedida(hojaG, ultimaGraficos)
+  titular(hojaG, 1, 'Gráficos', 16)
+  titular(hojaG, 2, 'Todo sale de la hoja «Movimientos»: lo que cambies allí, cambia aquí.', 9, true)
+  hojaG.pageSetup.printArea = `A1:O${ultimaGraficos}`
 
-  ws.pageSetup.printArea = `A1:O${FILA_FLUJO + Math.max(altoFlujo, 4)}`
-  ws.pageSetup.printTitlesRow = `1:${FILA_CABECERAS}`
-  const saltos = [FILA_GRAFICOS, ...(rutas.length ? [FILA_FLUJO] : [])]
+  // ── El flujo del dinero, en otra hoja (y en otro dibujo: si algo falla, no se lleva los
+  // gráficos por delante) ────────────────────────────────────────────────────────────────────
+  const HOJA_FLUJO = 'Flujo'
+  const FILA_FORMAS = 4
+  const rutas = rutasDelFlujo(entrada, caminos)
+  const cajas = cajasDelFlujo(rutas)
+  const altoFlujo = Math.ceil((rutas.length * PASO_FLUJO) / PX_FILA) + 1
+  /** El ancla de un punto del dibujo, medido en píxeles desde su esquina. */
+  const ancla = (x: number, y: number): Esquina => {
+    const col = Math.floor(x / PX_COL)
+    const fila = FILA_FORMAS + Math.floor(y / PX_FILA)
+    return {
+      col,
+      fila,
+      offX: (x - col * PX_COL) * PX,
+      offY: (y - Math.floor(y / PX_FILA) * PX_FILA) * PX,
+    }
+  }
+  const dibujosFlujo: Dibujo[] = []
+  for (const c of cajas)
+    dibujosFlujo.push({ cuerpo: c.xml, desde: ancla(c.x, c.y), hasta: ancla(c.x + c.ancho, c.y + c.alto) })
+
+  const ultimaFlujo = FILA_FORMAS + altoFlujo
+  const hojaF = libro.addWorksheet(HOJA_FLUJO, {
+    views: [{ showGridLines: false }],
+    pageSetup: {
+      orientation: 'landscape',
+      paperSize: 9,
+      fitToPage: true,
+      fitToWidth: 1,
+      fitToHeight: 1,
+      margins: { left: 0.3, right: 0.3, top: 0.4, bottom: 0.4, header: 0, footer: 0 },
+    },
+  })
+  hojaF.properties.tabColor = { argb: AZUL }
+  aMedida(hojaF, ultimaFlujo)
+  titular(hojaF, 1, 'Flujo del dinero: de dónde llega, por dónde pasa y a dónde va', 14)
+  titular(hojaF, 2, 'Se dibuja con los movimientos de hoy: vuelve a descargar el Excel para tenerlo al día.', 9, true)
+  hojaF.pageSetup.printArea = `A1:O${ultimaFlujo}`
 
   // Protegida: solo se puede escribir en los movimientos, en las filas nuevas y en el % de cada
   // inversión. Se puede elegir cualquier celda y borrar o añadir filas (para quitar una inversión
@@ -724,8 +789,10 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
   // El nombre definido de los desplegables, los gráficos y el flujo hay que añadirlos a mano.
   return terminar(buffer, {
     nombre: { nombre: NOMBRES, formula: nombreDefinido(HOJA, RES_1, RES_N) },
-    dibujos,
-    saltos,
+    hojas: [
+      { hoja: 'xl/worksheets/sheet2.xml', dibujo: 'xl/drawings/drawing1.xml', dibujos, saltos: [] },
+      { hoja: 'xl/worksheets/sheet3.xml', dibujo: 'xl/drawings/drawing2.xml', dibujos: dibujosFlujo, saltos: [] },
+    ],
   })
 }
 
@@ -752,13 +819,21 @@ interface OpcionesGrafico {
 /** Algo que se dibuja encima de la hoja: un gráfico de barras o las formas del flujo. */
 interface Dibujo {
   /** Esquina de arriba a la izquierda (las columnas y las filas se cuentan desde cero). */
-  desde: { col: number; fila: number }
+  desde: Esquina
   /** Esquina de abajo a la derecha. */
-  hasta: { col: number; fila: number }
+  hasta: Esquina
   /** Un gráfico de barras. */
   grafico?: Omit<OpcionesGrafico, 'desde' | 'hasta'>
-  /** Las formas del flujo del dinero, ya en XML. */
-  formas?: string
+  /** Una forma del flujo del dinero, ya en XML. */
+  cuerpo?: string
+}
+
+/** Una esquina del ancla: celda y lo que se desplaza dentro de ella, en EMU. */
+interface Esquina {
+  col: number
+  fila: number
+  offX?: number
+  offY?: number
 }
 
 /** Texto seguro para el XML del gráfico. */
@@ -870,20 +945,13 @@ function xmlChart(op: Omit<OpcionesGrafico, 'desde' | 'hasta'>): string {
 
 /** Un ancla: lo que se dibuja va dentro, entre la celda de arriba y la de abajo. */
 function xmlAncla(d: Dibujo, cuerpo: string): string {
+  const esquina = (e: Esquina, nombre: string) =>
+    `<xdr:${nombre}><xdr:col>${e.col}</xdr:col><xdr:colOff>${Math.round(e.offX ?? 0)}</xdr:colOff>` +
+    `<xdr:row>${e.fila - 1}</xdr:row><xdr:rowOff>${Math.round(e.offY ?? 0)}</xdr:rowOff></xdr:${nombre}>`
   return `
   <xdr:twoCellAnchor>
-    <xdr:from>
-      <xdr:col>${d.desde.col}</xdr:col>
-      <xdr:colOff>0</xdr:colOff>
-      <xdr:row>${d.desde.fila - 1}</xdr:row>
-      <xdr:rowOff>0</xdr:rowOff>
-    </xdr:from>
-    <xdr:to>
-      <xdr:col>${d.hasta.col}</xdr:col>
-      <xdr:colOff>0</xdr:colOff>
-      <xdr:row>${d.hasta.fila - 1}</xdr:row>
-      <xdr:rowOff>0</xdr:rowOff>
-    </xdr:to>${cuerpo}
+    ${esquina(d.desde, 'from')}
+    ${esquina(d.hasta, 'to')}${cuerpo}
     <xdr:clientData/>
   </xdr:twoCellAnchor>`
 }
@@ -1026,38 +1094,26 @@ function xmlForma(op: Forma): string {
 }
 
 /**
- * El dibujo del flujo: una caja por nombre y una flecha con el dinero que va de una a otra. Va
- * dentro de un grupo (el ancla del dibujo solo admite una forma).
+ * Las cajas del flujo: una por nombre y una flecha con el dinero que va de una a otra. Cada una va
+ * en su propio ancla (Excel solo admite una forma por ancla, salvo dentro de un grupo).
  */
-function xmlFlujo(rutas: RutaFlujo[], altoFilas: number): string {
-  const formas: string[] = [
-    xmlForma({
-      id: 1,
-      nombre: 'Titulo del flujo',
-      x: 0,
-      y: 0,
-      ancho: COL_FLUJO * 3,
-      alto: 32,
-      texto: 'Flujo del dinero: de dónde llega, por dónde pasa y a dónde va',
-      relleno: null,
-      linea: null,
-      tinta: '0F172A',
-      tamano: 12,
-      negrita: true,
-    }),
-  ]
-  const ancho = ANCHO_HOJA * PX
-  const alto = altoFilas * 20 * PX
+function cajasDelFlujo(rutas: RutaFlujo[]): { x: number; y: number; ancho: number; alto: number; xml: string }[] {
+  const cajas: { x: number; y: number; ancho: number; alto: number; xml: string }[] = []
+  let id = 1
   rutas.forEach((r, i) => {
-    const y = 40 + i * PASO_FLUJO
+    const y = i * PASO_FLUJO
     const xDe = 110 + r.deCol * COL_FLUJO
     const xA = 110 + r.aCol * COL_FLUJO
-    formas.push(
-      xmlForma({
-        id: 2 + i * 3,
+    cajas.push({
+      x: xDe,
+      y,
+      ancho: ANCHO_CAJA,
+      alto: ALTO_CAJA,
+      xml: xmlForma({
+        id: id++,
         nombre: `De ${i + 1}`,
-        x: xDe,
-        y,
+        x: 0,
+        y: 0,
         ancho: ANCHO_CAJA,
         alto: ALTO_CAJA,
         texto: r.de,
@@ -1065,14 +1121,18 @@ function xmlFlujo(rutas: RutaFlujo[], altoFilas: number): string {
         linea: null,
         tinta: 'FFFFFF',
       }),
-    )
+    })
     const x = xDe + ANCHO_CAJA + 8
-    formas.push(
-      xmlForma({
-        id: 3 + i * 3,
+    cajas.push({
+      x,
+      y: y + 8,
+      ancho: xA - 8 - x,
+      alto: 30,
+      xml: xmlForma({
+        id: id++,
         nombre: `Flecha ${i + 1}`,
-        x,
-        y: y + 8,
+        x: 0,
+        y: 0,
         ancho: xA - 8 - x,
         alto: 30,
         texto: r.importe > 0 ? euros(r.importe) : '',
@@ -1082,13 +1142,17 @@ function xmlFlujo(rutas: RutaFlujo[], altoFilas: number): string {
         tamano: 9,
         flecha: true,
       }),
-    )
-    formas.push(
-      xmlForma({
-        id: 4 + i * 3,
+    })
+    cajas.push({
+      x: xA,
+      y,
+      ancho: ANCHO_CAJA,
+      alto: ALTO_CAJA,
+      xml: xmlForma({
+        id: id++,
         nombre: `A ${i + 1}`,
-        x: xA,
-        y,
+        x: 0,
+        y: 0,
         ancho: ANCHO_CAJA,
         alto: ALTO_CAJA,
         texto: r.a,
@@ -1096,43 +1160,37 @@ function xmlFlujo(rutas: RutaFlujo[], altoFilas: number): string {
         linea: null,
         tinta: 'FFFFFF',
       }),
-    )
+    })
   })
-  return `
-    <xdr:grpSp>
-      <xdr:nvGrpSpPr><xdr:cNvPr id="1" name="Flujo del dinero"/><xdr:cNvGrpSpPr/></xdr:nvGrpSpPr>
-      <xdr:grpSpPr>
-        <a:xfrm>
-          <a:off x="0" y="0"/>
-          <a:ext cx="${ancho}" cy="${alto}"/>
-          <a:chOff x="0" y="0"/>
-          <a:chExt cx="${ancho}" cy="${alto}"/>
-        </a:xfrm>
-      </xdr:grpSpPr>${formas.join('')}
-    </xdr:grpSp>`
+  return cajas
+}
+
+/** Una hoja con su dibujo (gráficos y formas) colgado. */
+interface HojaConDibujo {
+  /** Parte de la hoja, p. ej. «xl/worksheets/sheet2.xml». */
+  hoja: string
+  /** Parte del dibujo, p. ej. «xl/drawings/drawing2.xml». */
+  dibujo: string
+  dibujos: Dibujo[]
+  /** Filas por las que se parte la hoja al imprimir (1-based). */
+  saltos: number[]
 }
 
 /**
  * Remata el archivo: le mete el nombre definido de los desplegables (exceljs solo escribe rangos
- * fijos) y, si hay titulares, el gráfico de dos barras por titular.
- */
-/**
- * Remata el archivo: le mete el nombre definido de los desplegables (exceljs solo escribe rangos
- * fijos), los gráficos y el flujo del dinero, y los saltos de página.
+ * fijos), la protección de la hoja de movimientos y los dibujos de las hojas de gráficos y flujo.
  */
 async function terminar(
   buffer: ArrayBuffer,
-  op: {
-    nombre: { nombre: string; formula: string }
-    dibujos: Dibujo[]
-    /** Filas por las que se parte la hoja al imprimir (1-based). */
-    saltos: number[]
-  },
+  op: { nombre: { nombre: string; formula: string }; hojas: HojaConDibujo[] },
 ): Promise<ArrayBuffer> {
   const JSZip = await cargarJSZip()
   const zip = await new JSZip().loadAsync(buffer)
   const REL_DIBUJO = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing'
   const REL_CHART = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart'
+  const DIBUJO_XML = 'application/vnd.openxmlformats-officedocument.drawing+xml'
+  const GRAFICO_XML = 'application/vnd.openxmlformats-officedocument.drawingml.chart+xml'
+  const HOJA_XML = 'application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml'
 
   // Protección, escrita a mano: el «0» es lo que se PERMITE (o sea, lo que no se prohíbe).
   // Se puede elegir cualquier celda, dar formato y borrar o añadir filas; lo demás, no.
@@ -1141,14 +1199,6 @@ async function terminar(
     'selectUnlockedCells="0" formatCells="0" formatRows="0" insertRows="0" deleteRows="0"/>'
   const rutaHoja = 'xl/worksheets/sheet1.xml'
   const hoja0 = await zip.file(rutaHoja)!.async('string')
-
-  // Saltos de página: el resumen en la primera, los gráficos en la segunda y el flujo en la tercera.
-  const saltos = op.saltos.length
-    ? `<rowBreaks count="${op.saltos.length}" manualBreakCount="${op.saltos.length}">` +
-      op.saltos.map((f) => `<brk id="${f - 1}" min="0" max="16383" man="1"/>`).join('') +
-      '</rowBreaks>'
-    : ''
-
   zip.file(
     rutaHoja,
     hoja0.includes('<sheetProtection')
@@ -1166,69 +1216,74 @@ async function terminar(
       : libroXml.replace('</workbook>', `<definedNames>${definido}</definedNames></workbook>`),
   )
 
-  if (!op.dibujos.length) {
-    const hojaSinDibujo = await zip.file(rutaHoja)!.async('string')
-    zip.file(rutaHoja, hojaSinDibujo.replace('<drawing', `${saltos}<drawing`))
-    return zip.generateAsync({ type: 'arraybuffer', compression: 'DEFLATE' })
+  const tipos: string[] = []
+  let cuantosGraficos = 0
+  for (const h of op.hojas) {
+    if (!h.dibujos.length) continue
+    const nombreDibujo = h.dibujo.split('/').pop()!
+    const relaciones: string[] = []
+    const anclas = h.dibujos.map((d, i) => {
+      if (d.grafico) {
+        cuantosGraficos++
+        zip.file(`xl/charts/chart${cuantosGraficos}.xml`, xmlChart(d.grafico))
+        tipos.push(`<Override PartName="/xl/charts/chart${cuantosGraficos}.xml" ContentType="${GRAFICO_XML}"/>`)
+        relaciones.push(
+          `<Relationship Id="rId${relaciones.length + 1}" Type="${REL_CHART}" Target="../charts/chart${cuantosGraficos}.xml"/>`,
+        )
+        return xmlAncla(d, xmlGrafico(relaciones.length, `Grafico ${i + 1}`))
+      }
+      return xmlAncla(d, d.cuerpo ?? '')
+    })
+    zip.file(
+      h.dibujo,
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" ' +
+        'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">' +
+        anclas.join('') +
+        '</xdr:wsDr>',
+    )
+    zip.file(
+      `xl/drawings/_rels/${nombreDibujo}.rels`,
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${relaciones.join('')}</Relationships>`,
+    )
+    tipos.push(`<Override PartName="/xl/drawings/${nombreDibujo}" ContentType="${DIBUJO_XML}"/>`)
+
+    // La hoja apunta al dibujo (si no tenía relaciones todavía, se crean).
+    const nombreHoja = h.hoja.split('/').pop()!
+    const rutaRels = `xl/worksheets/_rels/${nombreHoja}.rels`
+    const parte = zip.file(rutaRels)
+    const relsHoja = parte
+      ? await parte.async('string')
+      : '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>'
+    const ids = [...relsHoja.matchAll(/Id="rId(\d+)"/g)].map((m) => Number(m[1]))
+    const id = Math.max(0, ...ids) + 1
+    zip.file(
+      rutaRels,
+      relsHoja.replace(
+        '</Relationships>',
+        `<Relationship Id="rId${id}" Type="${REL_DIBUJO}" Target="../drawings/${nombreDibujo}"/></Relationships>`,
+      ),
+    )
+    const saltos = h.saltos.length
+      ? `<rowBreaks count="${h.saltos.length}" manualBreakCount="${h.saltos.length}">` +
+        h.saltos.map((f) => `<brk id="${f - 1}" min="0" max="16383" man="1"/>`).join('') +
+        '</rowBreaks>'
+      : ''
+    const hoja = await zip.file(h.hoja)!.async('string')
+    zip.file(
+      h.hoja,
+      hoja.includes('<drawing')
+        ? hoja.replace('<drawing', `${saltos}<drawing`)
+        : hoja.replace('</worksheet>', `${saltos}<drawing r:id="rId${id}"/></worksheet>`),
+    )
   }
 
-  // Cada gráfico va en su parte; las formas del flujo van dentro del mismo dibujo.
-  const relaciones: string[] = []
-  const tipos = [
-    '<Override PartName="/xl/drawings/drawing1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>',
-  ]
-  let cuantosGraficos = 0
-  const anclas = op.dibujos.map((d, i) => {
-    if (d.grafico) {
-      cuantosGraficos++
-      zip.file(`xl/charts/chart${cuantosGraficos}.xml`, xmlChart(d.grafico))
-      relaciones.push(
-        `<Relationship Id="rId${cuantosGraficos}" Type="${REL_CHART}" Target="../charts/chart${cuantosGraficos}.xml"/>`,
-      )
-      tipos.push(
-        `<Override PartName="/xl/charts/chart${cuantosGraficos}.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/>`,
-      )
-      return xmlAncla(d, xmlGrafico(cuantosGraficos, `Grafico ${i + 1}`))
-    }
-    return xmlAncla(d, d.formas ?? '')
-  })
-  zip.file(
-    'xl/drawings/drawing1.xml',
-    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
-      '<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" ' +
-      'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">' +
-      anclas.join('') +
-      '</xdr:wsDr>',
-  )
-  zip.file(
-    'xl/drawings/_rels/drawing1.xml.rels',
-    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${relaciones.join('')}</Relationships>`,
-  )
-
-  // La hoja apunta al dibujo (si la hoja no tenía relaciones todavía, se crean).
-  const RELS = 'xl/worksheets/_rels/sheet1.xml.rels'
-  const parte = zip.file(RELS)
-  const relsHoja = parte
-    ? await parte.async('string')
-    : '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>'
-  const ids = [...relsHoja.matchAll(/Id="rId(\d+)"/g)].map((m) => Number(m[1]))
-  const id = Math.max(0, ...ids) + 1
-  zip.file(
-    RELS,
-    relsHoja.replace('</Relationships>', `<Relationship Id="rId${id}" Type="${REL_DIBUJO}" Target="../drawings/drawing1.xml"/></Relationships>`),
-  )
-
-  const hoja = await zip.file(rutaHoja)!.async('string')
-  zip.file(
-    rutaHoja,
-    hoja.includes('<drawing')
-      ? hoja.replace('<drawing', `${saltos}<drawing`)
-      : hoja.replace('</worksheet>', `${saltos}<drawing r:id="rId${id}"/></worksheet>`),
-  )
-
-  // Y los tipos de contenido de las partes nuevas.
+  // Y los tipos de contenido de las partes nuevas (exceljs ya escribe el de sus hojas).
   const tiposXml = await zip.file('[Content_Types].xml')!.async('string')
+  for (const h of op.hojas)
+    if (!tiposXml.includes(`/${h.hoja}"`))
+      tipos.push(`<Override PartName="/${h.hoja}" ContentType="${HOJA_XML}"/>`)
   zip.file('[Content_Types].xml', tiposXml.replace('</Types>', tipos.join('') + '</Types>'))
 
   return zip.generateAsync({ type: 'arraybuffer', compression: 'DEFLATE' })
