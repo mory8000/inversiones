@@ -1,5 +1,5 @@
 import { useMemo, useState, type CSSProperties } from 'react'
-import { ArrowDown, ArrowRight, Ban, CalendarSync, HandCoins, Info, Plus, Trash2, TriangleAlert } from 'lucide-react'
+import { ArrowDown, ArrowRight, Ban, CalendarSync, HandCoins, Info, Plus, Trash2 } from 'lucide-react'
 import type { EntityKind, EntityRef, Movimiento, MovementType, Programada, Titular } from '../../types'
 import { Sheet } from '../ui/Sheet'
 import { Field, NumberInput, SelectInput, TextInput } from '../ui/Field'
@@ -167,13 +167,14 @@ export function MovementForm({
   const hasErrors = Object.values(errors).some(Boolean)
   const err = (k: keyof typeof errors) => (submitted ? errors[k] : null)
 
-  // Aviso si se saca más dinero del que hay en un producto (puede ser correcto: ganancias, intereses…).
+  // En una inversión tampoco puede salir más de lo que tiene (incluida la rentabilidad).
+  // Al editar, se suma de vuelta el importe del movimiento original para no bloquear un cambio válido.
   let saldoProducto: number | null = null
   if (origenRef?.kind === 'producto') {
     const pos = positions.get(origenRef.id)
-    if (pos) saldoProducto = pos.saldo + (existing && existing.origen.kind === 'producto' && existing.origen.id === origenRef.id ? existing.importe : 0)
+    saldoProducto = (pos?.saldo ?? 0) + (existing && existing.origen.kind === 'producto' && existing.origen.id === origenRef.id ? existing.importe : 0)
   }
-  const exceedsProducto = !repetir && saldoProducto !== null && amount !== null && amount > Math.max(0, saldoProducto) + 0.005
+  const exceedsProducto = saldoProducto !== null && amount !== null && amount > Math.max(0, saldoProducto) + 0.005
 
   // ── ¿Hay dinero en la cuenta con saldo (MyInvestor) de la que sale? ──────
   // No se puede sacar más de lo que hay: ni ese día ni después (si hay movimientos posteriores).
@@ -226,7 +227,7 @@ export function MovementForm({
     // origenRef y destinoRef salen de origen y destino.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [repetir, origenConSaldo, amount, fecha, fin, origen, destino, concepto, prog, ds, today])
-  const bloqueado = !!sinSaldo || !!sinSaldoMensual
+  const bloqueado = !!sinSaldo || !!sinSaldoMensual || exceedsProducto || avisos.length > 0
 
   // Transferencia mensual: cuántas se apuntan ya (desde la primera fecha hasta hoy).
   const debidas = repetir && isValidISODate(fecha) ? fechasDebidas({ inicio: fecha, fin: fin && isValidISODate(fin) ? fin : null }, today) : []
@@ -236,7 +237,8 @@ export function MovementForm({
     setSubmitted(true)
     if (hasErrors || (!origenRef && !nuevaExterna) || !destinoRef || amount === null) return
     if (bloqueado && origenRef) {
-      toast(`No hay suficiente dinero en «${entityName(lookup, origenRef)}»`, 'error')
+      const cuentaSinSaldo = avisos[0]?.cuentaId
+      toast(`No hay suficiente dinero en «${entityName(lookup, cuentaSinSaldo ? { kind: 'cuenta', id: cuentaSinSaldo } : origenRef)}»`, 'error')
       document.querySelector('[data-sin-saldo]')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
       return
     }
@@ -707,7 +709,7 @@ export function MovementForm({
           </div>
         )}
 
-        {bloqueado && origenRef && (
+        {(!!sinSaldo || !!sinSaldoMensual) && origenRef && (
           <div className="rounded-xl border border-rose-200 bg-rose-50 p-3.5 text-sm text-rose-800" role="alert" data-sin-saldo>
             <p className="flex items-center gap-2 font-semibold">
               <Ban className="size-4 shrink-0" /> No hay suficiente dinero en «{oName}»
@@ -785,19 +787,18 @@ export function MovementForm({
         </Field>
 
         {exceedsProducto && saldoProducto !== null && (
-          <div className="flex gap-2.5 rounded-xl bg-amber-50 p-3 text-sm text-amber-800">
-            <TriangleAlert className="mt-0.5 size-4 shrink-0" />
+          <div className="flex gap-2.5 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800" role="alert" data-sin-saldo>
+            <Ban className="mt-0.5 size-4 shrink-0" />
             <span>
-              El importe supera el saldo actual de «{oName}» ({hidden ? 'oculto' : fmtEUR(saldoProducto)}). Puede ser correcto si incluye ganancias o intereses.
+              No se puede sacar {hidden ? '•••••• €' : fmtEUR(amount ?? 0)} de «{oName}»: solo hay {hidden ? '•••••• €' : fmtEUR(Math.max(0, saldoProducto))}. Pon un importe menor.
             </span>
           </div>
         )}
         {avisos.map((a) => (
-          <div key={a.cuentaId} className="flex gap-2.5 rounded-xl bg-amber-50 p-3 text-sm text-amber-800" data-aviso-saldo>
-            <TriangleAlert className="mt-0.5 size-4 shrink-0" />
+          <div key={a.cuentaId} className="flex gap-2.5 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800" role="alert" data-sin-saldo>
+            <Ban className="mt-0.5 size-4 shrink-0" />
             <span>
-              Con este cambio, «{entityName(lookup, { kind: 'cuenta', id: a.cuentaId })}» se quedará en negativo ({hidden ? '•••••• €' : fmtEUR(a.saldoMinimo)}), porque
-              ese dinero ya se ha usado. Se puede guardar igualmente: su saldo será el real.
+              Con este cambio, «{entityName(lookup, { kind: 'cuenta', id: a.cuentaId })}» se quedaría en negativo ({hidden ? '•••••• €' : fmtEUR(a.saldoMinimo)}): ese dinero ya se ha usado. Reduce el importe o añade dinero primero.
             </span>
           </div>
         ))}

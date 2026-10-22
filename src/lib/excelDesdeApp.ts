@@ -22,13 +22,14 @@ export function entradaDesdeApp(fin: FinanceData, hoy: string): EntradaExcel {
   const nombreDe = (ref: EntityRef) =>
     bonito(ref.kind === 'cuenta' ? nombreCuenta.get(ref.id) ?? '' : nombreProducto.get(ref.id) ?? '')
 
-  // Qué cuentas salen en algún movimiento: las demás no pintan nada en el resumen.
-  const tocadas = new Set<string>()
+  // Cuenta que se ha quedado a cero: aunque tenga movimientos históricos, su fila ya no ocupa
+  // sitio en el resumen. Los movimientos históricos siguen en la tabla y en el flujo.
+  const saldoCuentas = new Map<string, number>()
   for (const m of ds.movimientos) {
-    if (m.origen.kind === 'cuenta') tocadas.add(m.origen.id)
-    if (m.destino.kind === 'cuenta') tocadas.add(m.destino.id)
+    if (m.origen.kind === 'cuenta') saldoCuentas.set(m.origen.id, (saldoCuentas.get(m.origen.id) ?? 0) - m.importe)
+    if (m.destino.kind === 'cuenta') saldoCuentas.set(m.destino.id, (saldoCuentas.get(m.destino.id) ?? 0) + m.importe)
   }
-  const tocaElDinero = (cuentaId: string) => tocadas.has(cuentaId)
+  const tocaElDinero = (cuentaId: string) => Math.abs(saldoCuentas.get(cuentaId) ?? 0) > 0.005
 
   // ── Titulares: cada cuenta con las inversiones que paga ──────────────────
   const titulares = fin.titulares.map((tf) => {
@@ -48,7 +49,7 @@ export function entradaDesdeApp(fin: FinanceData, hoy: string): EntradaExcel {
       return cuentaId
     }
     // Las cuentas externas (otro banco, la nómina) no salen en el resumen: en el Excel ese dinero es
-    // «Exterior». Y tampoco sale una cuenta por la que no ha pasado dinero y que no paga nada.
+    // «Exterior». Y tampoco sale una cuenta que ha acabado a cero y no tiene inversiones.
     const cuentas = tf.ws.cuentas.filter(
       (c) => !c.externa && (tocaElDinero(c.id) || productos.some((p) => conDatos(fin, p.id) && cuentaDe(p.id) === c.id)),
     )

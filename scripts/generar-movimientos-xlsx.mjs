@@ -18,7 +18,6 @@ const RAIZ = resolve(aqui, '..')
 
 const HOY = '2026-10-22'
 
-/** Los mismos colores que la app: azul el primer titular, naranja el segundo. */
 /**
  * Los mismos colores que la app: azul el primer titular, naranja el segundo. Todo lo que sale
  * aquí tiene dinero: lo que queda a cero no aparece en el Excel (ni la cuenta nómina, que es la
@@ -34,8 +33,8 @@ const PLANTILLA = {
     { fecha: '2026-10-03', de: 'Exterior', a: 'Fondo indexado', importe: 400 },
     { fecha: '2026-10-05', de: 'Exterior', a: 'iShares Developed World Index (IE) Acc EUR clase s', importe: 150 },
   ],
-  // Dos filas amarillas: una a la vista y otra lista para cuando rellenes la primera.
-  libres: 2,
+  // Siete filas libres: una a la vista y seis en reserva.
+  libres: 7,
   titulares: [
     {
       nombre: 'Marta',

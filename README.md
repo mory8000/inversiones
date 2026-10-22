@@ -259,11 +259,15 @@ La hoja, en una sola página:
 
 - **Movimientos** (izquierda, columnas A hasta D): `Fecha · De · A · Importe`. Hay **500 filas**, pero
   solo se ve la que toca (con la fecha de hoy, que se puede cambiar): al rellenarla se abre la
-  siguiente. `De` y `A` son desplegables con los nombres del resumen.
+  siguiente. `De` y `A` son desplegables con los nombres del resumen. Al descargar el Excel,
+  los movimientos salen **por fecha**, del más antiguo al más reciente. La validación del importe
+  **bloquea una salida que supere lo disponible** en la cuenta o inversión de origen en esa fila;
+  «Exterior» no tiene límite porque representa dinero que está fuera de este libro.
 - **Resumen** (derecha, columnas F hasta K): cada **cuenta** y, **debajo de ella, las inversiones que
   se pagan desde esa cuenta**, con **Capital aportado · Rentabilidad (% y €) · Saldo**. En las
-  inversiones se escribe el **%** (el mismo que ves en la app) y los euros y el saldo se calculan
-  solos: el interés no es un movimiento, va dentro de ese %.
+  inversiones **y en las cuentas (también Cuenta Myinvestor)** puedes escribir el **%**:
+  los euros de rentabilidad y el saldo se calculan a partir de lo aportado y ese porcentaje.
+  El interés no es un movimiento, va dentro de ese %.
 - **Exterior** es el dinero que entra (o sale) de fuera. De las **cuentas externas** (las de otro
   banco, la cuenta nómina) **no se ve ningún dato**: no salen ni en el resumen ni en los movimientos,
   porque ese dinero es simplemente «Exterior → la cuenta de dentro» (o al revés).
@@ -276,27 +280,27 @@ La hoja, en una sola página:
   **una fila de separación** y los totales, que suben o bajan solos.
 - Si dos productos se llaman igual, el segundo lleva un **2** al final («iShares… Index» e «iShares…
   Index 2»): así el dinero va al que corresponde.
-- **Lo que se queda a cero desaparece, y lo de abajo sube:** si sacas de una inversión todo su saldo
-  (lo aportado más la rentabilidad), si vendes un fondo o si una cuenta se queda sin dinero y sin
-  inversiones, su fila **no sale en el Excel** y las de abajo suben tantas posiciones como filas se
-  hayan quedado vacías: así no quedan huecos. Si vuelves a meter dinero, la fila vuelve a salir. Lo
-  mismo pasa dentro de la hoja: una fila que se queda a cero se va en blanco y deja de contar, y un
-  movimiento que pones a **0** se borra entero (como si no lo hubieras escrito).
+- **Sin huecos al generar el Excel:** una cuenta sin dinero ni inversiones y una inversión cerrada
+  en la app no salen en el archivo nuevo: las demás filas ocupan su sitio y las filas libres quedan
+  al final. **Dentro del archivo ya descargado**, poner un movimiento a **0** oculta visualmente su
+  fila y deja de contarlo, pero **no borra su contenido ni desplaza físicamente las otras filas**:
+  para ordenarlo o compactarlo de verdad sin macros, haz el cambio en la app y vuelve a descargar
+  el Excel, o borra manualmente la fila en Excel. Tampoco se reordena automáticamente al cambiar
+  una fecha dentro del archivo: ordénalo desde Excel o vuelve a descargarlo desde la app.
 - Después, el total de cada cuenta (si el titular tiene más de una), el de cada **titular** (si solo
   tiene una cuenta, el renglón lleva los dos nombres: «Total Cuenta Myinvestor-Luis») y el **TOTAL**.
-- **La hoja «Gráficos»** (una pestaña aparte): **un gráfico por titular** con **tres barras**:
-  **Aportado** (azul), **Rentabilidad** (naranja) y **Aportado + rentabilidad** (verde), que es el
-  saldo. La cuenta y las inversiones van **juntas, sin desglosar**, y el importe sale encima de cada
-  barra.
-- **La hoja «Flujo»** (otra pestaña): el flujo del dinero, pintado con celdas. Arriba, tres cifras de
-  un vistazo —lo que **entra de fuera**, lo que **sigue en las cuentas** y lo que está **invertido**—.
-  Después, **un renglón por viaje del dinero**: cada línea cuenta el camino entero —**de dónde llega**,
-  **por dónde pasa** y **a dónde va**— con una caja por nombre y la flecha con el importe que se mueve
-  (si el dinero se queda en la cuenta, la última caja lo dice). Debajo, los **movimientos uno a uno**:
-  fecha, de dónde sale, a dónde va e importe, con el total al final. Se dibuja con los movimientos de
-  hoy: vuelve a descargar el Excel para tenerlo al día.
+- **La hoja «Flujo»** es el **gráfico nuevo**: sustituye por completo los gráficos de barras y
+  sus imágenes/dibujos. No se pueden superponer sus etiquetas porque los nombres y los importes
+  van dentro de celdas combinadas con espacio para varias líneas. Arriba, tres cifras de un
+  vistazo: lo que **entra de fuera**, lo que **sigue en las cuentas** y lo que está **invertido**.
+  Debajo, el camino en tres columnas —**ORIGEN → PASOS → FINAL**—: cada nombre aparece en un bloque
+  (gris fuera, azul cuenta, verde inversión); cada camino tiene su importe y más altura cuanto más
+  dinero lleva. Si no llega a una inversión, se indica que **sigue en la cuenta**. Abajo están los
+  **movimientos uno a uno** con fecha, origen, destino, importe y total. El gráfico se crea con los
+  movimientos del momento de la descarga: **no se redibuja solo** al editar un movimiento en Excel;
+  vuelve a descargarlo desde la app para actualizarlo.
 - **Protegida:** solo se puede escribir en los movimientos, en las filas amarillas nuevas y en el %
-  de cada inversión. Se puede elegir cualquier celda y **borrar o añadir filas** (para quitar una
+  de cada cuenta o inversión. Se puede elegir cualquier celda y **borrar o añadir filas** (para quitar una
   inversión que llegue a cero o meter una nueva). Sin contraseña: «Revisar → Desproteger hoja».
 - Todo son fórmulas (`SUMIFS`) envueltas en `SI.ERROR`: una celda sin datos sale en blanco, nunca
   con `#¡VALOR!`.
