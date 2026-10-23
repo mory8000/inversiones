@@ -162,6 +162,40 @@ describe('el Excel de movimientos', () => {
     expect((hoja.getCell(`H${filaDe(hoja, 'Fondo indexado')}`).value as { formula: string }).formula).toContain('"Fondo indexado"')
   })
 
+  it('permite retirar 1000 + 20 de Metal y deja la cartera a cero sin dinero futuro ni sobregiro', async () => {
+    const entrada: EntradaExcel = {
+      hoy: HOY,
+      movimientos: [
+        { fecha: '2026-10-01', de: 'Exterior', a: 'Cuenta Luis', importe: 1000 },
+        { fecha: '2026-10-02', de: 'Cuenta Luis', a: 'Metal', importe: 1000 },
+        { fecha: '2026-10-03', de: 'Metal', a: 'Cuenta Luis', importe: 500 },
+        { fecha: '2026-10-04', de: 'Metal', a: 'Cuenta Luis', importe: 520 },
+      ],
+      titulares: [{ nombre: 'Luis', color: '#2447B8', grupos: [{ cuenta: 'Cuenta Luis', inversiones: [{ nombre: 'Metal', rentabilidad: 0.02 }] }] }],
+    }
+    const { hoja } = await generar(entrada)
+    const metal = filaDe(hoja, 'Metal')
+    const capital = (hoja.getCell(`H${metal}`).value as { formula: string }).formula
+    const saldo = (hoja.getCell(`K${metal}`).value as { formula: string }).formula
+    const validacion = String(hoja.getCell('D9').dataValidation.formulae[0])
+    // El rendimiento se aplica a los ingresos acumulados, no a los ingresos MENOS
+    // retiradas anteriores: después de retirar 500 quedan 520, no 510.
+    expect(capital).toContain('MAX(0,SUMIFS($D$6:$D$505,$C$6:$C$505,"Metal")')
+    expect(capital).toContain('-SUMIFS($D$6:$D$505,$B$6:$B$505,"Metal")')
+    expect(saldo).toContain(`MAX(0,IFERROR(1+$I${metal},1))-SUMIFS(`)
+    expect(validacion).toContain('$D6<=$X6')
+    expect((hoja.getCell('X9').value as { formula: string }).formula).toContain('SUMIFS($D$6:$D9,$B$6:$B9,$B9,$A$6:$A9,"<="&$A9)-$D9')
+    const enCentimos = (n: number) => Math.round(n * 100) / 100
+    const capitalPendiente = Math.max(0, 1000 - 500)
+    const saldoPendiente = enCentimos(1000 * 1.02 - 500)
+    expect([capitalPendiente, saldoPendiente - capitalPendiente, saldoPendiente]).toEqual([500, 20, 520])
+    expect(enCentimos(1000 * 1.02 - 500 - 520)).toBe(0)
+    expect(520 <= enCentimos(1000 * 1.02 - 500)).toBe(true)
+    expect(520.01 <= enCentimos(1000 * 1.02 - 500)).toBe(false)
+    // El destino recibe el importe completo: 1000 + 500 + 520 - 1000 = 1020.
+    expect(1000 + 500 + 520 - 1000).toBe(1020)
+  })
+
   it('tiene 500 filas de movimientos, y solo se ve la que toca', async () => {
     const { hoja, zip } = await generar()
     // 500 filas: de la 6 a la 505.
@@ -257,7 +291,7 @@ describe('el Excel de movimientos', () => {
     const { hoja } = await generar()
     const vanguard = filaDe(hoja, 'Vanguard Global Stock Index')
     expect(hoja.getCell(`I${vanguard}`).value).toBeCloseTo(0.1, 10)
-    expect(hoja.getCell(`K${vanguard}`).value).toEqual({ formula: expect.stringContaining('$H8*(1+$I8') })
+    expect(hoja.getCell(`K${vanguard}`).value).toEqual({ formula: expect.stringContaining('MAX(0,IFERROR(1+$I8,1))-SUMIFS(') })
     expect(hoja.getCell(`J${vanguard}`).value).toEqual({ formula: expect.stringContaining('$K8-$H8') })
   })
 
@@ -360,9 +394,11 @@ describe('el Excel de movimientos', () => {
     expect(validacion.type).toBe('custom')
     expect(validacion.errorStyle).toBe('stop')
     const f = String(validacion.formulae[0])
-    expect(f).toContain('SUMIFS($D$6:$D6,$C$6:$C6,$B6)')
-    expect(f).toContain('SUMIFS($D$6:$D6,$B$6:$B6,$B6)+$D6')
-    expect(f).toContain('VLOOKUP($B6,$F$6:$I$') // % de la cuenta o inversión
+    expect(f).toContain('$D6<=$X6')
+    const disponible = (hoja.getCell('X6').value as { formula: string }).formula
+    expect(disponible).toContain('SUMIFS($D$6:$D6,$C$6:$C6,$B6,$A$6:$A6,"<="&$A6)')
+    expect(disponible).toContain('SUMIFS($D$6:$D6,$B$6:$B6,$B6,$A$6:$A6,"<="&$A6)-$D6')
+    expect(disponible).toContain('VLOOKUP($B6,$F$6:$I$') // % de la cuenta o inversión
     expect(f).toContain('OR($D6=0,')
     expect(f).toContain('$B6="Exterior"')
     const hojaXml = await xml(zip, 'xl/worksheets/sheet1.xml')
@@ -398,7 +434,7 @@ describe('el Excel de movimientos', () => {
     const saldo = String((hoja.getCell('K7').value as { formula: string }).formula)
     expect(euros).toContain('$K7-$H7')
     // El saldo de la cuenta es lo aportado por lo que suba o baje ese %: como en las inversiones.
-    expect(saldo).toContain('$H7*(1+$I7)')
+    expect(saldo).toContain('MAX(0,IFERROR(1+$I7,1))-SUMIFS(')
     // Y la celda del % se puede escribir: la hoja está protegida, pero esa celda no.
     expect(xmlHoja).toContain('<sheetProtection')
     expect(hoja.getCell('I7').protection?.locked).toBe(false)

@@ -41,6 +41,15 @@ Private Sub Worksheet_Change(ByVal Target As Range)
             End If
         End If
     End If
+    ' La validacion de Excel puede esquivarse pegando celdas. Revisar todo el historial
+    ' ANTES de compactar: si una edicion deja sin fondos una salida posterior, se deshace.
+    If Not MovimientosValidos(IIf(ponerCero, Target.Row, 0), Target) Then
+        Application.EnableEvents = False
+        If Not ponerCero Then Application.Undo
+        Application.EnableEvents = True
+        MsgBox "No hay saldo suficiente en el origen en la fecha del movimiento.", vbExclamation
+        Exit Sub
+    End If
     Application.EnableEvents = False
     Me.Unprotect Password:=""
     If ponerCero Then Me.Range("B" & Target.Row & ":D" & Target.Row).ClearContents
@@ -151,13 +160,94 @@ Private Function TitularOrigen(ByVal nombre As String) As String
     TitularOrigen = PRIMER_TITULAR
 End Function
 
+Private Function FactorDelOrigen(ByVal nombre As String) As Double
+    Dim f As Long, valor As Variant
+    FactorDelOrigen = 1
+    For f = PRIMER_RES To ULTIMO_RES
+        If StrComp(CStr(Me.Cells(f, "F").Value2), nombre, vbTextCompare) = 0 Then
+            valor = Me.Cells(f, "I").Value2
+            If Not IsError(valor) Then
+                If IsNumeric(valor) And Len(CStr(valor)) > 0 Then
+                    FactorDelOrigen = Application.Max(0, 1 + CDbl(valor))
+                End If
+            End If
+            Exit Function
+        End If
+    Next f
+    f = FilaCatalogo(nombre)
+    If f > 0 Then
+        valor = Me.Cells(f, "U").Value2
+        If Not IsError(valor) Then
+            If IsNumeric(valor) And Len(CStr(valor)) > 0 Then
+                FactorDelOrigen = Application.Max(0, 1 + CDbl(valor))
+            End If
+        End If
+    End If
+End Function
+
+Private Function MovimientosValidos(ByVal omitir As Long, ByVal cambiado As Range) As Boolean
+    Dim f As Long, previo As Long, origen As String, destino As String
+    Dim importe As Variant, fecha As Variant, ingreso As Double, retirado As Double, disponible As Double
+    MovimientosValidos = False
+    For f = PRIMERA To ULTIMA
+        If f <> omitir Then
+            importe = Me.Cells(f, "D").Value2
+            If IsError(importe) Then Exit Function
+            If Len(CStr(importe)) > 0 Then
+                If Not IsNumeric(importe) Then Exit Function
+                If CDbl(importe) < 0 Then Exit Function
+                If CDbl(importe) > 0 Then
+                    origen = CStr(Me.Cells(f, "B").Value2)
+                    destino = CStr(Me.Cells(f, "C").Value2)
+                    fecha = Me.Cells(f, "A").Value2
+                    If Len(origen) = 0 Or Len(destino) = 0 Or Not IsNumeric(fecha) Then Exit Function
+                    If StrComp(origen, "Exterior", vbTextCompare) <> 0 Then
+                        ' Un producto historico cerrado de una exportacion antigua puede haber
+                        ' realizado beneficios, pero su porcentaje anterior ya no se conoce.
+                        ' No bloquear por ello la edicion de OTRO movimiento; el editado si se revisa.
+                        If FilaCatalogo(origen) = 0 Then
+                            If Application.CountIf(Me.Range("R6:R505"), origen) > 0 Then
+                                If Intersect(cambiado, Me.Range("A" & f & ":D" & f)) Is Nothing Then GoTo SiguienteMovimiento
+                            End If
+                        End If
+                        ingreso = 0
+                        retirado = 0
+                        For previo = PRIMERA To f - 1
+                            If previo <> omitir Then
+                                If IsNumeric(Me.Cells(previo, "A").Value2) Then
+                                    If CDbl(Me.Cells(previo, "A").Value2) <= CDbl(fecha) Then
+                                        If IsNumeric(Me.Cells(previo, "D").Value2) Then
+                                            If StrComp(CStr(Me.Cells(previo, "C").Value2), origen, vbTextCompare) = 0 Then
+                                                ingreso = ingreso + CDbl(Me.Cells(previo, "D").Value2)
+                                            End If
+                                            If StrComp(CStr(Me.Cells(previo, "B").Value2), origen, vbTextCompare) = 0 Then
+                                                retirado = retirado + CDbl(Me.Cells(previo, "D").Value2)
+                                            End If
+                                        End If
+                                    End If
+                                End If
+                            End If
+                        Next previo
+                        disponible = Application.WorksheetFunction.Round(ingreso * FactorDelOrigen(origen) - retirado, 2)
+                        If CDbl(importe) > disponible + 0.000001 Then Exit Function
+                    End If
+                End If
+            End If
+        End If
+SiguienteMovimiento:
+    Next f
+    MovimientosValidos = True
+End Function
+
 ' En S:V hay una fila fija por nombre. El orden del catalogo conserva los fondos ya existentes;
 ' los nuevos se incorporan al escribirlos en De/A. Solo salen los nombres con saldo o cuenta
 ' con movimientos. F:K siempre ocupa las mismas filas para no romper los totales ni los graficos.
 Private Sub ReordenarResumen()
     Dim f As Long, m As Long, dst As Long, n As String, r As Long
-    Dim entradas As Double, salidas As Double, cuenta As Boolean, sinImporte As Boolean
+    Dim entradas As Double, salidas As Double, multiplicador As Double
+    Dim cuenta As Boolean, sinImporte As Boolean, valorPct As Variant
     Dim nombres(1 To 500) As String, num As Long, candidatos As Variant, candidato As Variant
+    Dim q As String, factor As String, ingreso As String, retirada As String, saldo As String
     ' Las altas nuevas vienen de las columnas editables, no de una lista adicional visible.
     For m = PRIMERA To ULTIMA
         candidatos = Array(Me.Cells(m, "B").Value2, Me.Cells(m, "C").Value2)
@@ -184,9 +274,14 @@ Private Sub ReordenarResumen()
         entradas = Application.SumIfs(Me.Range("D6:D505"), Me.Range("C6:C505"), n)
         salidas = Application.SumIfs(Me.Range("D6:D505"), Me.Range("B6:B505"), n)
         cuenta = (CStr(Me.Cells(r, "V").Value2) = "cuenta")
+        valorPct = Me.Cells(r, "U").Value2
+        multiplicador = 1
+        If Not IsError(valorPct) Then
+            If IsNumeric(valorPct) And Len(CStr(valorPct)) > 0 Then multiplicador = Application.Max(0, 1 + CDbl(valorPct))
+        End If
         sinImporte = Application.CountIfs(Me.Range("C6:C505"), n, Me.Range("D6:D505"), "") > 0
         sinImporte = sinImporte Or Application.CountIfs(Me.Range("B6:B505"), n, Me.Range("D6:D505"), "") > 0
-        If (cuenta And entradas + salidas > 0) Or (Not cuenta And (entradas - salidas > 0.005 Or sinImporte)) Then
+        If (cuenta And entradas + salidas > 0) Or (Not cuenta And (entradas * multiplicador - salidas > 0.005 Or sinImporte)) Then
             num = num + 1
             nombres(num) = n
         End If
@@ -196,6 +291,7 @@ Private Sub ReordenarResumen()
         Exit Sub
     End If
     ' Los valores editables quedan vinculados al nombre en S:U, no a su posicion antigua.
+    q = Chr(34)
     For dst = PRIMER_RES To ULTIMO_RES
         n = ""
         If dst - PRIMER_RES + 1 <= num Then n = nombres(dst - PRIMER_RES + 1)
@@ -208,11 +304,18 @@ Private Sub ReordenarResumen()
             Me.Cells(dst, "G").Value2 = Me.Cells(r, "T").Value2
             Me.Cells(dst, "I").Value2 = Me.Cells(r, "U").Value2
         End If
-        ' Reescribir las formulas por nombre de fila: ninguna queda atada al producto
-        ' anterior si se desplazan las inversiones del resumen.
-        Me.Cells(dst, "H").Formula = "=IFERROR(IF(F" & dst & "="""","""",SUMIFS($D$6:$D$505,$C$6:$C$505,F" & dst & ")-SUMIFS($D$6:$D$505,$B$6:$B$505,F" & dst & ")),"""")"
-        Me.Cells(dst, "K").Formula = "=IFERROR(IF(OR(F" & dst & "="""",H" & dst & "="""",H" & dst & "=0),"""",IF(I" & dst & "="""",H" & dst & ",H" & dst & "*(1+I" & dst & "))),"""")"
-        Me.Cells(dst, "J").Formula = "=IFERROR(IF(OR(F" & dst & "="""",K" & dst & "=""""),"""",K" & dst & "-H" & dst & "),"""")"
+        ' Las retiradas agotan primero el principal (H); los intereses no se esfuman.
+        ' El saldo K sigue disponible aun cuando H ya sea cero y quede beneficio por sacar.
+        factor = "MAX(0,IFERROR(1+I" & dst & ",1))"
+        ingreso = "SUMIFS($D$6:$D$505,$C$6:$C$505,F" & dst & ")"
+        retirada = "SUMIFS($D$6:$D$505,$B$6:$B$505,F" & dst & ")"
+        saldo = ingreso & "*" & factor & "-" & retirada
+        Me.Cells(dst, "H").Formula = "=IFERROR(IF(F" & dst & "=" & q & q & "," & q & q & _
+            ",IF((" & saldo & ")<=0.005," & q & q & ",MAX(0," & ingreso & "-" & retirada & ")))," & q & q & ")"
+        Me.Cells(dst, "K").Formula = "=IFERROR(IF(F" & dst & "=" & q & q & "," & q & q & _
+            ",IF((" & saldo & ")<=0.005," & q & q & ",ROUND(MAX(0," & saldo & "),2)))," & q & q & ")"
+        Me.Cells(dst, "J").Formula = "=IFERROR(IF(OR(F" & dst & "=" & q & q & ",K" & dst & "=" & q & q & _
+            ")," & q & q & ",K" & dst & "-H" & dst & ")," & q & q & ")"
     Next dst
     Me.Calculate
 End Sub

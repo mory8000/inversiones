@@ -273,7 +273,14 @@ El archivo contiene dos hojas, **Movimientos** y **Gráficos**. El «Gráfico de
   se pagan desde esa cuenta**, con **Capital aportado · Rentabilidad (% y €) · Saldo**. En las
   inversiones **y en las cuentas (también Cuenta Luis, si el titular es Luis)** puedes escribir el **%**:
   los euros de rentabilidad y el saldo se calculan a partir de lo aportado y ese porcentaje.
-  El interés no es un movimiento, va dentro de ese %.
+  El interés no es un movimiento, va dentro de ese %. **Saldo disponible en un traspaso:**
+  ingresos acumulados en el origen × (1 + rentabilidad indicada) − salidas anteriores, hasta la
+  fecha de ese movimiento. Por ejemplo, con 1.000 € en Metal y 2 % (20 €), puedes mover
+  **1.020 € a la cuenta** y Metal queda a **0 €**; si ya habías sacado 500 €, todavía puedes
+  sacar **520 €**, no 510 €. La validación impide superar lo disponible; en el `.xlsm`, la macro
+  comprueba también los pegados y rechaza cambios que dejarían sin saldo una salida posterior.
+  La rentabilidad del Excel es el porcentaje editable que aparece en ese momento: **no reconstruye
+  las valoraciones históricas** cuando se cambia el porcentaje a posteriori.
 - **Exterior** es el dinero que entra (o sale) de fuera. De las **cuentas externas** (las de otro
   banco, la cuenta nómina) **no se ve ningún dato**: no salen ni en el resumen ni en los movimientos,
   porque ese dinero es simplemente «Exterior → la cuenta de dentro» (o al revés).

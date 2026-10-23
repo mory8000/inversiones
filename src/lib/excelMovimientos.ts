@@ -371,28 +371,26 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
   // Un movimiento a cero es como si no existiera: por eso solo cuentan los que llevan dinero.
   const seMueve = (nombre: string) => `COUNTIFS(${A},${nombre},${IMP},">0")+COUNTIFS(${DE},${nombre},${IMP},">0")`
   const H = (f: number) => `$${L.aportado}${f}`
-  /**
-   * «Cerrado»: el dinero que entró ya se ha ido. Lo que sale de una inversión es su saldo (lo
-   * aportado más la rentabilidad), así que al sacarlo todo el capital queda a cero y la fila
-   * desaparece del resumen. Una cuenta solo desaparece si, además, no le queda ninguna inversión
-   * a la vista (si el dinero está invertido, la cuenta sigue ahí aunque marque cero).
-   */
-  const cerrado = (nombre: string, clase: string, filasInv: [number, number] | null) => {
+  // El beneficio acumulado es dinero REAL: al retirar parte del saldo no puede desaparecer ni
+  // volver a multiplicarse sobre el capital restante. Con 1.000 € y +2 %, tras retirar 500 €
+  // quedan 520 €; otros 520 € se pueden retirar (no solo 510 €).
+  const factor = (f: number) => `MAX(0,IFERROR(1+$${L.pct}${f},1))`
+  const saldoReal = (nombre: string, f: number) => `${entra(nombre)}*${factor(f)}-${sale(nombre)}`
+  /** «Cerrado» solo cuando el saldo REAL disponible ya se ha agotado. */
+  const cerrado = (nombre: string, f: number, clase: string, filasInv: [number, number] | null) => {
     const vacias = filasInv ? `SUMPRODUCT(--(${H(filasInv[0])}:${H(filasInv[1])}<>""))=0` : null
     const condiciones =
       clase === 'cuenta'
-        ? [`${seMueve(nombre)}>0`, `${entra(nombre)}-${sale(nombre)}<=0`, ...(vacias ? [vacias] : [])]
-        : [`${entra(nombre)}>0`, `${entra(nombre)}-${sale(nombre)}<=0`]
+        ? [`${seMueve(nombre)}>0`, `${saldoReal(nombre, f)}<=${NADA}`, ...(vacias ? [vacias] : [])]
+        : [`${entra(nombre)}>0`, `${saldoReal(nombre, f)}<=${NADA}`]
     return `AND(${condiciones.join(',')})`
   }
-  /** Capital aportado: lo que entra menos lo que sale. */
+  /** Aportado pendiente: los retiros agotan primero el principal; nunca aparece negativo. */
   const fAportado = (f: number, nombre: string, cierra: string) =>
-    siError(`IF($${L.nombre}${f}="","",IF(${cierra},"",${entra(nombre)}-${sale(nombre)}))`)
-  /** Saldo de una inversión: su capital por lo que suba o baje el % que escribas. */
-  const fSaldoInversion = (f: number, cierra: string) =>
-    siError(
-      `IF($${L.nombre}${f}="","",IF(${cierra},"",IF(OR(${H(f)}="",${H(f)}=0),"",IF($${L.pct}${f}="",${H(f)},${H(f)}*(1+$${L.pct}${f})))))`,
-    )
+    siError(`IF($${L.nombre}${f}="","",IF(${cierra},"",MAX(0,${entra(nombre)}-${sale(nombre)})))`)
+  /** Saldo retirable: principal ingresado + interés − salidas, incluso si ya no queda principal. */
+  const fSaldoInversion = (f: number, nombre: string, cierra: string) =>
+    siError(`IF($${L.nombre}${f}="","",IF(${cierra},"",IF(${saldoReal(nombre, f)}<=${NADA},"",ROUND(${saldoReal(nombre, f)},2))))`)
   const fEuros = (f: number, cierra: string) =>
     siError(
       `IF($${L.nombre}${f}="","",IF(${cierra},"",IF(OR(${H(f)}="",$${L.saldo}${f}=""),"",$${L.saldo}${f}-${H(f)})))`,
@@ -425,7 +423,7 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
   }) => {
     const esLibre = op.clase === 'libre'
     const nombre = op.nombre ? literal(op.nombre) : `$${L.nombre}${fila}`
-    const cierra = cerrado(nombre, op.clase, op.filasInv ?? null)
+    const cierra = cerrado(nombre, fila, op.clase, op.filasInv ?? null)
     // Las filas libres empiezan escondidas (letra blanca): el formato condicional las destapa.
     const color = esLibre ? 'FFFFFFFF' : numeroConcepto < 3 ? TINTA : hexArgb(colorDe(op.titular))
     const letra = (size = 10) => ({ size, color: { argb: color } })
@@ -442,7 +440,7 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
     // saldo (lo aportado por lo que suba o baje ese %).
     poner(fila, COL.pct, op.pct ?? null, { numFmt: PORCENTAJE, font: letra() })
     poner(fila, COL.euros, { formula: fEuros(fila, cierra) }, { numFmt: MONEDA, font: letra() })
-    poner(fila, COL.saldo, { formula: fSaldoInversion(fila, cierra) }, { numFmt: MONEDA, font: letra() })
+    poner(fila, COL.saldo, { formula: fSaldoInversion(fila, nombre, cierra) }, { numFmt: MONEDA, font: letra() })
     if (!esLibre) for (let c = COL.nombre; c <= COL.saldo; c++) celda(fila, c).border = bordeFino
     // El nombre automático y los cálculos siguen protegidos. El titular (también en filas
     // desplazadas por la macro) y el porcentaje pueden corregirse para cualquier inversión.
@@ -711,15 +709,21 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
   // De una cuenta o inversión no puede salir más dinero del que hay: se mira lo que le queda en esa
   // fila (lo que le ha entrado menos lo que ha salido ANTES de este movimiento, más su rentabilidad). Del
   // «Exterior» puede salir lo que sea, porque es el dinero de fuera.
-  const HASTA_AQUI = (c: Col) => `$${L[c]}$${RES_1}:$${L[c]}${RES_1}`
-  const aportadoHastaAhora = `SUMIFS(${HASTA_AQUI('importe')},${HASTA_AQUI('a')},$${L.de}${RES_1})` +
-    `-SUMIFS(${HASTA_AQUI('importe')},${HASTA_AQUI('de')},$${L.de}${RES_1})+$${L.importe}${RES_1}`
-  // Usa el % editable, pero solo sobre lo ingresado hasta este movimiento (sin dinero futuro).
-  const pctOrigen = `IFERROR(VLOOKUP($${L.de}${RES_1},$${L.nombre}$${RES_1}:$${L.pct}$${RES_N},4,FALSE),0)`
-  const disponible = `MAX(0,(${aportadoHastaAhora})*(1+${pctOrigen}))`
+  // Excel limita la longitud de la fórmula de validación. X guarda, oculto, el disponible
+  // ANTES de cada movimiento; así D solo necesita comparar su importe con X de la misma fila.
+  ws.getColumn(24).hidden = true
+  for (let f = RES_1; f <= FILA_MOV_N; f++) {
+    const hasta = (c: Col) => `$${L[c]}$${RES_1}:$${L[c]}${f}`
+    const previo = `SUMIFS(${hasta('importe')},${hasta('de')},$${L.de}${f},${hasta('fecha')},"<="&$${L.fecha}${f})-$${L.importe}${f}`
+    const recibido = `SUMIFS(${hasta('importe')},${hasta('a')},$${L.de}${f},${hasta('fecha')},"<="&$${L.fecha}${f})`
+    // El % del producto cerrado permanece en U aunque la macro retire su fila del resumen.
+    const pctCatalogo = `INDEX($U$${RES_1}:$U$${FILA_MOV_N},MATCH($${L.de}${f},$S$${RES_1}:$S$${FILA_MOV_N},0))`
+    const factorOrigen = `MAX(0,IFERROR(1+VLOOKUP($${L.de}${f},$${L.nombre}$${RES_1}:$${L.pct}$${RES_N},4,FALSE),IFERROR(1+${pctCatalogo},1)))`
+    poner(f, 24, { formula: `IFERROR(ROUND(MAX(0,${recibido}*${factorOrigen}-(${previo})),2),0)` })
+  }
   ws.dataValidations.add(`${L.importe}${RES_1}:${L.importe}${FILA_MOV_N}`, {
     type: 'custom',
-    formulae: [`OR($${L.importe}${RES_1}=0,AND($${L.importe}${RES_1}>0,OR($${L.de}${RES_1}="${EXTERIOR}",$${L.importe}${RES_1}<=${disponible})))`],
+    formulae: [`OR($${L.importe}${RES_1}=0,AND(ISNUMBER($${L.fecha}${RES_1}),$${L.importe}${RES_1}>0,OR($${L.de}${RES_1}="${EXTERIOR}",$${L.importe}${RES_1}<=$X${RES_1})))`],
     allowBlank: true,
     showErrorMessage: true,
     errorStyle: 'stop',
