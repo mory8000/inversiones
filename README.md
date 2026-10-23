@@ -256,8 +256,10 @@ Hay dos formas de tenerlo:
   los filtros de la página, tus cuentas, tus inversiones y la rentabilidad de cada una. Es la misma
   hoja que la plantilla, pero ya rellena. Si cambias datos en la app después de descargar el libro,
   descarga uno nuevo: un archivo ya guardado no se sincroniza con el navegador.
-- **La plantilla de ejemplo:** `Movimientos.xlsx`, en la raíz (y su copia en `public/`, que es la que se
-  puede descargar desde la web: `https://mory8000.github.io/inversiones/Movimientos.xlsx`).
+- **Plantillas de ejemplo:** `Movimientos.xlsm` (Excel de escritorio con macros; descarga desde
+  `https://mory8000.github.io/inversiones/Movimientos.xlsm`) y `Movimientos.xlsx` (sin macros,
+  `https://mory8000.github.io/inversiones/Movimientos.xlsx`). Ambas están en la raíz y en `public/`.
+  La exportación desde la app descarga `.xlsm`; solo activa las macros si confías en el archivo.
 
 El archivo contiene dos hojas, **Movimientos** y **Gráficos**. El «Gráfico del dinero» solo está en la app, no en el Excel:
 
@@ -285,9 +287,9 @@ El archivo contiene dos hojas, **Movimientos** y **Gráficos**. El «Gráfico de
   **elimina o cambia todas sus referencias en De/A**; no hace falta escribir ni borrar la fórmula del
   nombre en el resumen. El titular se deduce del origen si este es una cuenta/inversión visible; en
   los demás casos se asigna el primero y se puede corregir en G. El % de rentabilidad se escribe en
-  I. **Al eliminar un nombre anterior, revisa G e I de las filas libres:** las filas se compactan y
-  los valores escritos a mano allí no se desplazan con el nombre. Los nombres de productos ya
-  cerrados se conservan como históricos y no se dan de alta otra vez. Esta alta trata los nombres
+  I. En el `.xlsx` sin macros, **revisa G e I al borrar nombres anteriores**: los valores escritos
+  a mano pueden quedar en otra fila. En el `.xlsm` la macro conserva titular y % por nombre.
+  Los nombres de productos cerrados se conservan como históricos y no se dan de alta otra vez. Esta alta trata los nombres
   nuevos como inversiones, no crea cuentas nuevas ni cambia los datos guardados en la app: si quieres
   persistirlos en el navegador, créalos allí y descarga otro Excel. Tras las siete altas simultáneas
   hay que descargar un libro con más filas o ampliar el generador.
@@ -297,12 +299,14 @@ El archivo contiene dos hojas, **Movimientos** y **Gráficos**. El «Gráfico de
   mantienen separados con el nombre del titular en lugar de mezclar el dinero de dos personas.
 - Si dos productos se llaman igual, el segundo lleva un **2** al final («iShares… Index» e «iShares…
   Index 2»): así el dinero va al que corresponde.
-- **Cero al descargar frente a cambiar a cero:** un movimiento que **ya está a cero** se
-  conserva en el Excel con su fecha, origen, destino e importe 0. Lo que quieres limpiar es un
-  movimiento que **era positivo y se cambia a 0**. La app y un archivo `.xlsx` normal no pueden
-  detectar ese cambio anterior ni borrar otras celdas automáticamente. La macro opcional que
-  incluyo abajo lo hace en Excel al cambiar un único importe positivo a 0: vacía **De, A e Importe**
-  de esa fila y pone **Fecha = hoy**. Si ya estaba a cero, no lo toca.
+- **Cero y filas vacías en el `.xlsm`:** al cambiar **un importe positivo a 0**, la macro limpia
+  **De, A e Importe**, desplaza los demás movimientos hacia arriba con sus fechas y deja una fila
+  vacía al final con Fecha = hoy. En el resumen, elimina la inversión si ya no tiene capital,
+  sube las filas inferiores y recalcula titular, capital, porcentaje, euros y saldo. Los cambios
+  manuales de titular y porcentaje se guardan por **nombre de inversión**, para que no se atribuyan
+  a otra al subir las filas. Un movimiento que **ya era 0** en la exportación se conserva.
+  Al escribir un nombre nuevo en De/A, el resumen lo incorpora en las plazas disponibles.
+  Sin macros, el `.xlsx` puede recalcular, pero no borrar B/C ni desplazar movimientos editables.
 - Después, el total de cada cuenta (si el titular tiene más de una), el de cada **titular** (si solo
   tiene una cuenta, el renglón la identifica, por ejemplo «Total Cuenta Luis») y el **TOTAL**.
 - **«Gráficos»**: gráficos por titular de las cuentas y sus inversiones juntas, con tres barras
@@ -312,29 +316,32 @@ El archivo contiene dos hojas, **Movimientos** y **Gráficos**. El «Gráfico de
 - Si entran **1.000 € de Exterior en Cuenta Luis** y después **400 € salen de ella al Fondo ahorro**,
   en Movimientos aparecen ambos apuntes y la cuenta queda con **600 €** en el resumen. El fondo
   recibe sus 400 €; no se suman a la cuenta de Luis.
-- **Protegida:** solo se puede escribir en los movimientos, en el titular y % de las filas nuevas y en
-  el % de cada cuenta o inversión; los nombres y cálculos automáticos están protegidos. Para borrar
-  una inversión creada en el Excel, limpia sus referencias en De/A en vez de borrar una fila del
-  resumen. Sin contraseña: «Revisar → Desproteger hoja».
+- **Protegida:** se pueden editar movimientos y el titular y % de las inversiones (las fórmulas
+  siguen protegidas). En el `.xlsm`, para quitar una inversión limpia sus movimientos en De/A o
+  pon a 0 sus importes positivos: el resumen se compacta solo. Sin contraseña: «Revisar →
+  Desproteger hoja».
 - Todo son fórmulas (`SUMIFS`) envueltas en `SI.ERROR`: una celda sin datos sale en blanco, nunca
   con `#¡VALOR!`.
 
-### Limpieza automática al cambiar un importe positivo a cero (Excel de escritorio)
+### Edición automática en Excel de escritorio (.xlsm)
 
-El archivo público `.xlsx` **no contiene macros**. Si aceptas habilitar una en tu propia copia:
+Descarga `Movimientos.xlsm` de la app o la plantilla. Ábrelo en Excel de escritorio y habilita
+**macros** solo si confías en este proyecto; Excel web, Google Sheets y el `.xlsx` no las ejecutan.
+En Windows, si Microsoft bloquea macros de archivos descargados, revisa las propiedades del
+archivo («Desbloquear») o usa una ubicación de confianza. Al editar De/A, Importe, Titular o
+Rentab. %, la macro reorganiza movimientos y resumen sin alterar los importes de otras filas.
+Guarda como `.xlsm` para conservar el comportamiento. No copies las cifras de tus inversiones a
+la plantilla pública: exporta de nuevo tus datos desde la app. La edición del Excel no modifica
+los datos del navegador.
 
-1. Descarga `Movimientos.xlsx` y ábrelo en Excel de escritorio.
-2. Pulsa **Alt + F11**. En la columna izquierda, abre **Microsoft Excel Objects → Movimientos**
-   (la hoja del libro). No elijas «Insertar módulo».
-3. Copia allí todo el texto de `scripts/LimpiarMovimientoAlPonerCero.vba` de este proyecto.
-4. Cierra el editor. Ve a **Archivo → Guardar como → Libro de Excel habilitado para macros (*.xlsm)**.
-5. Al abrir tu copia `.xlsm`, Excel te preguntará si permites macros. Solo actívalas si confías en
-   tu archivo. Al cambiar **una** celda de Importe de un número positivo a **0**, se vacían las
-   columnas **B, C y D** de esa fila y la **A** recibe la fecha actual de tu ordenador. Un cero que
-   ya estaba ahí, un importe vacío o un pegado de varias celdas no borran nada.
-
-Si no quieres macros, puedes borrar manualmente De, A e Importe y poner la fecha actual. No afirmamos
-que el `.xlsx` pueda hacerlo solo.
+El código auditable está en `scripts/MovimientosAutomaticos.vba` y
+`scripts/ThisWorkbook.vba`. El proyecto VBA incluido en `src/lib/vbaProject.bin` se puede
+regenerar con `python -m pip install pyopenvba && python scripts/generar-vba-project.py`.
+El script anterior `scripts/LimpiarMovimientoAlPonerCero.vba` permanece como opción simple para
+quien utilice un archivo anterior y prefiera añadir manualmente solo la limpieza del cero.
+**No hemos podido ejecutar Excel de escritorio en esta máquina**: se comprueba el paquete
+`.xlsm` y se extrae su código VBA, pero conviene probar la macro en una copia antes de usarla
+con tus datos definitivos.
 
 Para volver a generar la plantilla (los nombres se cambian arriba del script):
 

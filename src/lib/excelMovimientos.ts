@@ -101,7 +101,7 @@ const FECHA = 'dd/mm/yyyy'
 const hexArgb = (hex: string) => `FF${hex.replace('#', '').toUpperCase()}`
 
 /** Deja el nombre en corto: fuera lo que va entre paréntesis y lo que sobre de 30 letras. */
-function acortar(nombre: string): string {
+export function acortarNombreExcel(nombre: string): string {
   let s = nombre
     .replace(/\s*\([^)]*\)/g, ' ')
     .replace(/\s+/g, ' ')
@@ -123,12 +123,12 @@ function nombresCortos(entrada: EntradaExcel) {
   const cuenta = (nombre: string) => conteo.set(nombre, (conteo.get(nombre) ?? 0) + 1)
   for (const t of entrada.titulares)
     for (const g of t.grupos) {
-      if (g.cuenta) cuenta(acortar(g.cuenta))
-      for (const i of g.inversiones) cuenta(acortar(i.nombre))
+      if (g.cuenta) cuenta(acortarNombreExcel(g.cuenta))
+      for (const i of g.inversiones) cuenta(acortarNombreExcel(i.nombre))
     }
   const visto = new Map<string, number>()
   const asignar = (nombre: string) => {
-    const corto = acortar(nombre)
+    const corto = acortarNombreExcel(nombre)
     if ((conteo.get(corto) ?? 0) <= 1) return corto
     const n = (visto.get(corto) ?? 0) + 1
     visto.set(corto, n)
@@ -402,6 +402,9 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
   const nombreDe = nombres.siguiente
   let fila = RES_1
   let numeroConcepto = 0
+  // Catálogo estable para el .xlsm: el titular y el porcentaje viajan con el nombre
+  // aunque una edición desplace las filas visibles del resumen.
+  const catalogo: { nombre: string; titular: string; pct: number | null; clase: string }[] = []
 
   const especial = (nombre: string) => {
     poner(fila, COL.nombre, nombre, { font: { italic: true, bold: true, size: 10, color: { argb: TINTA } } })
@@ -441,12 +444,14 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
     poner(fila, COL.euros, { formula: fEuros(fila, cierra) }, { numFmt: MONEDA, font: letra() })
     poner(fila, COL.saldo, { formula: fSaldoInversion(fila, cierra) }, { numFmt: MONEDA, font: letra() })
     if (!esLibre) for (let c = COL.nombre; c <= COL.saldo; c++) celda(fila, c).border = bordeFino
-    // El nombre viene de De/A y su fórmula queda protegida; el titular y % se pueden corregir.
-    if (esLibre)
-      for (const c of [COL.titular, COL.pct]) celda(fila, c).protection = { locked: false }
-    // La rentabilidad se puede escribir en cualquier fila: cuentas, inversiones y filas nuevas.
+    // El nombre automático y los cálculos siguen protegidos. El titular (también en filas
+    // desplazadas por la macro) y el porcentaje pueden corregirse para cualquier inversión.
+    celda(fila, COL.titular).protection = { locked: false }
     celda(fila, COL.pct).protection = { locked: false }
-    if (op.nombre) numeroConcepto++
+    if (op.nombre) {
+      numeroConcepto++
+      catalogo.push({ nombre: op.nombre, titular: op.titular, pct: op.pct ?? null, clase: op.clase })
+    }
     fila++
   }
 
@@ -594,6 +599,16 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
     })
 
   const RES_N = fila - 1
+  for (const c of [19, 20, 21, 22, 23]) ws.getColumn(c).hidden = true
+  for (const [i, item] of catalogo.entries()) {
+    const f = RES_1 + i
+    poner(f, 19, item.nombre)
+    poner(f, 20, item.titular)
+    if (item.pct !== null) poner(f, 21, item.pct)
+    poner(f, 22, item.clase)
+  }
+  poner(RES_1, 23, RES_N) // W6: final del bloque del resumen, sin los totales.
+  poner(RES_1 + 2, 23, titulares[0]?.nombre ?? '') // W8: titular por defecto.
   const rango = (c: Col) => `$${L[c]}$${RES_1}:$${L[c]}$${RES_N}`
 
   // El color de cada fila lo marca su titular: así quedan también las inversiones que añadas.
@@ -681,7 +696,7 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
     poner(f, 1, texto, { font: { size: 9, italic: true, color: { argb: GRIS } } })
   }
   nota(FILA_TOTAL + 2, 'Para añadir un fondo o cartera: escribe un nombre nuevo en De/A (hasta siete). Se refleja en el resumen; para quitarlo, elimina todas sus referencias De/A. Revisa el titular y % al borrar nombres anteriores.')
-  nota(FILA_TOTAL + 3, 'Al poner 0 en un .xlsx no se borra solo. Para eliminarlo, borra De, A e Importe y pon Fecha a hoy. Si quieres que lo haga automáticamente SOLO al cambiar de positivo a 0, sigue las instrucciones de la macro opcional en README.md.')
+  nota(FILA_TOTAL + 3, 'En el .xlsm, habilita macros en Excel de escritorio: al pasar un importe positivo a 0, De/A se limpian y los movimientos restantes suben. En el .xlsx sin macros hay que hacerlo a mano. Un movimiento que ya venía a 0 se conserva.')
 
   // ── Desplegables ─────────────────────────────────────────────────────────
   const NOMBRES = 'ListaNombres'

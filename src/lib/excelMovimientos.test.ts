@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 import JSZip from 'jszip'
 import ExcelJS from 'exceljs'
 import { generarExcelMovimientos, type EntradaExcel } from './excelMovimientos'
+import { generarExcelMovimientosMacro } from './excelMovimientosMacro'
 import { entradaDesdeApp } from './excelDesdeApp'
 import { crearExcelDeApp } from './descargarExcelMovimientos'
 import { buildFlowGraph } from './flow'
@@ -105,6 +106,29 @@ const nombresDelResumen = (hoja: ExcelJS.Worksheet) => {
 }
 
 describe('el Excel de movimientos', () => {
+  it('entrega un .xlsm con proyecto VBA, eventos de hoja/libro y catálogo estable por nombre', async () => {
+    const buffer = await generarExcelMovimientosMacro(ENTRADA)
+    const zip = await JSZip.loadAsync(buffer)
+    const bin = await zip.file('xl/vbaProject.bin')!.async('uint8array')
+    expect([...bin.slice(0, 8)]).toEqual([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1])
+    const tipos = await xml(zip, '[Content_Types].xml')
+    expect(tipos).toContain('application/vnd.ms-excel.sheet.macroEnabled.main+xml')
+    expect(tipos).toContain('application/vnd.ms-office.vbaProject')
+    expect(await xml(zip, 'xl/_rels/workbook.xml.rels')).toContain('relationships/vbaProject')
+    expect(await xml(zip, 'xl/workbook.xml')).toContain('codeName="ThisWorkbook"')
+    expect(await xml(zip, 'xl/worksheets/sheet1.xml')).toContain('codeName="Sheet1"')
+    expect(await xml(zip, 'xl/worksheets/sheet2.xml')).toContain('codeName="Sheet2"')
+    const libro = new ExcelJS.Workbook()
+    await libro.xlsx.load(buffer)
+    const hoja = libro.getWorksheet('Movimientos')!
+    expect(hoja.getCell('W6').value).toBeGreaterThan(7)
+    expect(hoja.getCell('W8').value).toBe('Marta')
+    const i = filaDe(hoja, 'Vanguard Global Stock Index')
+    const catalogo = Array.from({ length: 9 }, (_, f) => [hoja.getCell(`S${6 + f}`).value, hoja.getCell(`T${6 + f}`).value])
+    expect(catalogo).toContainEqual(['Vanguard Global Stock Index', 'Marta'])
+    expect(hoja.getCell(`I${i}`).value).toBe(0.1)
+  })
+
   it('escribe los movimientos, con su fecha, su origen y su destino', async () => {
     const { hoja } = await generar()
     expect(hoja.getCell('B6').value).toBe('Exterior')
@@ -708,6 +732,32 @@ describe('el Excel se llena con los datos de la app', () => {
     const entrada = entradaDesdeApp(fin(ds, [titular('t1', 'Marta')]), HOY)
     expect(entrada.titulares[0].grupos.flatMap((g) => g.inversiones.map((i) => i.nombre))).toEqual(['Gamma Global'])
     expect(entrada.movimientos[0].a).toBe('Gamma Global')
+  })
+
+  it('separa los importes de dos inversiones con el mismo nombre en distintos titulares', async () => {
+    const ds = {
+      cuentas: [cuenta('c1', 'Cuenta Luis', 't1'), cuenta('c2', 'Cuenta ahorro', 't2')],
+      productos: [producto('p1', 'Fondo Global de Prueba', 't1'), producto('p2', 'Fondo Global de Prueba', 't2')],
+      movimientos: [
+        movimiento('2026-10-15', 'c1', 'p1', 120),
+        movimiento('2026-10-16', 'c2', 'p2', 60),
+      ],
+    } as unknown as Dataset
+    const entrada = entradaDesdeApp(fin(ds, [titular('t1', 'Luis'), titular('t2', 'Fondo ahorro')]), HOY)
+    expect(entrada.movimientos.map((m) => m.a)).toEqual([
+      'Fondo Global de Prueba', 'Fondo Global de Prueba 2',
+    ])
+    expect(entrada.titulares.map((t) => t.grupos.flatMap((g) => g.inversiones.map((i) => i.nombre))))
+      .toEqual([['Fondo Global de Prueba'], ['Fondo Global de Prueba 2']])
+    const { hoja } = await generar(entrada)
+    const primera = filaDe(hoja, 'Fondo Global de Prueba')
+    const segunda = filaDe(hoja, 'Fondo Global de Prueba 2')
+    expect((hoja.getCell(`H${primera}`).value as { formula: string }).formula)
+      .toContain('"Fondo Global de Prueba"')
+    expect((hoja.getCell(`H${segunda}`).value as { formula: string }).formula)
+      .toContain('"Fondo Global de Prueba 2"')
+    expect(hoja.getCell(`G${primera}`).value).toBe('Luis')
+    expect(hoja.getCell(`G${segunda}`).value).toBe('Fondo ahorro')
   })
 
   it('pone cada inversión debajo de la cuenta que la paga', () => {

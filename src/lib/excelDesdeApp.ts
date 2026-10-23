@@ -11,6 +11,7 @@
 import type { EntityRef, Movimiento } from '../types'
 import type { FinanceData } from '../store/useFinance'
 import { nombreCuentaLuis } from './titulares'
+import { acortarNombreExcel } from './excelMovimientos'
 import type { EntradaExcel, GrupoExcel, InversionExcel, MovimientoExcel } from './excelMovimientos'
 
 export function entradaDesdeApp(fin: FinanceData, hoy: string): EntradaExcel {
@@ -37,13 +38,33 @@ export function entradaDesdeApp(fin: FinanceData, hoy: string): EntradaExcel {
   const titularesPorId = new Map(fin.titulares.map((tf) => [tf.titular.id, tf.titular.nombre]))
   // Si distintos titulares tienen este fondo, conservar dos filas distinguibles, nunca sumar
   // cantidades entre personas ni volver a crear un ambiguo «Gamma Global 2».
-  const nombreProducto = new Map(ds.productos.map((p) => {
+  const nombresIniciales = new Map(ds.productos.map((p) => {
     const principal = productosPorId.get(idExportado(p.id)) ?? p
     const nombre = gamma(p.nombre)
       ? `Gamma Global${baseGamma.size > 1 ? ` · ${titularesPorId.get(principal.titularId) ?? principal.titularId}` : ''}`
       : principal.nombre
     return [p.id, nombre]
   }))
+  // Dos productos con el mismo nombre corto deben tener destinos DISTINTOS también en los
+  // movimientos. Antes, la tabla del resumen añadía un «2», pero el mapa por nombre largo
+  // enviaba las aportaciones de ambos a la segunda fila (como en la captura del usuario).
+  const idsDistintos = [...new Set(ds.productos.map((p) => idExportado(p.id)))]
+  const totalesNombres = new Map<string, number>()
+  for (const id of idsDistintos) {
+    const clave = acortarNombreExcel(nombresIniciales.get(id) ?? '').toLocaleLowerCase()
+    totalesNombres.set(clave, (totalesNombres.get(clave) ?? 0) + 1)
+  }
+  const vistos = new Map<string, number>()
+  const nombresUnicos = new Map<string, string>()
+  for (const id of idsDistintos) {
+    const corto = acortarNombreExcel(nombresIniciales.get(id) ?? '')
+    const clave = corto.toLocaleLowerCase()
+    const numero = (vistos.get(clave) ?? 0) + 1
+    vistos.set(clave, numero)
+    const sufijo = (totalesNombres.get(clave) ?? 0) > 1 && numero > 1 ? ` ${numero}` : ''
+    nombresUnicos.set(id, `${corto.slice(0, 30 - sufijo.length).trimEnd()}${sufijo}`)
+  }
+  const nombreProducto = new Map(ds.productos.map((p) => [p.id, nombresUnicos.get(idExportado(p.id)) ?? p.nombre]))
   const posicionExportada = (id: string) => {
     const ids = [id, ...[...fusion].filter(([, principal]) => principal === id).map(([alias]) => alias)]
     return ids.map((key) => fin.positions.get(key)).filter((pos) => !!pos)
