@@ -1,5 +1,5 @@
 /**
- * Genera «Movimientos.xlsx» (sin macros) y «Movimientos.xlsm» (como descarga la app),
+ * Genera «Movimientos.xlsx» (sin macros, como descarga la app),
  * con datos ficticios de ejemplo y unos cuantos movimientos.
  *
  * Uso:
@@ -12,7 +12,6 @@ import { writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { generarExcelMovimientos } from '../src/lib/excelMovimientos.ts'
-import { generarExcelMovimientosMacro } from '../src/lib/excelMovimientosMacro.ts'
 
 const aqui = dirname(fileURLToPath(import.meta.url))
 const RAIZ = resolve(aqui, '..')
@@ -73,7 +72,4 @@ const PLANTILLA = {
 const buffer = Buffer.from(await generarExcelMovimientos(PLANTILLA))
 writeFileSync(resolve(RAIZ, 'Movimientos.xlsx'), buffer)
 writeFileSync(resolve(RAIZ, 'public', 'Movimientos.xlsx'), buffer)
-const macro = Buffer.from(await generarExcelMovimientosMacro(PLANTILLA))
-writeFileSync(resolve(RAIZ, 'Movimientos.xlsm'), macro)
-writeFileSync(resolve(RAIZ, 'public', 'Movimientos.xlsm'), macro)
-console.log('✅ Movimientos.xlsx y Movimientos.xlsm (con sus copias en public/)')
+console.log('✅ Movimientos.xlsx (con su copia en public/)')

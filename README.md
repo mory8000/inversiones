@@ -256,10 +256,8 @@ Hay dos formas de tenerlo:
   los filtros de la página, tus cuentas, tus inversiones y la rentabilidad de cada una. Es la misma
   hoja que la plantilla, pero ya rellena. Si cambias datos en la app después de descargar el libro,
   descarga uno nuevo: un archivo ya guardado no se sincroniza con el navegador.
-- **Plantillas de ejemplo:** `Movimientos.xlsm` (Excel de escritorio con macros; descarga desde
-  `https://mory8000.github.io/inversiones/Movimientos.xlsm`) y `Movimientos.xlsx` (sin macros,
-  `https://mory8000.github.io/inversiones/Movimientos.xlsx`). Ambas están en la raíz y en `public/`.
-  La exportación desde la app descarga `.xlsm`; solo activa las macros si confías en el archivo.
+- **Plantilla de ejemplo:** [`Movimientos.xlsx`](https://mory8000.github.io/inversiones/Movimientos.xlsx),
+  sin macros, en la raíz y en `public/`. La exportación desde la app también descarga `.xlsx`.
 
 El archivo contiene dos hojas, **Movimientos** y **Gráficos**. El «Gráfico del dinero» solo está en la app, no en el Excel:
 
@@ -277,9 +275,10 @@ El archivo contiene dos hojas, **Movimientos** y **Gráficos**. El «Gráfico de
   ingresos acumulados en el origen × (1 + rentabilidad indicada) − salidas anteriores, hasta la
   fecha de ese movimiento. Por ejemplo, con 1.000 € en Metal y 2 % (20 €), puedes mover
   **1.020 € a la cuenta** y Metal queda a **0 €**; si ya habías sacado 500 €, todavía puedes
-  sacar **520 €**, no 510 €. La validación impide superar lo disponible; en el `.xlsm`, la macro
-  comprueba también los pegados y rechaza cambios que dejarían sin saldo una salida posterior.
-  La rentabilidad del Excel es el porcentaje editable que aparece en ese momento: **no reconstruye
+  sacar **520 €**, no 510 €. La validación de la celda Importe impide una retirada mayor al saldo
+  al introducirla normalmente; **Excel puede omitir esa validación al pegar celdas o modificar
+  movimientos previos**, así que revisa los saldos después de esas operaciones. La rentabilidad
+  del Excel es el porcentaje editable que aparece en ese momento: **no reconstruye
   las valoraciones históricas** cuando se cambia el porcentaje a posteriori.
 - **Exterior** es el dinero que entra (o sale) de fuera. De las **cuentas externas** (las de otro
   banco, la cuenta nómina) **no se ve ningún dato**: no salen ni en el resumen ni en los movimientos,
@@ -294,8 +293,8 @@ El archivo contiene dos hojas, **Movimientos** y **Gráficos**. El «Gráfico de
   **elimina o cambia todas sus referencias en De/A**; no hace falta escribir ni borrar la fórmula del
   nombre en el resumen. El titular se deduce del origen si este es una cuenta/inversión visible; en
   los demás casos se asigna el primero y se puede corregir en G. El % de rentabilidad se escribe en
-  I. En el `.xlsx` sin macros, **revisa G e I al borrar nombres anteriores**: los valores escritos
-  a mano pueden quedar en otra fila. En el `.xlsm` la macro conserva titular y % por nombre.
+  I. **Revisa G e I al borrar nombres anteriores**: los valores escritos a mano pueden quedar
+  en otra fila cuando los nombres automáticos del resumen se reordenen.
   Los nombres de productos cerrados se conservan como históricos y no se dan de alta otra vez. Esta alta trata los nombres
   nuevos como inversiones, no crea cuentas nuevas ni cambia los datos guardados en la app: si quieres
   persistirlos en el navegador, créalos allí y descarga otro Excel. Tras las siete altas simultáneas
@@ -306,14 +305,13 @@ El archivo contiene dos hojas, **Movimientos** y **Gráficos**. El «Gráfico de
   mantienen separados con el nombre del titular en lugar de mezclar el dinero de dos personas.
 - Si dos productos se llaman igual, el segundo lleva un **2** al final («iShares… Index» e «iShares…
   Index 2»): así el dinero va al que corresponde.
-- **Cero y filas vacías en el `.xlsm`:** al cambiar **un importe positivo a 0**, la macro limpia
-  **De, A e Importe**, desplaza los demás movimientos hacia arriba con sus fechas y deja una fila
-  vacía al final con Fecha = hoy. En el resumen, elimina la inversión si ya no tiene capital,
-  sube las filas inferiores y recalcula titular, capital, porcentaje, euros y saldo. Los cambios
-  manuales de titular y porcentaje se guardan por **nombre de inversión**, para que no se atribuyan
-  a otra al subir las filas. Un movimiento que **ya era 0** en la exportación se conserva.
-  Al escribir un nombre nuevo en De/A, el resumen lo incorpora en las plazas disponibles.
-  Sin macros, el `.xlsx` puede recalcular, pero no borrar B/C ni desplazar movimientos editables.
+- **Cero y filas vacías:** un movimiento que **ya venía a 0** en la exportación se conserva.
+  Si editas un importe positivo a 0 en el Excel, limpia también **De y A** manualmente; para
+  compactar las filas de movimientos, mueve las posteriores hacia arriba y deja fecha = hoy en
+  la fila vacía. El resumen recalcula automáticamente sus nombres, pero no puede desplazar
+  físicamente las filas ni trasladar el titular y el % introducidos a mano a otra fila:
+  **comprueba G e I** después de quitar un producto. Si quieres guardar los cambios de forma
+  permanente en la app, edita los movimientos allí y descarga otro Excel.
 - Después, el total de cada cuenta (si el titular tiene más de una), el de cada **titular** (si solo
   tiene una cuenta, el renglón la identifica, por ejemplo «Total Cuenta Luis») y el **TOTAL**.
 - **«Gráficos»**: gráficos por titular de las cuentas y sus inversiones juntas, con tres barras
@@ -324,31 +322,20 @@ El archivo contiene dos hojas, **Movimientos** y **Gráficos**. El «Gráfico de
   en Movimientos aparecen ambos apuntes y la cuenta queda con **600 €** en el resumen. El fondo
   recibe sus 400 €; no se suman a la cuenta de Luis.
 - **Protegida:** se pueden editar movimientos y el titular y % de las inversiones (las fórmulas
-  siguen protegidas). En el `.xlsm`, para quitar una inversión limpia sus movimientos en De/A o
-  pon a 0 sus importes positivos: el resumen se compacta solo. Sin contraseña: «Revisar →
-  Desproteger hoja».
+  siguen protegidas). Para quitar una inversión, limpia sus referencias en De/A en los
+  movimientos; el resumen deja de mostrarla cuando ya no está activa. Sin contraseña:
+  «Revisar → Desproteger hoja».
 - Todo son fórmulas (`SUMIFS`) envueltas en `SI.ERROR`: una celda sin datos sale en blanco, nunca
   con `#¡VALOR!`.
 
-### Edición automática en Excel de escritorio (.xlsm)
+### Edición sin macros
 
-Descarga `Movimientos.xlsm` de la app o la plantilla. Ábrelo en Excel de escritorio y habilita
-**macros** solo si confías en este proyecto; Excel web, Google Sheets y el `.xlsx` no las ejecutan.
-En Windows, si Microsoft bloquea macros de archivos descargados, revisa las propiedades del
-archivo («Desbloquear») o usa una ubicación de confianza. Al editar De/A, Importe, Titular o
-Rentab. %, la macro reorganiza movimientos y resumen sin alterar los importes de otras filas.
-Guarda como `.xlsm` para conservar el comportamiento. No copies las cifras de tus inversiones a
-la plantilla pública: exporta de nuevo tus datos desde la app. La edición del Excel no modifica
-los datos del navegador.
-
-El código auditable está en `scripts/MovimientosAutomaticos.vba` y
-`scripts/ThisWorkbook.vba`. El proyecto VBA incluido en `src/lib/vbaProject.bin` se puede
-regenerar con `python -m pip install pyopenvba && python scripts/generar-vba-project.py`.
-El script anterior `scripts/LimpiarMovimientoAlPonerCero.vba` permanece como opción simple para
-quien utilice un archivo anterior y prefiera añadir manualmente solo la limpieza del cero.
-**No hemos podido ejecutar Excel de escritorio en esta máquina**: se comprueba el paquete
-`.xlsm` y se extrae su código VBA, pero conviene probar la macro en una copia antes de usarla
-con tus datos definitivos.
+El archivo `.xlsx` no requiere habilitar macros. Actualiza los datos en la app y vuelve a
+exportar para obtener un libro coherente con el historial. Las ediciones manuales en Excel no
+se sincronizan con el navegador ni pueden disparar una limpieza o compactación automática de
+filas. La validación del importe se aplica al escribir normalmente en Excel, pero no garantiza
+que se impida pegar valores inválidos o cambiar después un movimiento anterior. Comprueba el
+saldo si haces esas operaciones.
 
 Para volver a generar la plantilla (los nombres se cambian arriba del script):
 

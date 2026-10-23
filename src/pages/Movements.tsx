@@ -96,7 +96,7 @@ export function Movements({ params }: { params: URLSearchParams }) {
         actions={
           <>
             <Button variant="secondary" icon={Download} onClick={() => void exportExcel()} disabled={haciendoExcel}>
-              {haciendoExcel ? 'Generando…' : 'Excel (.xlsm)'}
+              {haciendoExcel ? 'Generando…' : 'Excel (.xlsx)'}
             </Button>
             <Button icon={Plus} onClick={() => openMovement()}>
               Nuevo

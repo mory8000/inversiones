@@ -279,7 +279,7 @@ export function Settings() {
             <Row
               icon={<FileSpreadsheet className="size-[18px]" />}
               title="Descargar el Excel de movimientos"
-              text="Libro .xlsm con movimientos, resumen y gráficos. En Excel de escritorio, habilita las macros para limpiar importes a cero y compactar las filas. Si cambias datos en la app, descárgalo de nuevo."
+              text="Libro .xlsx sin macros con movimientos, resumen y gráficos. Si cambias datos en la app, descárgalo de nuevo. Las filas editadas a cero se limpian manualmente en el Excel."
               action={
                 <Button variant="secondary" size="sm" icon={Download} onClick={() => void exportExcel()} disabled={haciendoExcel}>
                   {haciendoExcel ? 'Generando…' : 'Descargar Excel'}

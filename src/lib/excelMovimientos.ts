@@ -332,8 +332,8 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
     celda(f, COL.fecha).value = new Date(Date.UTC(y, (mo || 1) - 1, d || 1))
   }
 
-  // Una fila que ya estaba a cero no se elimina ni se oculta al descargar. El cambio posterior
-  // de positivo a cero requiere la macro opcional: un .xlsx no tiene eventos de cambio.
+  // Una fila que ya estaba a cero no se elimina ni se oculta al descargar. En un .xlsx
+  // sin macros, al poner una cifra a cero hay que limpiar De/A y ordenar las filas a mano.
   ws.addConditionalFormatting({
     ref: `${L.fecha}${RES_1}:${L.importe}${FILA_MOV_N}`,
     rules: [
@@ -400,8 +400,8 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
   const nombreDe = nombres.siguiente
   let fila = RES_1
   let numeroConcepto = 0
-  // Catálogo estable para el .xlsm: el titular y el porcentaje viajan con el nombre
-  // aunque una edición desplace las filas visibles del resumen.
+  // Catálogo histórico: permite consultar el porcentaje de productos ya cerrados
+  // al validar salidas anteriores, aunque su fila deje de mostrarse en el resumen.
   const catalogo: { nombre: string; titular: string; pct: number | null; clase: string }[] = []
 
   const especial = (nombre: string) => {
@@ -442,8 +442,8 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
     poner(fila, COL.euros, { formula: fEuros(fila, cierra) }, { numFmt: MONEDA, font: letra() })
     poner(fila, COL.saldo, { formula: fSaldoInversion(fila, nombre, cierra) }, { numFmt: MONEDA, font: letra() })
     if (!esLibre) for (let c = COL.nombre; c <= COL.saldo; c++) celda(fila, c).border = bordeFino
-    // El nombre automático y los cálculos siguen protegidos. El titular (también en filas
-    // desplazadas por la macro) y el porcentaje pueden corregirse para cualquier inversión.
+    // El nombre automático y los cálculos siguen protegidos. El titular y el porcentaje
+    // pueden corregirse para cualquier inversión.
     celda(fila, COL.titular).protection = { locked: false }
     celda(fila, COL.pct).protection = { locked: false }
     if (op.nombre) {
@@ -694,7 +694,7 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
     poner(f, 1, texto, { font: { size: 9, italic: true, color: { argb: GRIS } } })
   }
   nota(FILA_TOTAL + 2, 'Para añadir un fondo o cartera: escribe un nombre nuevo en De/A (hasta siete). Se refleja en el resumen; para quitarlo, elimina todas sus referencias De/A. Revisa el titular y % al borrar nombres anteriores.')
-  nota(FILA_TOTAL + 3, 'En el .xlsm, habilita macros en Excel de escritorio: al pasar un importe positivo a 0, De/A se limpian y los movimientos restantes suben. En el .xlsx sin macros hay que hacerlo a mano. Un movimiento que ya venía a 0 se conserva.')
+  nota(FILA_TOTAL + 3, 'Excel .xlsx sin macros: si cambias un importe positivo a 0, limpia De/A a mano y mueve las filas posteriores arriba si quieres compactarlas. Revisa titular y % al quitar productos; los movimientos que ya venían a 0 se conservan.')
 
   // ── Desplegables ─────────────────────────────────────────────────────────
   const NOMBRES = 'ListaNombres'
@@ -716,7 +716,7 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
     const hasta = (c: Col) => `$${L[c]}$${RES_1}:$${L[c]}${f}`
     const previo = `SUMIFS(${hasta('importe')},${hasta('de')},$${L.de}${f},${hasta('fecha')},"<="&$${L.fecha}${f})-$${L.importe}${f}`
     const recibido = `SUMIFS(${hasta('importe')},${hasta('a')},$${L.de}${f},${hasta('fecha')},"<="&$${L.fecha}${f})`
-    // El % del producto cerrado permanece en U aunque la macro retire su fila del resumen.
+    // El % del producto cerrado permanece en U aunque su fila deje de verse en el resumen.
     const pctCatalogo = `INDEX($U$${RES_1}:$U$${FILA_MOV_N},MATCH($${L.de}${f},$S$${RES_1}:$S$${FILA_MOV_N},0))`
     const factorOrigen = `MAX(0,IFERROR(1+VLOOKUP($${L.de}${f},$${L.nombre}$${RES_1}:$${L.pct}$${RES_N},4,FALSE),IFERROR(1+${pctCatalogo},1)))`
     poner(f, 24, { formula: `IFERROR(ROUND(MAX(0,${recibido}*${factorOrigen}-(${previo})),2),0)` })

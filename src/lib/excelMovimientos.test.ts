@@ -4,7 +4,6 @@ import { describe, expect, it } from 'vitest'
 import JSZip from 'jszip'
 import ExcelJS from 'exceljs'
 import { generarExcelMovimientos, type EntradaExcel } from './excelMovimientos'
-import { generarExcelMovimientosMacro } from './excelMovimientosMacro'
 import { entradaDesdeApp } from './excelDesdeApp'
 import { crearExcelDeApp } from './descargarExcelMovimientos'
 import { buildFlowGraph } from './flow'
@@ -106,18 +105,14 @@ const nombresDelResumen = (hoja: ExcelJS.Worksheet) => {
 }
 
 describe('el Excel de movimientos', () => {
-  it('entrega un .xlsm con proyecto VBA, eventos de hoja/libro y catálogo estable por nombre', async () => {
-    const buffer = await generarExcelMovimientosMacro(ENTRADA)
+  it('entrega un .xlsx sin macros y conserva el catálogo histórico para validar saldos', async () => {
+    const buffer = await generarExcelMovimientos(ENTRADA)
     const zip = await JSZip.loadAsync(buffer)
-    const bin = await zip.file('xl/vbaProject.bin')!.async('uint8array')
-    expect([...bin.slice(0, 8)]).toEqual([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1])
+    expect(zip.file('xl/vbaProject.bin')).toBeNull()
     const tipos = await xml(zip, '[Content_Types].xml')
-    expect(tipos).toContain('application/vnd.ms-excel.sheet.macroEnabled.main+xml')
-    expect(tipos).toContain('application/vnd.ms-office.vbaProject')
-    expect(await xml(zip, 'xl/_rels/workbook.xml.rels')).toContain('relationships/vbaProject')
-    expect(await xml(zip, 'xl/workbook.xml')).toContain('codeName="ThisWorkbook"')
-    expect(await xml(zip, 'xl/worksheets/sheet1.xml')).toContain('codeName="Sheet1"')
-    expect(await xml(zip, 'xl/worksheets/sheet2.xml')).toContain('codeName="Sheet2"')
+    expect(tipos).toContain('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml')
+    expect(tipos).not.toContain('macroEnabled')
+    expect(await xml(zip, 'xl/_rels/workbook.xml.rels')).not.toContain('relationships/vbaProject')
     const libro = new ExcelJS.Workbook()
     await libro.xlsx.load(buffer)
     const hoja = libro.getWorksheet('Movimientos')!
@@ -384,7 +379,7 @@ describe('el Excel de movimientos', () => {
     expect(hoja.getCell('D7').value).toBe(0)
     expect((hoja.getCell('A7').value as Date).toISOString().slice(0, 10)).toBe('2026-10-02')
     expect(hoja.getCell('D8').value).toBe(400)
-    // El .xlsx no incorpora una macro: no se puede disparar un cambio de 0 con Worksheet_Change.
+    // El .xlsx no incluye eventos de cambio: pasar a cero requiere limpiar De/A manualmente.
     expect(hoja.getCell('D7').dataValidation.type).toBe('custom')
   })
 
@@ -699,6 +694,7 @@ describe('el Excel se llena con los datos de la app', () => {
       return {
         importes: [excel.getWorksheet('Movimientos')!.getCell('D6').value, excel.getWorksheet('Movimientos')!.getCell('D7').value],
         sinImagen: zip.file(/^xl\/media\//).length === 0,
+        sinMacros: !zip.file('xl/vbaProject.bin'),
         hojas: excel.worksheets.map((h) => h.name),
       }
     }
@@ -711,7 +707,7 @@ describe('el Excel se llena con los datos de la app', () => {
     expect([anterior, nuevo, corregido].map((r) => r.hojas)).toEqual([
       ['Movimientos', 'Gráficos'], ['Movimientos', 'Gráficos'], ['Movimientos', 'Gráficos'],
     ])
-    expect([anterior, nuevo, corregido].every((r) => r.sinImagen)).toBe(true)
+    expect([anterior, nuevo, corregido].every((r) => r.sinImagen && r.sinMacros)).toBe(true)
   })
 
   it('fusiona Gamma Global 2 con Gamma Global del mismo titular sin descartar movimientos ni rentabilidad', async () => {
