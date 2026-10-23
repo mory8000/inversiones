@@ -160,7 +160,7 @@ export function Settings() {
     const ok = await confirmDialog({
       title: '¿Borrar cuentas, productos y movimientos?',
       message:
-        'Se eliminarán las cuentas, productos, movimientos y transferencias mensuales de todos los titulares. Los titulares (y sus nombres) se quedan, y el principal vuelve a tener su cuenta «MyInvestor» vacía. Si te equivocas, pulsa «Deshacer». Te recomendamos descargar antes una copia de seguridad.',
+        'Se eliminarán las cuentas, productos, movimientos y transferencias mensuales de todos los titulares. Los titulares (y sus nombres) se quedan, y el principal vuelve a tener su cuenta con saldo vacía (si se llama Luis, «Cuenta Luis»). Si te equivocas, pulsa «Deshacer». Te recomendamos descargar antes una copia de seguridad.',
       confirmLabel: 'Borrar datos',
       danger: true,
     })

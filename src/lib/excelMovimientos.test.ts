@@ -1,4 +1,4 @@
-// El Excel de movimientos: protegido, sin «#¡VALOR!» y con el recorrido origen → pasos → final.
+// El Excel de movimientos: protegido, sin «#¡VALOR!» y con gráficos de cuentas por titular.
 
 import { describe, expect, it } from 'vitest'
 import JSZip from 'jszip'
@@ -112,6 +112,30 @@ describe('el Excel de movimientos', () => {
     expect(hoja.getCell('D6').value).toBe(1000)
     expect(hoja.getCell('B7').value).toBe('MyInvestor')
     expect(hoja.getCell('C7').value).toBe('Fondo indexado')
+  })
+
+  it('1000 € de Exterior a Cuenta Luis y 400 € al Fondo ahorro dejan 600 € en la cuenta, no 1000 €', async () => {
+    const { hoja } = await generar({
+      hoy: HOY,
+      movimientos: [
+        { fecha: '2026-10-01', de: 'Exterior', a: 'Cuenta Luis', importe: 1000 },
+        { fecha: '2026-10-02', de: 'Cuenta Luis', a: 'Fondo indexado', importe: 400 },
+      ],
+      titulares: [
+        { nombre: 'Luis', color: '#2447B8', grupos: [{ cuenta: 'Cuenta Luis', inversiones: [] }] },
+        { nombre: 'Fondo ahorro', color: '#EA580C', grupos: [{ cuenta: null, inversiones: [{ nombre: 'Fondo indexado', rentabilidad: null }] }] },
+      ],
+    })
+    expect([hoja.getCell('C6').value, hoja.getCell('D6').value]).toEqual(['Cuenta Luis', 1000])
+    expect([hoja.getCell('B7').value, hoja.getCell('D7').value]).toEqual(['Cuenta Luis', 400])
+    const filaCuenta = filaDe(hoja, 'Cuenta Luis')
+    const formula = (hoja.getCell(`H${filaCuenta}`).value as { formula: string }).formula
+    expect(formula).toContain('SUMIFS($D$6:$D$505,$C$6:$C$505,"Cuenta Luis")')
+    expect(formula).toContain('-SUMIFS($D$6:$D$505,$B$6:$B$505,"Cuenta Luis")')
+    const entradas = [6, 7].reduce((n, f) => n + (hoja.getCell(`C${f}`).value === 'Cuenta Luis' ? Number(hoja.getCell(`D${f}`).value) : 0), 0)
+    const salidas = [6, 7].reduce((n, f) => n + (hoja.getCell(`B${f}`).value === 'Cuenta Luis' ? Number(hoja.getCell(`D${f}`).value) : 0), 0)
+    expect(entradas - salidas).toBe(600)
+    expect((hoja.getCell(`H${filaDe(hoja, 'Fondo indexado')}`).value as { formula: string }).formula).toContain('"Fondo indexado"')
   })
 
   it('tiene 500 filas de movimientos, y solo se ve la que toca', async () => {
@@ -256,27 +280,34 @@ describe('el Excel de movimientos', () => {
     expect(libro.getWorksheet('Mapa del dinero')).toBeUndefined()
     const dibujoCuentas = await xml(zip, 'xl/drawings/drawing1.xml')
     expect((dibujoCuentas.match(/<xdr:graphicFrame/g) ?? []).length).toBe(2)
-    const anchuras = [...dibujoCuentas.matchAll(/<xdr:(?:from|to)>\s*<xdr:col>(\d+)<\/xdr:col><xdr:colOff>(\d+)<\/xdr:colOff>/g)]
-    expect(anchuras).toHaveLength(4)
+    const anclas = [...dibujoCuentas.matchAll(/<xdr:twoCellAnchor>([\s\S]*?)<\/xdr:twoCellAnchor>/g)]
+    expect(anclas).toHaveLength(2)
+    const esquina = (ancla: string, tag: 'from' | 'to') => {
+      const inner = ancla.match(new RegExp(`<xdr:${tag}>([\\s\\S]*?)<\\/xdr:${tag}>`))?.[1] ?? ''
+      const n = (prop: string) => Number(inner.match(new RegExp(`<xdr:${prop}>(\\d+)<\\/xdr:${prop}>`))?.[1])
+      return { col: n('col') + n('colOff') / (110 * 9525), row: n('row') + n('rowOff') / (20 * 12700) }
+    }
     for (const [i, nombre] of ['Marta', 'Fondo ahorro'].entries()) {
-      // Cada ancla ocupa 4,8 columnas: 80 % de las 6 que ocupaba antes.
-      const inicio = anchuras[i * 2], fin = anchuras[i * 2 + 1]
-      expect((+fin[1] - +inicio[1]) + (+fin[2] - +inicio[2]) / (110 * 9525)).toBeCloseTo(4.8, 1)
+      const inicio = esquina(anclas[i][1], 'from'), fin = esquina(anclas[i][1], 'to')
+      // Respecto a los 4,8 × 13 de antes: 2,4 columnas (50 %) × 15,6 filas (120 %).
+      expect(fin.col - inicio.col).toBeCloseTo(2.4, 4)
+      expect(fin.row - inicio.row).toBeCloseTo(15.6, 4)
+      expect(inicio.col).toBeCloseTo(i === 0 ? 2.2 : 10.2, 4) // centrados en ambas mitades
       const chart = await xml(zip, `xl/charts/chart${i + 1}.xml`)
       expect(chart).toContain(`<c:v>${nombre}</c:v>`)
       expect((chart.match(/<c:ser>/g) ?? []).length).toBe(3)
       expect(chart).not.toContain('<c:legend>') // leyenda en celdas, lejos de las barras
       expect(chart).not.toContain('<c:majorGridlines')
-      expect(chart).toContain('<c:tickLblPos val="none"/>')
+      expect((chart.match(/<c:tickLblPos val="none"\/>/g) ?? []).length).toBe(2) // sin eje que robe espacio a las etiquetas
       expect(chart).toContain('<c:manualLayout>')
       const total = filaDe(hoja, i === 0 ? 'Total MyInvestor-Marta' : 'Total Fondo ahorro')
       for (const c of ['H', 'J', 'K']) expect(chart).toContain(`$${c}$${total}`)
     }
     const leyenda = libro.getWorksheet('Gráficos')!
     for (const col of ['B', 'J']) {
-      expect(leyenda.getCell(`${col}17`).value).toBe('■ Aportado')
-      expect(leyenda.getCell(`${col}18`).value).toBe('■ Rentabilidad')
-      expect(leyenda.getCell(`${col}19`).value).toBe('■ Aportado + rentabilidad')
+      expect(leyenda.getCell(`${col}20`).value).toBe('■ Aportado')
+      expect(leyenda.getCell(`${col}21`).value).toBe('■ Rentabilidad')
+      expect(leyenda.getCell(`${col}22`).value).toBe('■ Aportado + rentabilidad')
     }
   })
 

@@ -8,7 +8,7 @@ import { isValidISODate, LINEA_DESDE_POR_DEFECTO, todayISO } from '../lib/dates'
 import { buildDemoDataset } from '../lib/demo'
 import { nowStamp, uid } from '../lib/id'
 import { inferMovementType } from '../lib/meta'
-import { conCuentaPrincipal, defaultTitularName } from '../lib/titulares'
+import { conCuentaPrincipal, defaultTitularName, renombrarCuentaLuis } from '../lib/titulares'
 
 /**
  * Versión del formato de datos.
@@ -259,7 +259,7 @@ export function sanitizeData(raw: unknown): PersistedData | null {
   if (version < 4) data = upgradeV4(data)
   if (version < 5) data = upgradeV5(data)
   if (version < 6) data = upgradeV6(data)
-  return { version: DATA_VERSION, ...data, hideAmounts }
+  return { version: DATA_VERSION, ...data, datos: renombrarCuentaLuis(data.datos), ejemplo: data.ejemplo ? renombrarCuentaLuis(data.ejemplo) : null, hideAmounts }
 }
 
 /**

@@ -12,7 +12,7 @@ import { round2 } from '../lib/format'
 import { nowStamp, uid } from '../lib/id'
 import { inferMovementType } from '../lib/meta'
 import { aplicarProgramadas, sincronizarProgramada } from '../lib/programadas'
-import { applyOrder, conCuentaPrincipal, cuentaPrincipal, defaultTitularName, emptyDataset, nuevaCuentaMyInvestor } from '../lib/titulares'
+import { applyOrder, conCuentaPrincipal, cuentaPrincipal, defaultTitularName, emptyDataset, nuevaCuentaMyInvestor, renombrarCuentaLuis } from '../lib/titulares'
 import { DATA_VERSION, sanitizeData } from './sanitize'
 import { aplicarParche, diferencia, ultimoPaso, useHistorial, type Slot } from './historial'
 
@@ -234,7 +234,7 @@ export const useData = create<DataState>()(
         },
         updateTitular: (id, data) =>
           updateDs(
-            (ds) => ({
+            (ds) => renombrarCuentaLuis({
               ...ds,
               titulares: ds.titulares.map((t) => {
                 if (t.id !== id) return t
@@ -288,7 +288,7 @@ export const useData = create<DataState>()(
           const existing = cuentaPrincipal(ds.cuentas, titularId)
           if (existing) return existing.id
           const id = uid()
-          updateDs((d) => ({ ...d, cuentas: [nuevaCuentaMyInvestor(titularId, id, nowStamp()), ...d.cuentas] }), 'Cuenta «MyInvestor» creada')
+          updateDs((d) => renombrarCuentaLuis({ ...d, cuentas: [nuevaCuentaMyInvestor(titularId, id, nowStamp()), ...d.cuentas] }), 'Cuenta principal creada')
           return id
         },
 
@@ -528,7 +528,7 @@ export const useData = create<DataState>()(
           useHistorial.getState().olvidar('datos')
           set({
             version: DATA_VERSION,
-            datos: { ...data.datos, lineaDesde: data.datos.lineaDesde ?? LINEA_DESDE_POR_DEFECTO },
+            datos: renombrarCuentaLuis({ ...data.datos, lineaDesde: data.datos.lineaDesde ?? LINEA_DESDE_POR_DEFECTO }),
             verEjemplo: false,
             hideAmounts: data.hideAmounts,
           })

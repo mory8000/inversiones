@@ -33,7 +33,7 @@ Sustituye al antiguo `Inversiones.xlsx` y mantiene sus mismos conceptos: titular
     línea: «Total 37.998,09 €»), con el mismo fondo azul y la misma caja (icono, nombre e importe) que la ventana
     de la cuenta **MyInvestor**, con el importe más grande para verlo de un vistazo. Las tarjetas siguen con sus cifras por separado. En el ordenador, la tarjeta del
     «Fondo ahorro» y la del total juntas ocupan lo mismo que la del titular principal.
-  - En la del principal está su cuenta **MyInvestor** (con su saldo) y el botón **«Abrir MyInvestor»**.
+  - En la del principal está su cuenta con saldo (en los datos de ejemplo, **MyInvestor**). Si el titular se llama **Luis**, su cuenta principal predeterminada aparece como **Cuenta Luis** en la app y en el Excel; la entidad sigue siendo MyInvestor. Se actualiza también el nombre que estuviera guardado, sin tocar los nombres personalizados ni las cuentas de otros titulares.
   - **Ventana de MyInvestor** (al abrirla): su **saldo real** (positivo o negativo), **Añadir dinero** (desde una
     cuenta externa), **Invertir**, **Programar transferencia mensual**, **Sacar dinero**, sus transferencias
     mensuales (con **Editar**: es el único sitio donde se cambian) y el **dinero añadido desde bancos externos**,
@@ -269,7 +269,7 @@ El archivo contiene dos hojas, **Movimientos** y **Gráficos**. El «Gráfico de
   «Exterior» no tiene límite porque representa dinero que está fuera de este libro.
 - **Resumen** (derecha, columnas F hasta K): cada **cuenta** y, **debajo de ella, las inversiones que
   se pagan desde esa cuenta**, con **Capital aportado · Rentabilidad (% y €) · Saldo**. En las
-  inversiones **y en las cuentas (también Cuenta Myinvestor)** puedes escribir el **%**:
+  inversiones **y en las cuentas (también Cuenta Luis, si el titular es Luis)** puedes escribir el **%**:
   los euros de rentabilidad y el saldo se calculan a partir de lo aportado y ese porcentaje.
   El interés no es un movimiento, va dentro de ese %.
 - **Exterior** es el dinero que entra (o sale) de fuera. De las **cuentas externas** (las de otro
@@ -291,11 +291,14 @@ El archivo contiene dos hojas, **Movimientos** y **Gráficos**. El «Gráfico de
   incluyo abajo lo hace en Excel al cambiar un único importe positivo a 0: vacía **De, A e Importe**
   de esa fila y pone **Fecha = hoy**. Si ya estaba a cero, no lo toca.
 - Después, el total de cada cuenta (si el titular tiene más de una), el de cada **titular** (si solo
-  tiene una cuenta, el renglón lleva los dos nombres: «Total Cuenta Myinvestor-Luis») y el **TOTAL**.
-- **«Gráficos»**: recupera los gráficos por titular de las cuentas y sus inversiones juntas,
-  con tres barras —**Aportado, Rentabilidad y Aportado + rentabilidad**—. Son un **20 % más
-  estrechos**; sus tres etiquetas van en filas separadas debajo del gráfico para que no se pisen
-  ni con las cifras ni entre sí. El eje no repite el nombre del titular y no lleva rejilla.
+  tiene una cuenta, el renglón la identifica, por ejemplo «Total Cuenta Luis») y el **TOTAL**.
+- **«Gráficos»**: gráficos por titular de las cuentas y sus inversiones juntas, con tres barras
+  —**Aportado, Rentabilidad y Aportado + rentabilidad**—. Son un **50 % más estrechos** y un
+  **20 % más altos** que antes. Cada etiqueta va en su propia fila bajo el gráfico; se centran
+  en su mitad de la hoja y se omiten las cifras duplicadas del eje para evitar solapamientos.
+- Si entran **1.000 € de Exterior en Cuenta Luis** y después **400 € salen de ella al Fondo ahorro**,
+  en Movimientos aparecen ambos apuntes y la cuenta queda con **600 €** en el resumen. El fondo
+  recibe sus 400 €; no se suman a la cuenta de Luis.
 - **Protegida:** solo se puede escribir en los movimientos, en las filas amarillas nuevas y en el %
   de cada cuenta o inversión. Se puede elegir cualquier celda y **borrar o añadir filas** (para quitar una
   inversión que llegue a cero o meter una nueva). Sin contraseña: «Revisar → Desproteger hoja».

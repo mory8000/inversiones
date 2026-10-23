@@ -23,7 +23,7 @@ import { buildTimelineMulti, recortarDesde } from '../lib/finance'
 import { buildFlowGraph } from '../lib/flow'
 import { PRODUCT_META, kindMeta } from '../lib/meta'
 import { entityName, movementKind, ownerOf, sortMovementsDesc } from '../lib/movements'
-import { MYINVESTOR, cuentaPrincipal, cuentasConSaldo, isDefaultTitularName } from '../lib/titulares'
+import { MYINVESTOR, cuentaPrincipal, cuentasConSaldo, isDefaultTitularName, nombreCuentaLuis } from '../lib/titulares'
 import { fmtDate, fmtEUR, fmtPct, maskIban } from '../lib/format'
 import { navigate, paths } from '../lib/router'
 import { cn } from '../lib/cn'
@@ -65,6 +65,7 @@ const GLASS = 'rounded-2xl bg-white/[0.07] p-3 ring-1 ring-white/10 sm:p-3.5'
 function CuentasBox({ tf }: { tf: TitularFinance }) {
   const crearCuentaPrincipal = useData((s) => s.crearCuentaPrincipal)
   const cuentas = cuentasConSaldo(tf.ws.cuentas, tf.titular.id)
+  const nombreNueva = nombreCuentaLuis(tf.titular.nombre, MYINVESTOR)
   if (cuentas.length === 0) {
     if (tf.index !== 0) return null
     return (
@@ -74,7 +75,7 @@ function CuentasBox({ tf }: { tf: TitularFinance }) {
             <Landmark className="size-[18px]" />
           </span>
           <div className="min-w-0 flex-1">
-            <div className="text-sm font-semibold">Cuenta principal «{MYINVESTOR}»</div>
+            <div className="text-sm font-semibold">Cuenta principal «{nombreNueva}»</div>
             <p className="mt-0.5 text-[13px] text-white/65">Para apuntar el dinero que traes desde tu cuenta externa y, desde ahí, invertir.</p>
           </div>
         </div>
@@ -84,9 +85,9 @@ function CuentasBox({ tf }: { tf: TitularFinance }) {
           wrap
           icon={Plus}
           className="mt-3 w-full"
-          onClick={() => accion(`Crear la cuenta «${MYINVESTOR}»`, () => crearCuentaPrincipal(tf.titular.id), `Cuenta «${MYINVESTOR}» creada`)}
+          onClick={() => accion(`Crear «${nombreNueva}»`, () => crearCuentaPrincipal(tf.titular.id), `Cuenta «${nombreNueva}» creada`)}
         >
-          Crear la cuenta {MYINVESTOR}
+          Crear {nombreNueva === MYINVESTOR ? 'la cuenta ' : ''}{nombreNueva}
         </Button>
       </div>
     )

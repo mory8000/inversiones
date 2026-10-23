@@ -52,7 +52,23 @@ export const emptyDataset = (titulares: Titular[]): Dataset => ({ titulares, cue
 
 /** Nombre de la cuenta principal que la app crea al titular principal. */
 export const MYINVESTOR = 'MyInvestor'
+export const CUENTA_LUIS = 'Cuenta Luis'
 export const MYINVESTOR_COLOR = '#6366F1'
+
+/** Solo la cuenta principal de Luis cambia de nombre; la entidad sigue siendo MyInvestor. */
+export function nombreCuentaLuis(nombreTitular: string | undefined, nombreCuenta: string): string {
+  return nombreTitular?.trim().toLocaleLowerCase('es') === 'luis' && /^(?:cuenta\s+)?my\s*investor$/i.test(nombreCuenta.trim())
+    ? CUENTA_LUIS
+    : nombreCuenta
+}
+
+/** Migra nombres predeterminados (también los guardados en versiones anteriores), sin tocar nombres personalizados. */
+export function renombrarCuentaLuis(ds: Dataset): Dataset {
+  const ids = new Set(ds.titulares.filter((t) => t.nombre.trim().toLocaleLowerCase('es') === 'luis')
+    .map((t) => cuentaPrincipal(ds.cuentas, t.id)?.id).filter((id): id is string => !!id))
+  if (!ds.cuentas.some((c) => ids.has(c.id) && nombreCuentaLuis('Luis', c.nombre) !== c.nombre)) return ds
+  return { ...ds, cuentas: ds.cuentas.map((c) => ids.has(c.id) ? { ...c, nombre: nombreCuentaLuis('Luis', c.nombre) } : c) }
+}
 
 const simple = (s: string) =>
   s
@@ -87,18 +103,19 @@ export function nuevaCuentaMyInvestor(titularId: string, id: string, createdAt: 
  */
 export function conCuentaPrincipal(ds: Dataset, newId: () => string, stamp: string): Dataset {
   const t = ds.titulares[0]
-  if (!t || cuentaPrincipal(ds.cuentas, t.id)) return ds
+  if (!t) return ds
+  if (cuentaPrincipal(ds.cuentas, t.id)) return renombrarCuentaLuis(ds)
   const propias = ds.cuentas.filter((c) => c.titularId === t.id)
   const porNombre = propias.find((c) => simple(c.nombre) === simple(MYINVESTOR))
-  if (porNombre) return { ...ds, cuentas: ds.cuentas.map((c) => (c.id === porNombre.id ? { ...c, externa: false } : c)) }
+  if (porNombre) return renombrarCuentaLuis({ ...ds, cuentas: ds.cuentas.map((c) => (c.id === porNombre.id ? { ...c, externa: false } : c)) })
   const principal = propias.find((c) => /principal/.test(simple(c.nombre)))
   if (principal) {
-    return {
+    return renombrarCuentaLuis({
       ...ds,
       cuentas: ds.cuentas.map((c) => (c.id === principal.id ? { ...c, nombre: MYINVESTOR, entidad: c.entidad || MYINVESTOR, externa: false } : c)),
-    }
+    })
   }
-  return { ...ds, cuentas: [nuevaCuentaMyInvestor(t.id, newId(), stamp), ...ds.cuentas] }
+  return renombrarCuentaLuis({ ...ds, cuentas: [nuevaCuentaMyInvestor(t.id, newId(), stamp), ...ds.cuentas] })
 }
 
 // ── Orden de las inversiones ────────────────────────────────────────────────

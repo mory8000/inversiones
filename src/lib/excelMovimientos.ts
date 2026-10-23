@@ -614,15 +614,15 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
   }
   const filaTotalTitular = new Map<string, number>()
   // Un renglón por titular, seguidos y en orden. Si el titular tiene una sola
-  // cuenta, el renglón lleva los dos nombres («Total Cuenta Myinvestor-Luis»).
+  // cuenta, el renglón lleva cuenta y titular (sin repetir «Luis» en «Total Cuenta Luis»).
   for (const t of titulares) {
     if (t.grupos.length < 1) continue
     filaTotalTitular.set(t.nombre, fila)
     const conInversiones = t.grupos.filter((g) => g.cuenta && g.inversiones.length)
-    const nombre =
-      conInversiones.length === 1 && conInversiones[0].cuenta !== t.nombre
-        ? `Total ${conInversiones[0].cuenta}-${t.nombre}`
-        : `Total ${t.nombre}`
+    const cuenta = conInversiones[0]?.cuenta
+    const nombre = conInversiones.length === 1 && cuenta && cuenta !== t.nombre
+      ? `Total ${cuenta}${cuenta === `Cuenta ${t.nombre}` ? '' : `-${t.nombre}`}`
+      : `Total ${t.nombre}`
     filaTotal(nombre, t.nombre, {
       aportado: sumaTitular('aportado', t.nombre),
       euros: sumaTitular('euros', t.nombre),
@@ -676,18 +676,18 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
   ws.pageSetup.printArea = `A1:O${FILA_TOTAL + 4}`
   ws.pageSetup.printTitlesRow = `1:${FILA_CABECERAS}`
 
-  // ── Gráficos por titular: 20 % más estrechos y con leyenda FUERA de la zona de barras. ───
+  // ── Gráficos por titular: la mitad de ancho y un 20 % más de alto que los anteriores. ───
   const HOJA_GRAFICOS = 'Gráficos'
   const COLS_GRAFICOS = 15
   const FILA_1_G = 4
-  const ALTO_GRAFICO = 13 // Más altura para el título y los valores sobre las tres barras.
-  const SALTO_GRAFICO = ALTO_GRAFICO + 5 // Tres filas de leyenda y dos de aire.
-  // Antes eran 6 columnas: ahora 4,8 (un 20 % menos). 110 px aprox. por columna Excel.
-  const OCHENTA_POR_CIENTO_COLUMNA = Math.round(0.8 * 110 * 9525)
-  const MEDIAS = [
-    { desde: 1, hasta: 5 },
-    { desde: 9, hasta: 13 },
-  ]
+  const ALTO_GRAFICO = 13 * 1.2 // 15,6 filas; el sobrante va en rowOff del ancla.
+  const FILAS_OCUPADAS = Math.ceil(ALTO_GRAFICO)
+  const SALTO_GRAFICO = FILAS_OCUPADAS + 5 // Tres filas de leyenda y dos de aire.
+  const ANCHO_ANTERIOR = 4.8 // Ya era un 20 % más estrecho que las 6 columnas originales.
+  const ANCHO_GRAFICO = ANCHO_ANTERIOR * 0.5 // 2,4 columnas, centradas en cada mitad de la hoja.
+  const EMU_POR_COLUMNA = 110 * 9525
+  const EMU_POR_FILA = 20 * 12700 // 20 puntos, el alto fijado por aMedida().
+  const MEDIAS = [1, 9] // Mismos centros que antes: una mitad por titular.
   const dibujos: Dibujo[] = []
   const graficos: Omit<OpcionesGrafico, 'desde' | 'hasta'>[] = []
 
@@ -711,10 +711,15 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
   graficos.slice(0, 4).forEach((grafico, i) => {
     const media = MEDIAS[i % 2]
     const arriba = FILA_1_G + Math.floor(i / 2) * SALTO_GRAFICO
+    const inicio = media + (ANCHO_ANTERIOR - ANCHO_GRAFICO) / 2
+    const fin = inicio + ANCHO_GRAFICO
     dibujos.push({
       grafico,
-      desde: { col: media.desde, fila: arriba },
-      hasta: { col: media.hasta, offX: OCHENTA_POR_CIENTO_COLUMNA, fila: arriba + ALTO_GRAFICO },
+      desde: { col: Math.floor(inicio), offX: Math.round((inicio % 1) * EMU_POR_COLUMNA), fila: arriba },
+      hasta: {
+        col: Math.floor(fin), offX: Math.round((fin % 1) * EMU_POR_COLUMNA),
+        fila: arriba + Math.floor(ALTO_GRAFICO), offY: Math.round((ALTO_GRAFICO % 1) * EMU_POR_FILA),
+      },
     })
   })
 
@@ -751,10 +756,10 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
   rotulo(hojaG, 1, 'Gráficos', 16)
   rotulo(hojaG, 2, 'Todo sale de la hoja «Movimientos»: lo que cambies allí, cambia aquí.', 9, true)
   // Etiquetas en celdas, no en la leyenda flotante de Excel: cada una ocupa su fila, así nunca
-  // se montan sobre el dibujo ni sobre los importes aunque se reduzca un 20 % el ancho.
+  // se montan sobre el dibujo ni sobre los importes pese a su menor anchura.
   for (let i = 0; i < puestos; i++) {
     const col = i % 2 === 0 ? 2 : 10
-    const base = FILA_1_G + Math.floor(i / 2) * SALTO_GRAFICO + ALTO_GRAFICO
+    const base = FILA_1_G + Math.floor(i / 2) * SALTO_GRAFICO + FILAS_OCUPADAS
     for (const [j, item] of [
       ['Aportado', 'FF2563EB'],
       ['Rentabilidad', 'FFE67E22'],
@@ -837,7 +842,7 @@ function xmlChart(op: Omit<OpcionesGrafico, 'desde' | 'hasta'>): string {
   const etiquetas = `
             <c:dLbls>
               <c:numFmt formatCode="#,##0 &quot;€&quot;" sourceLinked="0"/>
-              <c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="850" b="1"/></a:pPr><a:endParaRPr/></a:p></c:txPr>
+              <c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="750" b="1"/></a:pPr><a:endParaRPr/></a:p></c:txPr>
               <c:dLblPos val="outEnd"/>
               <c:showLegendKey val="0"/><c:showVal val="1"/><c:showCatName val="0"/><c:showSerName val="0"/>
               <c:showPercent val="0"/><c:showBubbleSize val="0"/>
@@ -874,7 +879,7 @@ function xmlChart(op: Omit<OpcionesGrafico, 'desde' | 'hasta'>): string {
     <c:plotArea>
       <c:layout><c:manualLayout>
         <c:layoutTarget val="inner"/><c:xMode val="edge"/><c:yMode val="edge"/>
-        <c:x val="0.18"/><c:y val="0.18"/><c:w val="0.76"/><c:h val="0.68"/>
+        <c:x val="0.07"/><c:y val="0.14"/><c:w val="0.86"/><c:h val="0.75"/>
       </c:manualLayout></c:layout>
       <c:barChart>
         <c:barDir val="col"/>
@@ -908,7 +913,7 @@ function xmlChart(op: Omit<OpcionesGrafico, 'desde' | 'hasta'>): string {
         <c:numFmt formatCode="#,##0" sourceLinked="0"/>
         <c:majorTickMark val="none"/>
         <c:minorTickMark val="none"/>
-        <c:tickLblPos val="nextTo"/>
+        <c:tickLblPos val="none"/>
         <c:crossAx val="100000001"/>
         <c:crosses val="autoZero"/>
         <c:crossBetween val="between"/>

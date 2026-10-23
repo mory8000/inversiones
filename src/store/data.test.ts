@@ -203,6 +203,52 @@ describe('datos guardados', () => {
   })
 })
 
+describe('Cuenta Luis', () => {
+  it('renombra solo la cuenta principal predeterminada de Luis; 1000 € entran, 400 € van al ahorro y quedan 600 €', async () => {
+    const { useData, finance } = await open(new MemoryStorage())
+    const st = useData.getState()
+    const [luis, ahorro] = st.datos.titulares
+    const cuenta = st.datos.cuentas[0]
+    st.updateTitular(luis.id, { nombre: 'Luis' })
+    st.updateTitular(ahorro.id, { nombre: 'Fondo ahorro' })
+    expect(useData.getState().datos.cuentas[0]).toMatchObject({ id: cuenta.id, nombre: 'Cuenta Luis', entidad: 'MyInvestor' })
+    const externa = st.addCuenta({ titularId: luis.id, nombre: 'Banco externo', entidad: '', iban: '', color: '#aaa', notas: '', externa: true })
+    const fondo = st.addProducto({ titularId: ahorro.id, tipo: 'fondo', nombre: 'Fondo indexado', entidad: '', isin: '', notas: '', tae: null, vencimiento: null })
+    st.addMovimiento({ fecha: '2026-10-01', origen: { kind: 'cuenta', id: externa }, destino: { kind: 'cuenta', id: cuenta.id }, importe: 1000, concepto: '' })
+    st.addMovimiento({ fecha: '2026-10-02', origen: { kind: 'cuenta', id: cuenta.id }, destino: { kind: 'producto', id: fondo }, importe: 400, concepto: '' })
+    const f = finance()
+    expect(f.accounts.get(cuenta.id)?.saldo).toBe(600)
+    expect(f.byTitular.get(luis.id)?.totals.efectivo).toBe(600)
+    expect(f.byTitular.get(luis.id)?.totals.aportadoNeto).toBe(600)
+    expect(f.byTitular.get(ahorro.id)?.totals.patrimonio).toBe(400)
+    const { entradaDesdeApp } = await import('../lib/excelDesdeApp')
+    expect(entradaDesdeApp(f, '2026-10-15').movimientos).toEqual([
+      { fecha: '2026-10-01', de: 'Exterior', a: 'Cuenta Luis', importe: 1000 },
+      { fecha: '2026-10-02', de: 'Cuenta Luis', a: 'Fondo indexado', importe: 400 },
+    ])
+    // Un nombre elegido por la persona no se debe sobrescribir después.
+    st.updateCuenta(cuenta.id, { nombre: 'Mi cuenta personal' })
+    st.updateTitular(luis.id, { codigo: '123' })
+    expect(useData.getState().datos.cuentas[0].nombre).toBe('Mi cuenta personal')
+  })
+
+  it('migra el MyInvestor ya guardado cuando su titular es Luis y no cambia cuentas de otros titulares', async () => {
+    const storage = new MemoryStorage()
+    const { useData } = await open(storage)
+    const st = useData.getState()
+    const [luis, otro] = st.datos.titulares
+    st.updateTitular(luis.id, { nombre: 'Luis' })
+    const otraCuenta = st.crearCuentaPrincipal(otro.id)
+    const copia = saved(storage)
+    copia.state.datos.cuentas.find((c: { titularId: string }) => c.titularId === luis.id).nombre = 'MyInvestor' // Datos antiguos.
+    storage.setItem('mis-inversiones', JSON.stringify(copia))
+    const reopened = await open(storage)
+    const ds = reopened.useData.getState().datos
+    expect(ds.cuentas.find((c) => c.titularId === luis.id)?.nombre).toBe('Cuenta Luis')
+    expect(ds.cuentas.find((c) => c.id === otraCuenta)?.nombre).toBe('MyInvestor')
+  })
+})
+
 describe('entre titulares', () => {
   it('lo que el titular 1 envía al titular 2 cuenta como inversión solo del titular 2', async () => {
     const { useData, finance } = await open(new MemoryStorage())
@@ -451,7 +497,7 @@ describe('cuenta principal «MyInvestor» y cuentas externas (versión 4)', () =
   })
   const v3 = (datos: object) => legacy(3, { datos: { titulares, movimientos: [], programadas: [], productos: [], ...datos }, ejemplo: null, verEjemplo: false, hideAmounts: false })
 
-  it('«Cuenta principal» pasa a llamarse «MyInvestor» y a llevar saldo; lo que va a «Fondo ahorro» pasa de paso y cuenta solo para el otro titular', async () => {
+  it('«Cuenta principal» de Luis pasa a «Cuenta Luis» con saldo; lo que va al ahorro cuenta para el otro titular', async () => {
     const storage = new MemoryStorage()
     storage.setItem(
       'mis-inversiones',
@@ -476,7 +522,7 @@ describe('cuenta principal «MyInvestor» y cuentas externas (versión 4)', () =
     )
     const { useData, finance } = await open(storage)
     let s = useData.getState()
-    expect(s.datos.cuentas).toEqual([expect.objectContaining({ id: 'c1', nombre: 'MyInvestor', externa: false })])
+    expect(s.datos.cuentas).toEqual([expect.objectContaining({ id: 'c1', nombre: 'Cuenta Luis', externa: false })])
     expect(s.datos.programadas[0].origen).toEqual({ kind: 'cuenta', id: 'c1' })
     expect(s.datos.movimientos).toHaveLength(4)
 
@@ -508,18 +554,18 @@ describe('cuenta principal «MyInvestor» y cuentas externas (versión 4)', () =
     expect(saved(storage).version).toBe(6)
     s = useData.getState()
     expect(s.datos.cuentas.map((c) => [c.nombre, c.externa])).toEqual([
-      ['MyInvestor', false],
+      ['Cuenta Luis', false],
       ['BBVA', true],
     ])
   })
 
-  it('si no hay una cuenta así, se crea «MyInvestor» (la primera) y las demás quedan como externas', async () => {
+  it('si no existe cuenta con saldo, se crea «Cuenta Luis» para Luis y las demás quedan externas', async () => {
     const storage = new MemoryStorage()
     storage.setItem('mis-inversiones', v3({ cuentas: [cuenta('c1', 't1', 'Nómina'), cuenta('c2', 't2', 'Cuenta de Fondo ahorro')] }))
     const { useData } = await open(storage)
     const s = useData.getState()
     expect(s.datos.cuentas.map((c) => [c.nombre, c.titularId, c.externa])).toEqual([
-      ['MyInvestor', 't1', false],
+      ['Cuenta Luis', 't1', false],
       ['Nómina', 't1', true],
       ['Cuenta de Fondo ahorro', 't2', true],
     ])
@@ -544,7 +590,7 @@ describe('cuenta principal «MyInvestor» y cuentas externas (versión 4)', () =
     // Se puede crear con un botón (y no se duplica).
     const id = useData.getState().crearCuentaPrincipal('t1')
     expect(useData.getState().crearCuentaPrincipal('t1')).toBe(id)
-    expect(useData.getState().datos.cuentas).toEqual([expect.objectContaining({ id, nombre: 'MyInvestor', externa: false, titularId: 't1' })])
+    expect(useData.getState().datos.cuentas).toEqual([expect.objectContaining({ id, nombre: 'Cuenta Luis', externa: false, titularId: 't1' })])
   })
 
   it('lo que llega a una cuenta con saldo de otro titular cuenta para él; a una externa, todavía no. Para el principal es dinero de paso', async () => {

@@ -10,17 +10,26 @@
 
 import type { EntityRef, Movimiento } from '../types'
 import type { FinanceData } from '../store/useFinance'
+import { nombreCuentaLuis } from './titulares'
 import type { EntradaExcel, GrupoExcel, InversionExcel, MovimientoExcel } from './excelMovimientos'
 
 export function entradaDesdeApp(fin: FinanceData, hoy: string): EntradaExcel {
   const { ds } = fin
-  const nombreCuenta = new Map(ds.cuentas.map((c) => [c.id, c.nombre]))
+  const cuentaPorId = new Map(ds.cuentas.map((c) => [c.id, c]))
   const nombreProducto = new Map(ds.productos.map((p) => [p.id, p.nombre]))
   const externa = new Map(ds.cuentas.map((c) => [c.id, c.externa]))
-  // «Myinvestor» se escribe siempre «Cuenta Myinvestor» (es el nombre que usa quien lleva las cuentas).
-  const bonito = (nombre: string) => (/^my\s*investor$/i.test(nombre.trim()) ? 'Cuenta Myinvestor' : nombre)
-  const nombreDe = (ref: EntityRef) =>
-    bonito(ref.kind === 'cuenta' ? nombreCuenta.get(ref.id) ?? '' : nombreProducto.get(ref.id) ?? '')
+  const titularDe = new Map(fin.titulares.map((tf) => [tf.titular.id, tf.titular.nombre]))
+  const principalDe = new Map(fin.titulares.map((tf) => [tf.titular.id, tf.ws.cuentas.find((c) => !c.externa)?.id]))
+  const bonito = (cuentaId: string) => {
+    const cuenta = cuentaPorId.get(cuentaId)
+    if (!cuenta) return ''
+    const nombre = principalDe.get(cuenta.titularId) === cuentaId
+      ? nombreCuentaLuis(titularDe.get(cuenta.titularId), cuenta.nombre)
+      : cuenta.nombre
+    // Las cuentas MyInvestor de otros titulares conservan su nombre anterior en los Excel.
+    return /^my\s*investor$/i.test(nombre.trim()) ? 'Cuenta Myinvestor' : nombre
+  }
+  const nombreDe = (ref: EntityRef) => ref.kind === 'cuenta' ? bonito(ref.id) : nombreProducto.get(ref.id) ?? ''
 
   // Cuenta que se ha quedado a cero: aunque tenga movimientos históricos, su fila ya no ocupa
   // sitio en el resumen. Los movimientos históricos siguen en la tabla y en el flujo.
@@ -59,7 +68,7 @@ export function entradaDesdeApp(fin: FinanceData, hoy: string): EntradaExcel {
         .filter((p) => conDatos(fin, p.id))
         .filter((p) => cuentaDe(p.id) === cuenta.id)
         .map((p) => ({ nombre: p.nombre, rentabilidad: rentabilidadDe(fin, p.id) }))
-      grupos.push({ cuenta: bonito(cuenta.nombre), inversiones })
+      grupos.push({ cuenta: bonito(cuenta.id), inversiones })
     }
     const sueltos = productos.filter((p) => {
       const id = cuentaDe(p.id)
