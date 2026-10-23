@@ -278,10 +278,23 @@ El archivo contiene dos hojas, **Movimientos** y **Gráficos**. El «Gráfico de
 - Los nombres van **en corto**: se quita lo que va entre paréntesis y se recorta lo que sobra de
   30 letras. Los movimientos se escriben con ese mismo nombre corto: si no, el dinero de una
   inversión con el nombre largo no encontraría su fila y se quedaría a cero.
-- **Añadir o quitar inversiones:** al final del resumen se ve **una sola fila amarilla**. Escribes el
-  nombre (y el titular) y aparece la siguiente; si borras el nombre, la fila desaparece. Entran al
-  momento en los desplegables (que no muestran huecos y crecen solos). Hay **siete filas** y, detrás,
-  **una fila de separación** y los totales, que suben o bajan solos.
+- **Añadir o quitar fondos, carteras y otras inversiones en el Excel:** escribe directamente un **nombre
+  nuevo en De o A** de «Movimientos» (el desplegable permite escribir nombres nuevos). El nombre se
+  incorpora automáticamente a la siguiente de las **siete filas libres** del resumen, con las mismas
+  fórmulas de capital, rentabilidad y saldo, y queda disponible en los desplegables. Para quitarlo,
+  **elimina o cambia todas sus referencias en De/A**; no hace falta escribir ni borrar la fórmula del
+  nombre en el resumen. El titular se deduce del origen si este es una cuenta/inversión visible; en
+  los demás casos se asigna el primero y se puede corregir en G. El % de rentabilidad se escribe en
+  I. **Al eliminar un nombre anterior, revisa G e I de las filas libres:** las filas se compactan y
+  los valores escritos a mano allí no se desplazan con el nombre. Los nombres de productos ya
+  cerrados se conservan como históricos y no se dan de alta otra vez. Esta alta trata los nombres
+  nuevos como inversiones, no crea cuentas nuevas ni cambia los datos guardados en la app: si quieres
+  persistirlos en el navegador, créalos allí y descarga otro Excel. Tras las siete altas simultáneas
+  hay que descargar un libro con más filas o ampliar el generador.
+- **Gamma Global:** al descargar los datos de la app, «Gamma Global 2» y «Gamma Global» de un
+  **mismo titular** se muestran juntos como «Gamma Global»: se conservan todos sus movimientos y
+  se pondera la rentabilidad con el capital de ambos. Si pertenecen a titulares distintos, se
+  mantienen separados con el nombre del titular en lugar de mezclar el dinero de dos personas.
 - Si dos productos se llaman igual, el segundo lleva un **2** al final («iShares… Index» e «iShares…
   Index 2»): así el dinero va al que corresponde.
 - **Cero al descargar frente a cambiar a cero:** un movimiento que **ya está a cero** se
@@ -299,9 +312,10 @@ El archivo contiene dos hojas, **Movimientos** y **Gráficos**. El «Gráfico de
 - Si entran **1.000 € de Exterior en Cuenta Luis** y después **400 € salen de ella al Fondo ahorro**,
   en Movimientos aparecen ambos apuntes y la cuenta queda con **600 €** en el resumen. El fondo
   recibe sus 400 €; no se suman a la cuenta de Luis.
-- **Protegida:** solo se puede escribir en los movimientos, en las filas amarillas nuevas y en el %
-  de cada cuenta o inversión. Se puede elegir cualquier celda y **borrar o añadir filas** (para quitar una
-  inversión que llegue a cero o meter una nueva). Sin contraseña: «Revisar → Desproteger hoja».
+- **Protegida:** solo se puede escribir en los movimientos, en el titular y % de las filas nuevas y en
+  el % de cada cuenta o inversión; los nombres y cálculos automáticos están protegidos. Para borrar
+  una inversión creada en el Excel, limpia sus referencias en De/A en vez de borrar una fila del
+  resumen. Sin contraseña: «Revisar → Desproteger hoja».
 - Todo son fórmulas (`SUMIFS`) envueltas en `SI.ERROR`: una celda sin datos sale en blanco, nunca
   con `#¡VALOR!`.
 

@@ -256,16 +256,17 @@ describe('el Excel de movimientos', () => {
     const { zip, hoja } = await generar()
     const libro = await xml(zip, 'xl/workbook.xml')
     expect(libro).toContain('name="ListaNombres"')
-    expect(libro).toContain('COUNTA(')
+    expect(libro).toContain('COUNTIF(')
     const hojaXml = await xml(zip, 'xl/worksheets/sheet1.xml')
     expect(hojaXml).toContain('<formula1>ListaNombres</formula1>')
-    // Los nombres van seguidos desde la primera fila del resumen: el COUNTA no se equivoca.
+    // Las fórmulas de las filas libres devuelven vacío hasta que aparece un nombre nuevo.
     const hasta = filaDe(hoja, 'Total MyInvestor-Marta')
     const nombres: (string | null)[] = []
     for (let f = 6; f < hasta; f++) nombres.push(hoja.getCell(`F${f}`).value as string | null)
-    const primerVacio = nombres.indexOf(null)
-    expect(primerVacio).toBeGreaterThan(0)
-    expect(nombres.slice(primerVacio).every((n) => n === null)).toBe(true)
+    const primeraLibre = 6 + nombresDelResumen(hoja).length
+    expect(nombres.slice(0, primeraLibre - 6).every((n) => typeof n === 'string')).toBe(true)
+    for (let f = primeraLibre; f < primeraLibre + 7; f++)
+      expect(hoja.getCell(`F${f}`).value).toEqual({ formula: expect.stringContaining('AGGREGATE(') })
   })
 
   it('conserva los gráficos de cuentas, sin la hoja ni imagen del gráfico del dinero', async () => {
@@ -417,14 +418,46 @@ describe('el Excel de movimientos', () => {
     expect(colorDe('Fondo indexado')).toBe('FFEA580C') // naranja del «Fondo ahorro»
   })
 
+  it('detecta altas y bajas desde De/A sin macros, con titular editable, catálogo histórico y fórmulas protegidas', async () => {
+    const entrada: EntradaExcel = { ...ENTRADA, nombresConocidos: ['Fondo cerrado'] }
+    const { hoja, zip } = await generar(entrada)
+    const primeraLibre = 6 + nombresDelResumen(hoja).length
+    const fuenteDe = (hoja.getCell('P6').value as { formula: string }).formula
+    const fuenteA = (hoja.getCell('Q6').value as { formula: string }).formula
+    expect(fuenteDe).toContain('$B6<>""')
+    expect(fuenteDe).toContain('COUNTIF($R$6:')
+    expect(fuenteA).toContain('COUNTIF($B$6:$B$505,$C6)=0')
+    expect(hoja.getColumn('P').hidden).toBe(true)
+    expect(hoja.getColumn('Q').hidden).toBe(true)
+    expect(hoja.getColumn('R').hidden).toBe(true)
+    const catalogo = Array.from({ length: 16 }, (_, i) => hoja.getCell(`R${6 + i}`).value)
+    expect(catalogo).toContain('Fondo cerrado')
+    expect(catalogo).toContain('Exterior')
+    const nombre = (hoja.getCell(`F${primeraLibre}`).value as { formula: string }).formula
+    expect(nombre).toContain('AGGREGATE(')
+    expect(nombre).toContain('$P$6:$P$505')
+    expect(nombre).toContain('$Q$6:$Q$505')
+    expect(hoja.getCell(`F${primeraLibre}`).protection?.locked).not.toBe(false)
+    const dueno = (hoja.getCell(`G${primeraLibre}`).value as { formula: string }).formula
+    expect(dueno).toContain(`MATCH($F${primeraLibre},$C$6:$C$505,0)`)
+    expect(hoja.getCell(`G${primeraLibre}`).protection).toMatchObject({ locked: false })
+    expect(hoja.getCell(`I${primeraLibre}`).protection).toMatchObject({ locked: false })
+    const capital = (hoja.getCell(`H${primeraLibre}`).value as { formula: string }).formula
+    expect(capital).toContain(`$F${primeraLibre}=""`)
+    expect(capital).toContain('SUMIFS(')
+    const bruto = await xml(zip, 'xl/worksheets/sheet1.xml')
+    expect(bruto).toContain('<formula1>ListaNombres</formula1>')
+    expect(bruto).not.toContain('vbaProject')
+  })
+
   it('deja una sola fila amarilla a la vista: al rellenarla sale la siguiente', async () => {
     const { zip, hoja } = await generar()
     const hojaXml = await xml(zip, 'xl/worksheets/sheet1.xml')
     // Siete filas libres: la de arriba a la vista y seis de reserva.
     const nombres = nombresDelResumen(hoja).length
     const LIBRES = 7
-    expect(hoja.getCell(`F${6 + nombres}`).protection).toMatchObject({ locked: false })
-    expect(hoja.getCell(`F${6 + nombres + LIBRES - 1}`).protection).toMatchObject({ locked: false })
+    expect(hoja.getCell(`F${6 + nombres}`).protection?.locked).not.toBe(false)
+    expect(hoja.getCell(`F${6 + nombres + LIBRES - 1}`).protection?.locked).not.toBe(false)
     expect(hoja.getCell(`F${6 + nombres + LIBRES}`).value).toBeNull()
     // Y los totales quedan justo debajo: solo una fila en blanco de separación.
     expect(filaDe(hoja, 'Total MyInvestor-Marta')).toBe(6 + nombres + LIBRES + 1)
@@ -480,9 +513,10 @@ describe('el Excel de movimientos', () => {
     expect(hoja.getCell(`I${filaDe(hoja, 'Vanguard Global Stock Index')}`).protection).toMatchObject({ locked: false })
     expect(hoja.getCell(`F${filaDe(hoja, 'Vanguard Global Stock Index')}`).protection?.locked).not.toBe(false)
     expect(hoja.getCell(`H${filaDe(hoja, 'Vanguard Global Stock Index')}`).protection?.locked).not.toBe(false)
-    // Las filas nuevas: nombre, titular y %.
+    // Las filas nuevas: nombre automático protegido, titular y % editables.
     const primeraLibre = 6 + nombresDelResumen(hoja).length
-    for (const c of ['F', 'G', 'I']) {
+    expect(hoja.getCell(`F${primeraLibre}`).protection?.locked).not.toBe(false)
+    for (const c of ['G', 'I']) {
       expect(hoja.getCell(`${c}${primeraLibre}`).protection).toMatchObject({ locked: false })
     }
     // Los totales, protegidos.
@@ -618,6 +652,62 @@ describe('el Excel se llena con los datos de la app', () => {
       ['Movimientos', 'Gráficos'], ['Movimientos', 'Gráficos'], ['Movimientos', 'Gráficos'],
     ])
     expect([anterior, nuevo, corregido].every((r) => r.sinImagen)).toBe(true)
+  })
+
+  it('fusiona Gamma Global 2 con Gamma Global del mismo titular sin descartar movimientos ni rentabilidad', async () => {
+    const ds = {
+      cuentas: [cuenta('c1', 'Cuenta de origen', 't1'), cuenta('c2', 'Cuenta externa', 't1', true)],
+      productos: [producto('p2', 'Gamma Global 2', 't1'), producto('p1', 'Gamma Global', 't1')],
+      movimientos: [
+        movimiento('2026-10-01', 'c2', 'c1', 500),
+        movimiento('2026-10-02', 'c1', 'p1', 100),
+        movimiento('2026-10-03', 'c1', 'p2', 200),
+      ],
+    } as unknown as Dataset
+    const datos = fin(ds, [titular('t1', 'Marta')])
+    datos.positions.set('p1', { rentabilidad: 0.1, capital: 100, saldo: 110 } as Position)
+    datos.positions.set('p2', { rentabilidad: 0.2, capital: 200, saldo: 240 } as Position)
+    const entrada = entradaDesdeApp(datos, HOY)
+    expect(entrada.movimientos.map((m) => [m.de, m.a, m.importe])).toEqual([
+      ['Exterior', 'Cuenta de origen', 500],
+      ['Cuenta de origen', 'Gamma Global', 100],
+      ['Cuenta de origen', 'Gamma Global', 200],
+    ])
+    const inversiones = entrada.titulares[0].grupos.flatMap((g) => g.inversiones)
+    expect(inversiones).toHaveLength(1)
+    expect(inversiones[0].nombre).toBe('Gamma Global')
+    expect(inversiones[0].rentabilidad).toBeCloseTo(50 / 300, 10)
+    expect(entrada.nombresConocidos).not.toContain('Gamma Global 2')
+    const { hoja, zip } = await generar(entrada)
+    expect(hoja.getCell(`I${filaDe(hoja, 'Gamma Global')}`).value).toBeCloseTo(50 / 300, 10)
+    expect(await xml(zip, 'xl/worksheets/sheet1.xml')).not.toContain('Gamma Global 2')
+  })
+
+  it('mantiene separados a titulares diferentes con Gamma Global, sin crear Gamma Global 2', async () => {
+    const ds = {
+      cuentas: [cuenta('c1', 'Cuenta Marta', 't1'), cuenta('c2', 'Cuenta Ana', 't2')],
+      productos: [producto('p1', 'Gamma Global', 't1'), producto('p2', 'Gamma Global 2', 't2')],
+      movimientos: [movimiento('2026-10-01', 'c1', 'p1', 100), movimiento('2026-10-02', 'c2', 'p2', 200)],
+    } as unknown as Dataset
+    const entrada = entradaDesdeApp(fin(ds, [titular('t1', 'Marta'), titular('t2', 'Ana')]), HOY)
+    const fondos = entrada.titulares.map((t) => [t.nombre, ...t.grupos.flatMap((g) => g.inversiones.map((i) => i.nombre))])
+    expect(fondos).toEqual([['Marta', 'Gamma Global · Marta'], ['Ana', 'Gamma Global · Ana']])
+    expect(entrada.movimientos.map((m) => m.a)).toEqual(['Gamma Global · Marta', 'Gamma Global · Ana'])
+    const { hoja, zip } = await generar(entrada)
+    expect(hoja.getCell(`G${filaDe(hoja, 'Gamma Global · Marta')}`).value).toBe('Marta')
+    expect(hoja.getCell(`G${filaDe(hoja, 'Gamma Global · Ana')}`).value).toBe('Ana')
+    expect(await xml(zip, 'xl/worksheets/sheet1.xml')).not.toContain('Gamma Global 2')
+  })
+
+  it('normaliza Gamma Global 2 aunque sea el único producto Gamma del titular', () => {
+    const ds = {
+      cuentas: [cuenta('c1', 'Cuenta externa', 't1', true)],
+      productos: [producto('p1', 'Gamma Global 2', 't1')],
+      movimientos: [movimiento('2026-10-01', 'c1', 'p1', 200)],
+    } as unknown as Dataset
+    const entrada = entradaDesdeApp(fin(ds, [titular('t1', 'Marta')]), HOY)
+    expect(entrada.titulares[0].grupos.flatMap((g) => g.inversiones.map((i) => i.nombre))).toEqual(['Gamma Global'])
+    expect(entrada.movimientos[0].a).toBe('Gamma Global')
   })
 
   it('pone cada inversión debajo de la cuenta que la paga', () => {

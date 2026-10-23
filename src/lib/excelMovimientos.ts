@@ -15,8 +15,8 @@
  *
  * Todo son fórmulas (SUMIFS) sobre la tabla de movimientos, envueltas en SI.ERROR para que una
  * celda sin datos salga en blanco y no con «#¡VALOR!». Los nombres del resumen alimentan los
- * desplegables (con un nombre definido que crece solo, sin huecos), así que añadir una inversión
- * es escribir su nombre en una fila libre, y quitarla, borrar la fila.
+ * desplegables (con un nombre definido que crece solo, sin huecos). Los nombres nuevos escritos
+ * en De/A alimentan las filas libres del resumen; al borrar sus referencias desaparecen.
  */
 
 // ── Lo que hay que darle al generador ──────────────────────────────────────
@@ -59,8 +59,10 @@ export interface EntradaExcel {
   hoy: string
   titulares: TitularExcel[]
   movimientos: MovimientoExcel[]
-  /** Filas libres al final del resumen para añadir inversiones. */
+  /** Filas libres al final del resumen para añadir inversiones desde De/A. */
   libres?: number
+  /** Productos y cuentas históricos, incluso cerrados: no son altas nuevas. */
+  nombresConocidos?: string[]
 }
 
 // ── Columnas y filas ───────────────────────────────────────────────────────
@@ -152,9 +154,9 @@ function nombresCortos(entrada: EntradaExcel) {
   }
 }
 
-/** RANGO con el que se alimentan los desplegables: solo los nombres escritos, sin huecos. */
+/** RANGO del desplegable: COUNTIF no cuenta las fórmulas que devuelven "" en filas libres. */
 function nombreDefinido(hoja: string, desde: number, hasta: number) {
-  return `OFFSET('${hoja}'!$${L.nombre}$${desde},0,0,MAX(COUNTA('${hoja}'!$${L.nombre}$${desde}:$${L.nombre}$${hasta}),1),1)`
+  return `OFFSET('${hoja}'!$${L.nombre}$${desde},0,0,MAX(COUNTIF('${hoja}'!$${L.nombre}$${desde}:$${L.nombre}$${hasta},"?*"),1),1)`
 }
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -180,7 +182,7 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
   libro.calcProperties = { fullCalcOnLoad: true }
 
   const HOJA = 'Movimientos'
-  // Siete filas libres: una a la vista y seis listas para cuando rellenes la primera.
+  // Siete filas libres: una a la vista y seis para nombres nuevos escritos en De/A.
   const libres = entrada.libres ?? 7
   const FILAS_MOV = Math.max(FILAS_MOV_TOTAL, entrada.movimientos.length + 1)
   const FILA_MOV_N = RES_1 + FILAS_MOV - 1
@@ -223,7 +225,7 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
   ws.getRow(FILA_TITULO).height = 22
 
   ws.mergeCells(2, 1, 3, COL.importe)
-  poner(2, 1, 'Escribe cada movimiento: fecha, de dónde sale (De), a dónde va (A) e importe. Solo se ve una fila: al rellenarla, se abre la siguiente.', {
+  poner(2, 1, 'Escribe fecha, De, A e importe. Para crear un fondo o cartera, escribe su nombre nuevo en De o A; aparecerá en el resumen. Para quitarlo, borra todas sus referencias en De/A.', {
     font: { size: 9, color: { argb: GRIS } },
     alignment: { wrapText: true, vertical: 'top' },
   })
@@ -439,9 +441,9 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
     poner(fila, COL.euros, { formula: fEuros(fila, cierra) }, { numFmt: MONEDA, font: letra() })
     poner(fila, COL.saldo, { formula: fSaldoInversion(fila, cierra) }, { numFmt: MONEDA, font: letra() })
     if (!esLibre) for (let c = COL.nombre; c <= COL.saldo; c++) celda(fila, c).border = bordeFino
-    // Solo se escribe el nombre y titular de una fila libre, o el % de una cuenta o inversión.
+    // El nombre viene de De/A y su fórmula queda protegida; el titular y % se pueden corregir.
     if (esLibre)
-      for (const c of [COL.nombre, COL.titular, COL.pct]) celda(fila, c).protection = { locked: false }
+      for (const c of [COL.titular, COL.pct]) celda(fila, c).protection = { locked: false }
     // La rentabilidad se puede escribir en cualquier fila: cuentas, inversiones y filas nuevas.
     celda(fila, COL.pct).protection = { locked: false }
     if (op.nombre) numeroConcepto++
@@ -476,11 +478,50 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
         grupos.push({ nombre: g.cuenta ? nombreCuenta : titular, titular, desde, hasta: fila - 1 })
     }
   }
-  // Filas libres al final: solo se ve una. Al escribir el nombre sale la siguiente; al borrarlo,
-  // desaparece. Escribe aquí una inversión nueva y entra al momento en los desplegables.
+  // Filas libres: cada nombre distinto introducido en De/A ocupa una de estas siete plazas.
+  // P/Q/R son columnas auxiliares ocultas. R contiene el catálogo original (incluidos productos
+  // históricos ya cerrados): así un movimiento antiguo no se interpreta como alta nueva.
   const LIBRE_1 = fila
   const LIBRE_N = LIBRE_1 + libres - 1
   for (let i = 0; i < libres; i++) filaResumen({ nombre: null, titular: '', clase: 'libre', sangria: 1 })
+  for (const c of [16, 17, 18]) ws.getColumn(c).hidden = true
+  const conocidos = [...new Set([
+    EXTERIOR,
+    ...titulares.flatMap((t) => t.grupos.flatMap((g) => [g.cuenta, ...g.inversiones.map((i) => i.nombre)])),
+    ...(entrada.nombresConocidos ?? []),
+    ...movimientos.flatMap((m) => [m.de, m.a]),
+  ].filter((n): n is string => !!n).map((n) => nombres.corto(n)))]
+  conocidos.forEach((n, i) => poner(RES_1 + i, 18, n))
+  const CATALOG = `$R$${RES_1}:$R$${RES_1 + conocidos.length - 1}`
+  const fuente = (c: 'B' | 'C', f: number) => {
+    const item = `$${c}${f}`
+    const primera = `COUNTIF($${c}$${RES_1}:${c}${f},${item})=1`
+    return siError(`IF(AND(${item}<>"",${item}<>"${EXTERIOR}",${primera},COUNTIF(${CATALOG},${item})=0` +
+      (c === 'C' ? `,COUNTIF(${DE},${item})=0` : '') + `),${item},"")`)
+  }
+  for (let f = RES_1; f <= FILA_MOV_N; f++) {
+    poner(f, 16, { formula: fuente('B', f) })
+    poner(f, 17, { formula: fuente('C', f) })
+  }
+  const seleccionar = (col: 'P' | 'Q', n: string) => {
+    const rango = `$${col}$${RES_1}:$${col}$${FILA_MOV_N}`
+    return `INDEX(${rango},AGGREGATE(15,6,(ROW(${rango})-ROW($${col}$${RES_1})+1)/(${rango}<>""),${n}))`
+  }
+  const cuantosDe = `COUNTIF($P$${RES_1}:$P$${FILA_MOV_N},"?*")`
+  const primeraTitular = titulares[0]?.nombre ?? ''
+  for (let i = 0; i < libres; i++) {
+    const f = LIBRE_1 + i
+    const orden = i + 1
+    poner(f, COL.nombre, {
+      formula: siError(`IF(${orden}<=${cuantosDe},${seleccionar('P', String(orden))},${seleccionar('Q', `${orden}-${cuantosDe}`)})`),
+    }, { font: { size: 10, color: { argb: 'FFFFFFFF' } }, alignment: { indent: 1 } })
+    // Tomar el titular de la cuenta/fondo que lo financia; si no consta, usar el primer titular.
+    // No consultar las otras filas libres: así no hay referencia circular y G sigue siendo editable.
+    const titularOrigen = `INDEX($B$${RES_1}:$B$${FILA_MOV_N},MATCH($F${f},$C$${RES_1}:$C$${FILA_MOV_N},0))`
+    const titularEnResumen = `INDEX($G$${RES_1}:$G$${LIBRE_1 - 1},MATCH(${titularOrigen},$F$${RES_1}:$F$${LIBRE_1 - 1},0))`
+    poner(f, COL.titular, { formula: siError(`IF($F${f}="","",IFERROR(${titularEnResumen},${literal(primeraTitular)}))`) },
+      { font: { size: 9, color: { argb: 'FFFFFFFF' } }, alignment: { horizontal: 'center' } })
+  }
   const estilo = { font: { size: 10, color: { argb: TINTA } }, border: bordeFino }
   ws.addConditionalFormatting({
     ref: `${L.nombre}${LIBRE_1}:${L.saldo}${LIBRE_N}`,
@@ -639,7 +680,7 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
     ws.mergeCells(f, 1, f, COL.saldo)
     poner(f, 1, texto, { font: { size: 9, italic: true, color: { argb: GRIS } } })
   }
-  nota(FILA_TOTAL + 2, 'Para añadir una inversión: escribe su nombre (y su titular) en la fila amarilla; al rellenarla sale la siguiente. Para quitarla: borra su nombre y desaparece. Entra al momento en los desplegables.')
+  nota(FILA_TOTAL + 2, 'Para añadir un fondo o cartera: escribe un nombre nuevo en De/A (hasta siete). Se refleja en el resumen; para quitarlo, elimina todas sus referencias De/A. Revisa el titular y % al borrar nombres anteriores.')
   nota(FILA_TOTAL + 3, 'Al poner 0 en un .xlsx no se borra solo. Para eliminarlo, borra De, A e Importe y pon Fecha a hoy. Si quieres que lo haga automáticamente SOLO al cambiar de positivo a 0, sigue las instrucciones de la macro opcional en README.md.')
 
   // ── Desplegables ─────────────────────────────────────────────────────────
@@ -775,9 +816,9 @@ export async function generarExcelMovimientos(entrada: EntradaExcel): Promise<Ar
   }
   hojaG.pageSetup.printArea = `A1:O${ultimaGraficos}`
 
-  // Protegida: solo se puede escribir en los movimientos, en las filas nuevas y en el % de cada
-  // cuenta o inversión. Se puede elegir cualquier celda y borrar o añadir filas (para quitar una inversión
-  // que quede a cero o para meter una nueva). Sin contraseña: «Revisar → Desproteger hoja».
+  // Protegida: editar movimientos, el titular/% de filas nuevas y el % de cada cuenta o inversión.
+  // Los nombres automáticos y las fórmulas del resumen siguen bloqueados.
+  // Sin contraseña: «Revisar → Desproteger hoja».
   // (Los permisos concretos se escriben a mano en terminar(): exceljs no saca todas las opciones.)
   await ws.protect('')
 
